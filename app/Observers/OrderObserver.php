@@ -216,7 +216,8 @@ class OrderObserver
             $customer->save();
         });
     }
-     /**
+
+    /**
      * Optional: Implement full recalculation logic if needed, e.g., after order deletion.
      */
     // protected function recalculateCustomerAggregates(string $customerPhone): void
@@ -225,7 +226,7 @@ class OrderObserver
     //     if ($customer) {
     //         $aggregates = Order::where('customer_phone', $customerPhone)
     //                            ->selectRaw('COUNT(*) as total_orders, SUM(total_value) as total_spent_value, MIN(created_at) as first_order, MAX(created_at) as last_order')
-                                   // ->whereIn('status', ['completed', 'shipped']) // Example
+    //                            // ->whereIn('status', ['completed', 'shipped']) // Example
     //                            ->first();
     //         if ($aggregates) {
     //             $customer->total_orders_count = $aggregates->total_orders ?: 0;
