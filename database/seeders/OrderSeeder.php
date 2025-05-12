@@ -14,6 +14,8 @@ use App\Models\PancakePage;
 use App\Models\Province;
 use App\Models\District;
 use App\Models\Ward;
+use App\Models\Customer;
+use App\Models\CustomerPhone;
 use Faker\Factory as Faker;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
@@ -92,11 +94,33 @@ class OrderSeeder extends Seeder
             }
             $selectedWardCode = !empty($wardsInDistrict) ? $wardsInDistrict[array_rand($wardsInDistrict)] : null;
 
+            // Create or find customer
+            $customerName = $faker->name;
+            $customerPhone = $faker->numerify('09########');
+            $customerEmail = $faker->optional()->safeEmail;
+
+            $customer = Customer::create([
+                'name' => $customerName,
+                'email' => $customerEmail,
+                'full_address' => $faker->address,
+                'province' => $selectedProvinceCode,
+                'district' => $selectedDistrictCode,
+                'ward' => $selectedWardCode,
+                'street_address' => $faker->streetAddress,
+            ]);
+
+            // Create customer phone
+            CustomerPhone::create([
+                'customer_id' => $customer->id,
+                'phone_number' => $customerPhone,
+                'is_primary' => true,
+            ]);
+
             $order = Order::create([
                 'order_code' => 'ORD-' . strtoupper(Str::random(4)) . '-' . time() . $i,
-                'customer_name' => $faker->name,
-                'customer_phone' => $faker->numerify('09########'),
-                'customer_email' => $faker->optional()->safeEmail,
+                'customer_name' => $customerName,
+                'customer_phone' => $customerPhone,
+                'customer_email' => $customerEmail,
                 'shipping_fee' => $faker->numberBetween(0, 100) * 1000,
                 'transfer_money' => $faker->optional(0.3)->randomElement([$faker->numberBetween(50, 500) * 1000, (string)($faker->numberBetween(50, 500) * 1000)]),
                 'payment_method' => $paymentMethods[array_rand($paymentMethods)],

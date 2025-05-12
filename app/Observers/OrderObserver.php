@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Models\Order;
 use App\Models\Customer;
+use App\Models\CustomerPhone;
 use App\Models\DailyRevenueAggregate;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -144,20 +145,43 @@ class OrderObserver
         }
 
         DB::transaction(function () use ($order) {
-            $customer = Customer::firstOrNew(['phone' => $order->customer_phone]);
+            // Find customer by phone number
+            $customerPhone = CustomerPhone::where('phone_number', $order->customer_phone)->first();
+            $customer = null;
 
-            $customer->name = $order->customer_name ?: $customer->name; // Update name if provided
-            // Update address fields from the most recent order if they are filled
+            if ($customerPhone) {
+                $customer = $customerPhone->customer;
+            } else {
+                // Create new customer and phone number
+                $customer = Customer::create([
+                    'name' => $order->customer_name,
+                    'email' => $order->customer_email,
+                    'full_address' => $order->address_full,
+                    'province' => $order->province_code,
+                    'district' => $order->district_code,
+                    'ward' => $order->ward_code,
+                    'street_address' => $order->street_address,
+                    'first_order_date' => $order->created_at->toDateString(),
+                    'last_order_date' => $order->created_at->toDateString(),
+                ]);
+
+                CustomerPhone::create([
+                    'customer_id' => $customer->id,
+                    'phone_number' => $order->customer_phone,
+                    'is_primary' => true,
+                ]);
+            }
+
+            // Update customer information
+            $customer->name = $order->customer_name ?: $customer->name;
             if (!empty($order->address_full)) $customer->full_address = $order->address_full;
 
-            // Use the codes for province, district, and ward and assign to customer's address fields
-            // The Order model has province_code, district_code, ward_code as fillable attributes.
             if ($order->province_code) {
                 $customer->province = $order->province_code;
-            } elseif ($order->province) { // Fallback if only relationship is loaded and direct code is null
-                 $customer->province = $order->province->code;
+            } elseif ($order->province) {
+                $customer->province = $order->province->code;
             } else {
-                $customer->province = null; // Ensure it can be cleared if order has no province
+                $customer->province = null;
             }
 
             if ($order->district_code) {
@@ -180,41 +204,16 @@ class OrderObserver
 
             // Email: update if new order has it and customer doesn't, or if it changed
             if (!empty($order->customer_email) && $order->customer_email !== $customer->email) {
-                 // Check if new email is unique if it's being changed to something new
-                 if (Customer::where('email', $order->customer_email)->where('phone', '!=', $order->customer_phone)->doesntExist()) {
+                // Check if new email is unique if it's being changed to something new
+                if (Customer::where('email', $order->customer_email)->where('id', '!=', $customer->id)->doesntExist()) {
                     $customer->email = $order->customer_email;
-                 } else {
-                    Log::warning("Attempted to update customer [Phone: {$customer->phone}] with email [{$order->customer_email}] that already exists for another customer.");
-                 }
-            } elseif (empty($order->customer_email) && !empty($customer->email)) {
-                // If order has no email but customer does, keep existing customer email unless policy is to clear it.
+                } else {
+                    Log::warning("Attempted to update customer [ID: {$customer->id}] with email [{$order->customer_email}] that already exists for another customer.");
+                }
             }
 
-
-            if (!$customer->exists) { // New customer
-                $customer->first_order_date = $order->created_at->toDateString();
-            }
             $customer->last_order_date = $order->created_at->toDateString();
-
-            $customer->save(); // Save customer to get ID if new, and to persist changes
-
-            // Recalculate aggregates - this is a simplified approach.
-            // For high performance, these might be better as direct increments/decrements or queued jobs.
-            $aggregates = Order::where('customer_phone', $customer->phone)
-                               ->selectRaw('COUNT(*) as total_orders, SUM(total_value) as total_spent_value, MIN(created_at) as first_order, MAX(created_at) as last_order')
-                               // Filter by statuses that count towards revenue, if applicable
-                               // ->whereIn('status', ['completed', 'shipped']) // Example: only count completed/shipped orders for spending
-                               ->first();
-
-            if ($aggregates) {
-                $customer->total_orders_count = $aggregates->total_orders ?: 0;
-                $customer->total_spent = $aggregates->total_spent_value ?: 0.00;
-                $customer->first_order_date = $aggregates->first_order ? date('Y-m-d', strtotime($aggregates->first_order)) : $customer->first_order_date;
-                $customer->last_order_date = $aggregates->last_order ? date('Y-m-d', strtotime($aggregates->last_order)) : $customer->last_order_date;
-            }
-
             $customer->save();
-
         });
     }
      /**

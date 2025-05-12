@@ -17,10 +17,9 @@ return new class extends Migration
 
             // Customer source and tags
             $table->string('source')->nullable()->after('telegram_id');
-            $table->json('tags')->nullable()->after('source');
 
             // Customer status and classification
-            $table->string('status')->default('active')->after('tags');
+            $table->string('status')->default('active')->after('source');
             $table->string('customer_type')->nullable()->after('status');
             $table->string('customer_group')->nullable()->after('customer_type');
 
@@ -43,7 +42,6 @@ return new class extends Migration
                 'zalo_id',
                 'telegram_id',
                 'source',
-                'tags',
                 'status',
                 'customer_type',
                 'customer_group',
