@@ -1,0 +1,137 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\Models\Permission;
+use App\Models\User;
+use Spatie\Permission\PermissionRegistrar;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+
+class RolesAndPermissionsSeeder extends Seeder
+{
+    /**
+     * Run the database seeds.
+     */
+    public function run(): void
+    {
+        // Reset cached roles and permissions
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+
+        // Clear existing roles, permissions and users (optional, but good for clean seed)
+        Schema::disableForeignKeyConstraints();
+        DB::table('role_has_permissions')->truncate();
+        DB::table('model_has_roles')->truncate();
+        DB::table('model_has_permissions')->truncate();
+        DB::table('users')->truncate(); // Clear users as well
+        DB::table('roles')->truncate();
+        DB::table('permissions')->truncate();
+        Schema::enableForeignKeyConstraints();
+
+        // --- Define Core Permissions ---
+        $permissions = [
+            // User Permissions
+            'users.view', 'users.create', 'users.edit', 'users.delete', 'users.view_trashed', 'users.restore', 'users.force_delete',
+            // Role Permissions
+            'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
+            // Order Permissions
+            'orders.view', 'orders.create', 'orders.edit', 'orders.delete', 'orders.push_to_pancake',
+            // Product Permissions
+            'products.view', 'products.create', 'products.edit', 'products.delete',
+            // Category Permissions
+            'categories.view', 'categories.create', 'categories.edit', 'categories.delete',
+            // Customer Permissions
+            'customers.view', 'customers.create', 'customers.edit', 'customers.delete', 'customers.view_trashed', 'customers.restore', 'customers.force_delete', 'customers.orders', 'customers.latest', 'customers.sync',
+            // Order Filter Permissions
+            'orders.filter_by_manager', 'orders.filter_by_staff', 'orders.filter_by_self',
+            // Team Permissions
+            'teams.view', 'teams.assign',
+            // Call Permissions
+            'calls.manage',
+            // Dashboard Permissions
+            'dashboard.view', 'dashboard.view_revenue',
+            // Settings Permissions
+            'settings.view', 'settings.update', 'settings.manage_favicon', 'settings.manage_seo', 'settings.clear_cache',
+            // Add any other core permissions your app needs
+            'reports.view', 'settings.manage',
+            // Logs Permissions
+            'logs.view', 'logs.details'
+        ];
+        foreach ($permissions as $permission) {
+            Permission::firstOrCreate(['name' => $permission]);
+        }
+        $allPermissionIds = Permission::pluck('id')->toArray();
+
+        // --- Create Core Roles ---
+        $superAdminRole = Role::firstOrCreate(['name' => 'super-admin']);
+        $managerRole = Role::firstOrCreate(['name' => 'manager']);
+        $staffRole = Role::firstOrCreate(['name' => 'staff']);
+
+        // --- Assign Permissions to Core Roles ---
+        $superAdminRole->syncPermissions($allPermissionIds);
+
+        // Manager permissions
+        $managerPermissions = Permission::whereIn('name', [
+            'users.view',
+            'orders.view', 'orders.create', 'orders.edit', 'orders.push_to_pancake',
+            'orders.filter_by_staff',
+            'teams.view', 'teams.assign',
+            'dashboard.view', 'dashboard.view_revenue',
+            'logs.view', 'logs.details',
+            'customers.view', 'customers.create', 'customers.edit', 'customers.sync'
+        ])->pluck('id');
+        $managerRole->syncPermissions($managerPermissions);
+
+        // Staff permissions
+        $staffPermissions = Permission::whereIn('name', [
+            'orders.view', 'orders.create', 'orders.edit', 'orders.push_to_pancake',
+            'orders.filter_by_self',
+            'calls.manage',
+            'dashboard.view',
+            'customers.view'
+        ])->pluck('id');
+        $staffRole->syncPermissions($staffPermissions);
+
+        // --- Create Core Users ---
+        User::create([
+            'name' => 'Super Admin',
+            'email' => 'superadmin@example.com',
+            'password' => Hash::make('password'),
+        ])->assignRole($superAdminRole);
+
+        // --- Create Sample Managers ---
+        $managers = collect();
+        $numberOfManagers = 3; // Reduced for simplicity, adjust as needed
+        for ($i = 1; $i <= $numberOfManagers; $i++) {
+            $managerUser = User::create([
+                'name' => 'Manager ' . Str::ucfirst(fake()->word),
+                'email' => fake()->unique()->safeEmail(),
+                'password' => Hash::make('password'),
+                'manages_team_id' => $i + 100,
+            ]);
+            $managerUser->assignRole($managerRole);
+            $managers->push($managerUser);
+        }
+        $managerTeamIds = $managers->pluck('manages_team_id')->toArray();
+
+        // --- Create Sample Staff Users ---
+        $numberOfStaff = 10; // Reduced for simplicity, adjust as needed
+        if (!empty($managerTeamIds)) { // Ensure there are managers to assign staff to
+            for ($i = 1; $i <= $numberOfStaff; $i++) {
+                User::create([
+                    'name' => fake()->name(),
+                    'email' => fake()->unique()->safeEmail(),
+                    'password' => Hash::make('password'),
+                    'team_id' => $managerTeamIds[array_rand($managerTeamIds)],
+                ])->assignRole($staffRole);
+            }
+        }
+
+        echo "Seed: Roles (super-admin, manager, staff), Permissions, and sample Users created successfully.\n";
+    }
+}

@@ -1,0 +1,130 @@
+@csrf
+<div class="row">
+    <div class="col-md-8">
+        <div class="mb-3">
+            <label for="name" class="form-label">Tên sản phẩm <span class="text-danger">*</span></label>
+            <input type="text" class="form-control @error('name') is-invalid @enderror" id="name" name="name" value="{{ old('name', $product->name ?? '') }}" required>
+            @error('name')
+                <div class="invalid-feedback">{{ $message }}</div>
+            @enderror
+        </div>
+
+        <div class="mb-3">
+            <label for="slug" class="form-label">Slug (tự động tạo nếu để trống)</label>
+            <input type="text" class="form-control @error('slug') is-invalid @enderror" id="slug" name="slug" value="{{ old('slug', $product->slug ?? '') }}">
+            @error('slug')
+                <div class="invalid-feedback">{{ $message }}</div>
+            @enderror
+        </div>
+
+        <div class="mb-3">
+            <label for="category_id" class="form-label">Danh mục</label>
+            <select class="form-select @error('category_id') is-invalid @enderror" id="category_id" name="category_id">
+                <option value="">-- Chọn danh mục --</option>
+                @foreach ($categories as $id => $name)
+                    <option value="{{ $id }}" {{ old('category_id', $product->category_id ?? '') == $id ? 'selected' : '' }}>
+                        {{ $name }}
+                    </option>
+                @endforeach
+            </select>
+            @error('category_id')
+                <div class="invalid-feedback">{{ $message }}</div>
+            @enderror
+        </div>
+
+        <div class="mb-3">
+            <label for="description" class="form-label">Mô tả</label>
+            <textarea class="form-control @error('description') is-invalid @enderror" id="description" name="description" rows="3">{{ old('description', $product->description ?? '') }}</textarea>
+            @error('description')
+                <div class="invalid-feedback">{{ $message }}</div>
+            @enderror
+        </div>
+
+        <div class="mb-3">
+            <label for="base_price" class="form-label">Giá cơ bản</label>
+            <div class="input-group">
+                <input type="number" step="0.01" class="form-control @error('base_price') is-invalid @enderror" id="base_price" name="base_price" value="{{ old('base_price', $product->base_price ?? '0.00') }}">
+                <span class="input-group-text">VNĐ</span>
+            </div>
+            @error('base_price')
+                <div class="invalid-feedback">{{ $message }}</div>
+            @enderror
+        </div>
+
+        <div class="mb-3">
+            <div class="form-check">
+                <input type="checkbox" class="form-check-input @error('is_active') is-invalid @enderror" id="is_active" name="is_active" value="1" {{ old('is_active', $product->is_active ?? true) ? 'checked' : '' }}>
+                <label class="form-check-label" for="is_active">Kích hoạt sản phẩm</label>
+            </div>
+            @error('is_active')
+                <div class="invalid-feedback">{{ $message }}</div>
+            @enderror
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Hình ảnh sản phẩm</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="product_image" class="form-label">Chọn ảnh</label>
+                    <input type="file" class="form-control @error('image') is-invalid @enderror" id="product_image" name="image" accept="image/*">
+                    @error('image')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                </div>
+                <div id="image-preview" class="mt-2">
+                    @if(isset($product) && $product->image)
+                        <img src="{{ asset('storage/' . $product->image) }}" class="img-thumbnail" style="max-height: 200px;">
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-3">
+    <button type="submit" class="btn btn-primary">{{ $product->exists ?? false ? 'Cập nhật' : 'Tạo mới' }} sản phẩm</button>
+    <a href="{{ route('products.index') }}" class="btn btn-secondary">Hủy</a>
+</div>
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Preview image before upload
+    const imageInput = document.getElementById('product_image');
+    const imagePreview = document.getElementById('image-preview');
+
+    if (imageInput) {
+        imageInput.addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.innerHTML = `<img src="${e.target.result}" class="img-thumbnail" style="max-height: 200px;">`;
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+
+    // Auto-generate slug from name
+    const nameInput = document.getElementById('name');
+    const slugInput = document.getElementById('slug');
+
+    if (nameInput && slugInput) {
+        nameInput.addEventListener('blur', function() {
+            if (!slugInput.value) {
+                slugInput.value = this.value
+                    .toLowerCase()
+                    .replace(/[^a-z0-9-]/g, '-')
+                    .replace(/-+/g, '-')
+                    .replace(/^-|-$/g, '');
+            }
+        });
+    }
+});
+</script>
+@endpush
