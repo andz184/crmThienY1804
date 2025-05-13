@@ -14,6 +14,7 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Cache;
 use App\Traits\PancakeApi;
 use App\Services\PancakeService;
+use App\Models\CustomerPhone;
 
 class CustomerController extends Controller
 {
@@ -110,7 +111,7 @@ class CustomerController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'phone' => 'required|string|max:20|unique:customers,phone',
+            'phone' => 'required|string|max:20|unique:customer_phones,phone_number',
             'email' => 'nullable|email|max:255|unique:customers,email',
             'date_of_birth' => 'nullable|date',
             'gender' => 'nullable|in:male,female,other',
@@ -155,12 +156,29 @@ class CustomerController extends Controller
                 return back()->withInput()->withErrors(['error' => 'Có lỗi xảy ra khi tạo khách hàng trên Pancake: ' . ($pancakeResponse['message'] ?? 'Unknown error')]);
             }
 
-            // Create customer in local database
-            $customer = Customer::create(array_merge($validated, [
-                'pancake_id' => $pancakeResponse['data']['id']
-            ]));
+            DB::beginTransaction();
+            try {
+                // Create customer in local database
+                $customerData = array_merge(
+                    array_diff_key($validated, ['phone' => '']), // Remove phone from validated data
+                    ['pancake_id' => $pancakeResponse['data']['id']]
+                );
 
-            return redirect()->route('customers.show', $customer)->with('success', 'Tạo khách hàng thành công!');
+                $customer = Customer::create($customerData);
+
+                // Create phone number
+                $customer->phones()->create([
+                    'phone_number' => $validated['phone'],
+                    'is_primary' => true,
+                    'type' => 'mobile'
+                ]);
+
+                DB::commit();
+                return redirect()->route('customers.show', $customer)->with('success', 'Tạo khách hàng thành công!');
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
         } catch (\Exception $e) {
             Log::error('Error creating customer: ' . $e->getMessage());
             return back()->withInput()->withErrors(['error' => 'Có lỗi xảy ra khi tạo khách hàng. Vui lòng thử lại.']);
@@ -175,22 +193,24 @@ class CustomerController extends Controller
         $this->authorize('customers.view');
 
         try {
-            // Get latest data from Pancake
-            $pancakeResponse = $this->pancakeService->getCustomer($customer->pancake_id);
+            // Get latest data from Pancake only if pancake_id exists
+            if ($customer->pancake_id) {
+                $pancakeResponse = $this->pancakeService->getCustomer($customer->pancake_id);
 
-            if ($pancakeResponse['success']) {
-                // Update local data with latest from Pancake
-                $pancakeData = $pancakeResponse['data'];
-                $customer->update([
-                    'name' => $pancakeData['name'],
-                    'email' => $pancakeData['email'],
-                    'date_of_birth' => $pancakeData['date_of_birth'],
-                    'gender' => $pancakeData['gender'],
-                    'fb_id' => $pancakeData['fb_id'],
-                    'notes' => $pancakeData['note'],
-                    'tags' => $pancakeData['tags'] ?? [],
-                    // Update other fields as needed
-                ]);
+                if ($pancakeResponse['success']) {
+                    // Update local data with latest from Pancake
+                    $pancakeData = $pancakeResponse['data'];
+                    $customer->update([
+                        'name' => $pancakeData['name'],
+                        'email' => $pancakeData['email'],
+                        'date_of_birth' => $pancakeData['date_of_birth'],
+                        'gender' => $pancakeData['gender'],
+                        'fb_id' => $pancakeData['fb_id'],
+                        'notes' => $pancakeData['note'],
+                        'tags' => $pancakeData['tags'] ?? [],
+                        // Update other fields as needed
+                    ]);
+                }
             }
         } catch (\Exception $e) {
             Log::error('Error fetching customer from Pancake: ' . $e->getMessage());
@@ -218,8 +238,8 @@ class CustomerController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'phone' => 'required|string|max:20|unique:customers,phone,' . ($customer->id ?? ''),
-            'email' => 'nullable|email|max:255|unique:customers,email,' . ($customer->id ?? ''),
+            'phone' => 'required|string|max:20|unique:customer_phones,phone_number,' . $customer->primaryPhone?->id,
+            'email' => 'nullable|email|max:255|unique:customers,email,' . $customer->id,
             'date_of_birth' => 'nullable|date',
             'gender' => 'nullable|in:male,female,other',
             'fb_id' => 'nullable|string|max:255',
@@ -263,10 +283,31 @@ class CustomerController extends Controller
                 return back()->withInput()->withErrors(['error' => 'Có lỗi xảy ra khi cập nhật khách hàng trên Pancake: ' . ($pancakeResponse['message'] ?? 'Unknown error')]);
             }
 
-            // Update customer in local database
-            $customer->update($validated);
+            DB::beginTransaction();
+            try {
+                // Update customer in local database
+                $customerData = array_diff_key($validated, ['phone' => '']); // Remove phone from validated data
+                $customer->update($customerData);
 
-            return redirect()->route('customers.show', $customer)->with('success', 'Cập nhật thông tin khách hàng thành công!');
+                // Update or create primary phone
+                if ($customer->primaryPhone) {
+                    $customer->primaryPhone->update([
+                        'phone_number' => $validated['phone']
+                    ]);
+                } else {
+                    $customer->phones()->create([
+                        'phone_number' => $validated['phone'],
+                        'is_primary' => true,
+                        'type' => 'mobile'
+                    ]);
+                }
+
+                DB::commit();
+                return redirect()->route('customers.show', $customer)->with('success', 'Cập nhật thông tin khách hàng thành công!');
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
         } catch (\Exception $e) {
             Log::error('Error updating customer: ' . $e->getMessage());
             return back()->withInput()->withErrors(['error' => 'Có lỗi xảy ra khi cập nhật thông tin khách hàng. Vui lòng thử lại.']);
@@ -373,8 +414,8 @@ class CustomerController extends Controller
             return $isAjax ? response()->json(['done' => true, 'progress' => 100, 'message' => 'Không tìm thấy đơn hàng nào (trong phạm vi của bạn) để đồng bộ khách hàng.', 'created' => 0]) : redirect()->route('customers.index')->with('info', 'Không tìm thấy đơn hàng nào (trong phạm vi của bạn) để đồng bộ khách hàng.');
         }
 
-        // Get all phone numbers that ALREADY exist in the customers table
-        $existingCustomerPhones = Customer::whereIn('phone', $allPhonesFromScopedOrders->all())->pluck('phone');
+        // Get all phone numbers that ALREADY exist in the customers table through customer_phones
+        $existingCustomerPhones = CustomerPhone::whereIn('phone_number', $allPhonesFromScopedOrders->all())->pluck('phone_number');
 
         // Determine which phone numbers are new
         $newPhonesToCreate = $allPhonesFromScopedOrders->diff($existingCustomerPhones);
@@ -401,7 +442,6 @@ class CustomerController extends Controller
 
             $customerData = [
                 'name' => $latestOrder->customer_name,
-                'phone' => $phone, // This is the key
                 'email' => $latestOrder->customer_email,
                 'full_address' => $latestOrder->full_address,
                 'province' => $latestOrder->province,
@@ -417,7 +457,19 @@ class CustomerController extends Controller
 
             DB::beginTransaction();
             try {
-                $newCustomer = Customer::create($customerData); // Create new customer
+                // Create new customer
+                $newCustomer = Customer::create($customerData);
+
+                // Create primary phone number
+                $newCustomer->phones()->create([
+                    'phone_number' => $phone,
+                    'is_primary' => true,
+                    'type' => 'mobile'
+                ]);
+
+                // Update customer_id in all orders with this phone number
+                Order::where('customer_phone', $phone)->update(['customer_id' => $newCustomer->id]);
+
                 $createdCount++;
                 LogHelper::log('customer_sync_create_if_new', $newCustomer, null, $newCustomer->toArray());
                 DB::commit();

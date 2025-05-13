@@ -80,7 +80,8 @@ class Customer extends Model
      */
     public function getPrimaryPhoneAttribute()
     {
-        return $this->primaryPhone?->phone_number ?? 'N/A';
+        $primaryPhone = $this->primaryPhone()->first();
+        return $primaryPhone ? $primaryPhone->phone_number : null;
     }
 
     /**

@@ -4,7 +4,7 @@
 
 @section('content_header')
     <h1>Khách hàng: {{ $customer->name }}</h1>
-    <p class="text-muted">SĐT: {{ $customer->phone }} @if($customer->email) | Email: {{ $customer->email }} @endif</p>
+    <p class="text-muted">SĐT: {{ $customer->primary_phone }} @if($customer->email) | Email: {{ $customer->email }} @endif</p>
 @stop
 
 @section('content')
@@ -30,7 +30,7 @@
                         <dd class="col-sm-7">{{ $customer->name }}</dd>
 
                         <dt class="col-sm-5">Số điện thoại</dt>
-                        <dd class="col-sm-7">{{ $customer->phone }}</dd>
+                        <dd class="col-sm-7">{{ $customer->primary_phone }}</dd>
 
                         <dt class="col-sm-5">Email</dt>
                         <dd class="col-sm-7">{{ $customer->email ?? 'N/A' }}</dd>
@@ -141,18 +141,17 @@
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="orderModalLabel">Chi tiết Đơn hàng</h5>
+                <h5 class="modal-title" id="orderModalLabel">Chi tiết đơn hàng</h5>
                 <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
             </div>
             <div class="modal-body">
-                <div id="orderModalContent">
-                    <p>Loading...</p>
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="sr-only">Loading...</span>
+                    </div>
                 </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
             </div>
         </div>
     </div>
@@ -162,45 +161,12 @@
 @section('js')
 <script>
 $(document).ready(function() {
-    // Handle clicking the 'View Order' button
     $('.view-order-btn').on('click', function() {
-        var orderUrl = $(this).data('order-url');
-        var modalContent = $('#orderModalContent');
-        var modalTitle = $('#orderModalLabel');
-
-        // Reset modal content and title
-        modalTitle.text('Chi tiết Đơn hàng');
-        modalContent.html('<p><i class="fas fa-spinner fa-spin"></i> Loading...</p>');
-
-        $.ajax({
-            url: orderUrl,
-            type: 'GET',
-            success: function(response) {
-                modalContent.html(response);
-                // Attempt to extract order code from response for modal title (optional)
-                // This is a bit fragile; depends on the structure of _modal_details.blade.php
-                var tempDiv = $('<div>').html(response);
-                var orderCode = tempDiv.find('h4:contains("Order Details")').text().match(/\\(([^)]+)\\)/);
-                if (orderCode && orderCode[1]) {
-                    modalTitle.text('Chi tiết Đơn hàng (' + orderCode[1] + ')');
-                }
-            },
-            error: function(xhr) {
-                var errorMessage = '<p class="text-danger">Lỗi khi tải chi tiết đơn hàng.';
-                if (xhr.responseJSON && xhr.responseJSON.error) {
-                    errorMessage += '<br>' + xhr.responseJSON.error;
-                }
-                errorMessage += '</p>';
-                modalContent.html(errorMessage);
-                console.error("Error loading order details: ", xhr);
-            }
+        var url = $(this).data('order-url');
+        $('#orderModal .modal-body').html('<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="sr-only">Loading...</span></div></div>');
+        $.get(url, function(response) {
+            $('#orderModal .modal-body').html(response);
         });
-    });
-
-    // Clear modal content when it's hidden
-    $('#orderModal').on('hidden.bs.modal', function () {
-        $('#orderModalContent').html('<p><i class="fas fa-spinner fa-spin"></i> Loading...</p>');
-        $('#orderModalLabel').text('Chi tiết Đơn hàng');
     });
 });
 </script>
