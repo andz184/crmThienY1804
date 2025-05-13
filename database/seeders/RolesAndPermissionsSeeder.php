@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Faker\Factory as Faker;
 
 class RolesAndPermissionsSeeder extends Seeder
 {
@@ -20,6 +21,7 @@ class RolesAndPermissionsSeeder extends Seeder
      */
     public function run(): void
     {
+        $faker = Faker::create();
         // Reset cached roles and permissions
         app()[PermissionRegistrar::class]->forgetCachedPermissions();
 
@@ -109,8 +111,8 @@ class RolesAndPermissionsSeeder extends Seeder
         $numberOfManagers = 3; // Reduced for simplicity, adjust as needed
         for ($i = 1; $i <= $numberOfManagers; $i++) {
             $managerUser = User::create([
-                'name' => 'Manager ' . Str::ucfirst(fake()->word),
-                'email' => fake()->unique()->safeEmail(),
+                'name' => 'Manager ' . Str::ucfirst($faker->word),
+                'email' => $faker->unique()->safeEmail(),
                 'password' => Hash::make('password'),
                 'manages_team_id' => $i + 100,
             ]);
@@ -124,8 +126,8 @@ class RolesAndPermissionsSeeder extends Seeder
         if (!empty($managerTeamIds)) { // Ensure there are managers to assign staff to
             for ($i = 1; $i <= $numberOfStaff; $i++) {
                 User::create([
-                    'name' => fake()->name(),
-                    'email' => fake()->unique()->safeEmail(),
+                    'name' => $faker->name(),
+                    'email' => $faker->unique()->safeEmail(),
                     'password' => Hash::make('password'),
                     'team_id' => $managerTeamIds[array_rand($managerTeamIds)],
                 ])->assignRole($staffRole);
