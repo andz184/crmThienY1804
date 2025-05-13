@@ -121,7 +121,7 @@ class OrderSeeder extends Seeder
                 'customer_name' => $customerName,
                 'customer_phone' => $customerPhone,
                 'shipping_fee' => $faker->numberBetween(0, 100) * 1000,
-                'transfer_money' => $faker->optional(0.3)->randomElement([$faker->numberBetween(50, 500) * 1000, (string)($faker->numberBetween(50, 500) * 1000)]),
+                'transfer_money' => $faker->numberBetween(50, 500) * 1000,
                 'payment_method' => $paymentMethods[array_rand($paymentMethods)],
                 'shipping_provider_id' => $selectedShippingProviderId,
                 'internal_status' => 'Seeded Order',

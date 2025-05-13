@@ -8,10 +8,15 @@ use App\Models\Setting;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rules\File;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests; // Trait for authorization
 use App\Helpers\LogHelper;
+use App\Models\User;
+use App\Models\Order;
+use App\Models\WebsiteSetting;
 
 class SettingsController extends Controller
 {
@@ -120,5 +125,52 @@ class SettingsController extends Controller
             Log::error("Error clearing cache: " . $e->getMessage());
             return redirect()->route('admin.settings.index')->with('error', 'Lỗi xóa cache. Vui lòng kiểm tra logs.');
         }
+    }
+
+    /**
+     * Display the order distribution settings page.
+     */
+    public function orderDistribution()
+    {
+        $this->authorize('settings.manage');
+
+        // Get staff statistics
+        $staffStats = User::role('staff')
+            ->select('users.id', 'users.name')
+            ->selectRaw('COUNT(CASE WHEN orders.status IN (?, ?, ?) THEN 1 END) as processing_orders_count',
+                [Order::STATUS_MOI, Order::STATUS_CAN_XU_LY, Order::STATUS_CHO_HANG])
+            ->selectRaw('COUNT(orders.id) as total_orders_count')
+            ->leftJoin('orders', 'users.id', '=', 'orders.user_id')
+            ->groupBy('users.id', 'users.name')
+            ->get();
+
+        // Get order distribution settings
+        $settings = [
+            'order_distribution_type' => WebsiteSetting::get('order_distribution_type', 'sequential'),
+            'order_distribution_pattern' => WebsiteSetting::get('order_distribution_pattern', '1,1,1')
+        ];
+
+        return view('admin.settings.order_distribution', compact('settings', 'staffStats'));
+    }
+
+    /**
+     * Update the order distribution settings.
+     */
+    public function updateOrderDistribution(Request $request)
+    {
+        $this->authorize('settings.manage');
+
+        $validated = $request->validate([
+            'order_distribution_type' => ['required', 'string', Rule::in(['sequential', 'batch'])],
+            'order_distribution_pattern' => ['required', 'string', 'regex:/^[0-9,]+$/'],
+        ]);
+
+        WebsiteSetting::set('order_distribution_type', $validated['order_distribution_type']);
+        WebsiteSetting::set('order_distribution_pattern', $validated['order_distribution_pattern']);
+
+        LogHelper::log('update_order_distribution_settings', null, null, $validated);
+
+        return redirect()->route('admin.settings.order-distribution')
+            ->with('success', 'Cài đặt phân phối đơn hàng đã được cập nhật.');
     }
 }

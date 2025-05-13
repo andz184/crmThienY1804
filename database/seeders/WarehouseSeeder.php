@@ -14,10 +14,10 @@ class WarehouseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Optional: Clear the warehouses table before seeding
-        // Warehouse::truncate();
-        // Or if not using Eloquent for truncate:
-        // DB::table('warehouses')->delete();
+        // Clear the warehouses table before seeding
+        DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+        DB::table('warehouses')->delete();
+        DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
         $warehouses = [
             [
@@ -47,7 +47,6 @@ class WarehouseSeeder extends Seeder
         ];
 
         // Insert data into the warehouses table
-        // Using DB::table for direct insertion
         DB::table('warehouses')->insert($warehouses);
 
         // Or, if you prefer using the Warehouse model and it's set up with fillable properties:

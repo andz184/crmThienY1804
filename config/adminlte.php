@@ -386,6 +386,12 @@ return [
             'can' => 'settings.view'
         ],
         [
+            'text' => 'Phân phối đơn hàng',
+            'route' => 'admin.settings.order-distribution',
+            'icon' => 'fas fa-fw fa-random',
+            'can' => 'settings.manage'
+        ],
+        [
             'text'    => 'Bảng Xếp Hạng',
             'url'  => 'leaderboard',
             'icon' => 'fas fa-fw fa-trophy',

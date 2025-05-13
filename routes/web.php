@@ -157,6 +157,12 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
         Route::put('settings', [SettingsController::class, 'update'])
              ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.update')
              ->name('settings.update');
+        Route::get('settings/order-distribution', [SettingsController::class, 'orderDistribution'])
+             ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.manage')
+             ->name('settings.order-distribution');
+        Route::put('settings/order-distribution', [SettingsController::class, 'updateOrderDistribution'])
+             ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.manage')
+             ->name('settings.update-order-distribution');
         Route::post('settings/clear-cache', [SettingsController::class, 'clearCache'])
              ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.clear_cache')
              ->name('settings.clearCache');

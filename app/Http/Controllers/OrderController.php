@@ -357,24 +357,8 @@ class OrderController extends Controller
         $this->authorize('orders.create');
 
         $validatedData = $request->validate([
-            'order_code' => 'required|unique:orders,order_code',
-            'customer_name' => 'required|string|max:255|regex:/^[\p{L}\s\-\']+$/u', // Chỉ cho phép chữ cái, khoảng trắng, dấu gạch ngang và dấu nháy đơn
-            'customer_phone' => [
-                'required',
-                'string',
-                'max:20',
-                'regex:/^(0|\+84|84)[3|5|7|8|9][0-9]{8}$/' // Validate số điện thoại Việt Nam
-            ],
-            'customer_email' => 'nullable|email|max:255',
-            'province_code' => 'nullable|string',
-            'district_code' => 'nullable|string',
-            'ward_code' => 'nullable|string',
-            'street_address' => 'nullable|string',
-            'user_id' => 'required|exists:users,id',
-            'status' => ['required', 'string'],
-            'items' => 'required|array|min:1',
-            'items.*.code' => 'required|string',
-            'items.*.quantity' => 'required|integer|min:1',
+            'customer_name' => 'required|string|max:255',
+            'customer_phone' => 'required|string|max:50',
             'warehouse_id' => 'required|exists:warehouses,id',
             'shipping_fee' => 'nullable|numeric|min:0',
             'payment_method' => 'nullable|string',
@@ -382,17 +366,52 @@ class OrderController extends Controller
             'internal_status' => 'nullable|string',
             'notes' => 'nullable|string',
             'additional_notes' => 'nullable|string',
+            'total_value' => 'nullable|numeric|min:0',
+            'status' => ['required', Rule::in($this->validStatuses)],
+            'user_id' => 'nullable|exists:users,id',
+            'province_code' => 'nullable|exists:provinces,code',
+            'district_code' => 'nullable|exists:districts,code',
+            'ward_code' => 'nullable|exists:wards,code',
+            'street_address' => 'nullable|string',
+            'full_address' => 'nullable|string',
             'pancake_shop_id' => 'nullable|exists:pancake_shops,id',
             'pancake_page_id' => 'nullable|exists:pancake_pages,id',
-            'transfer_money' => 'nullable|string|max:255',
+            'transfer_money' => 'nullable|numeric|min:0',
+            'items' => 'required|array|min:1',
+            'items.*.code' => 'required|string',
+            'items.*.quantity' => 'required|integer|min:1'
         ]);
 
-        $orderData = $validatedData;
-        $orderData['created_by'] = Auth::id();
-        unset($orderData['items']);
+        // Get warehouse code
+        $warehouse = Warehouse::findOrFail($validatedData['warehouse_id']);
 
-        $order = Order::create($orderData);
+        $order = Order::create([
+            'order_code' => 'ORD-' . time() . rand(1000, 9999),
+            'customer_name' => $validatedData['customer_name'],
+            'customer_phone' => $validatedData['customer_phone'],
+            'shipping_fee' => $validatedData['shipping_fee'] ?? 0,
+            'payment_method' => $validatedData['payment_method'] ?? null,
+            'shipping_provider_id' => $validatedData['shipping_provider_id'] ?? null,
+            'internal_status' => $validatedData['internal_status'] ?? null,
+            'notes' => $validatedData['notes'] ?? null,
+            'additional_notes' => $validatedData['additional_notes'] ?? null,
+            'total_value' => $validatedData['total_value'] ?? 0,
+            'status' => $validatedData['status'],
+            'user_id' => $validatedData['user_id'] ?? null,
+            'created_by' => auth()->id(),
+            'province_code' => $validatedData['province_code'] ?? null,
+            'district_code' => $validatedData['district_code'] ?? null,
+            'ward_code' => $validatedData['ward_code'] ?? null,
+            'street_address' => $validatedData['street_address'] ?? null,
+            'full_address' => $validatedData['full_address'] ?? null,
+            'warehouse_id' => $validatedData['warehouse_id'],
+            'warehouse_code' => $warehouse->code,
+            'pancake_shop_id' => $validatedData['pancake_shop_id'] ?? null,
+            'pancake_page_id' => $validatedData['pancake_page_id'] ?? null,
+            'transfer_money' => $validatedData['transfer_money'] ?? 0,
+        ]);
 
+        // Create order items
         foreach ($validatedData['items'] as $item) {
             $order->items()->create([
                 'pancake_variation_id' => $item['code'],
@@ -506,6 +525,12 @@ class OrderController extends Controller
         try {
             $orderData = $validatedData;
             unset($orderData['items']);
+
+            if ($request->has('warehouse_id')) {
+                $warehouse = Warehouse::findOrFail($request->warehouse_id);
+                $orderData['warehouse_id'] = $request->warehouse_id;
+                $orderData['warehouse_code'] = $warehouse->code;
+            }
 
             $order->update($orderData);
 
@@ -959,7 +984,7 @@ class OrderController extends Controller
         } else {
             $pancakeApiShopId = config('pancake.shop_id');
             Log::info("Falling back to Shop ID from config: {$pancakeApiShopId} for Order ID: {$order->id} (Order had no PancakeShop or its pancake_id was empty/null).", [
-                'order_has_pancake_shop_link' => !is_null($order->pancake_shop_id),
+                'order_has_pancake_shop_linked' => !is_null($order->pancake_shop_id),
                 'linked_pancake_shop_api_id' => $order->pancakeShop->pancake_id ?? null
             ]);
         }
