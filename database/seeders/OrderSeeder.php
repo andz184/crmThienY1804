@@ -120,7 +120,6 @@ class OrderSeeder extends Seeder
                 'order_code' => 'ORD-' . strtoupper(Str::random(4)) . '-' . time() . $i,
                 'customer_name' => $customerName,
                 'customer_phone' => $customerPhone,
-                'customer_email' => $customerEmail,
                 'shipping_fee' => $faker->numberBetween(0, 100) * 1000,
                 'transfer_money' => $faker->optional(0.3)->randomElement([$faker->numberBetween(50, 500) * 1000, (string)($faker->numberBetween(50, 500) * 1000)]),
                 'payment_method' => $paymentMethods[array_rand($paymentMethods)],
@@ -131,12 +130,12 @@ class OrderSeeder extends Seeder
                 'total_value' => 0, // Will be updated after items
                 'status' => $orderStatuses[array_rand($orderStatuses)],
                 'user_id' => $selectedUserId,
-                'created_by' => $selectedUserId, // Or a specific admin/system user ID
+                'created_by' => $selectedUserId,
                 'province_code' => $selectedProvinceCode,
                 'district_code' => $selectedDistrictCode,
                 'ward_code' => $selectedWardCode,
                 'street_address' => $faker->streetAddress,
-                'full_address' => $faker->address, // Faker might not combine specific codes well.
+                'full_address' => $faker->address,
                 'warehouse_id' => $selectedWarehouseId,
                 'pancake_shop_id' => $selectedPancakeShopId,
                 'pancake_page_id' => $selectedPancakePageId,
@@ -156,11 +155,8 @@ class OrderSeeder extends Seeder
                     'order_id' => $order->id,
                     'code' => 'SKU-' . strtoupper(Str::random(5)), // Internal SKU
                     'quantity' => $itemQuantity,
-                    'pancake_product_id' => (string) Str::uuid(), // Fake Pancake Product UUID
-                    'pancake_variation_id' => (string) Str::uuid(), // Fake Pancake Variation UUID
-                    'name' => $itemName . ' (Pancake Name)', // Name for Pancake
-                    'price' => $itemPrice, // Price for Pancake
-                    'weight' => $faker->randomFloat(3, 0.1, 5), // Weight in kg for Pancake
+                    'name' => $itemName,
+                    'price' => $itemPrice,
                 ]);
                 $totalOrderValue += $itemPrice * $itemQuantity;
             }

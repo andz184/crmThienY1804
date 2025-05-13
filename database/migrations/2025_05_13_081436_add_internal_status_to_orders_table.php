@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            $table->string('pancake_push_status')->nullable()->comment('Status of push to Pancake API (e.g., success, failed_stock)');
+            $table->string('internal_status')->nullable()->after('shipping_provider_id');
         });
     }
 
@@ -22,7 +22,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            $table->dropColumn('pancake_push_status');
+            $table->dropColumn('internal_status');
         });
     }
 };

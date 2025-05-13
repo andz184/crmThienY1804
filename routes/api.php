@@ -23,4 +23,11 @@ Route::middleware(['auth:api'])->group(function () {
 
     // Order routes
     Route::post('/orders', [OrderController::class, 'store']);
+
+    // Order Management
+    Route::get('orders', 'App\Http\Controllers\Api\OrderController@index');
+    Route::get('orders/{id}', 'App\Http\Controllers\Api\OrderController@show');
+    Route::post('orders', 'App\Http\Controllers\Api\OrderController@store');
+    Route::put('orders/{id}', 'App\Http\Controllers\Api\OrderController@update');
+    Route::delete('orders/{id}', 'App\Http\Controllers\Api\OrderController@destroy');
 });
