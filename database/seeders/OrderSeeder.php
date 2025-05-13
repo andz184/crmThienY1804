@@ -31,7 +31,7 @@ class OrderSeeder extends Seeder
         DB::statement('SET FOREIGN_KEY_CHECKS=0;');
         Order::truncate(); // Xóa các đơn hàng cũ trước khi seed
         DB::statement('SET FOREIGN_KEY_CHECKS=1;');
-        $faker = Faker::create('vi_VN'); // Sử dụng Faker tiếng Việt cho địa chỉ, tên...
+        $faker = Faker::create('vi_VN');
 
         // Fetch prerequisite data
         $staffUsers = User::whereHas('roles', function ($query) {
@@ -41,8 +41,6 @@ class OrderSeeder extends Seeder
         $warehouses = Warehouse::pluck('id')->toArray();
         $shippingProviders = ShippingProvider::pluck('id')->toArray();
         $pancakeShops = PancakeShop::pluck('id')->toArray();
-        // $pancakePages = PancakePage::pluck('id')->toArray(); // We'll fetch pages based on selected shop
-
         $provinces = Province::pluck('code')->toArray();
 
         if (empty($staffUsers) || empty($warehouses) || empty($provinces)) {
@@ -65,24 +63,13 @@ class OrderSeeder extends Seeder
 
         $paymentMethods = ['cod', 'banking', 'momo', 'zalopay', 'other'];
 
-        $this->command->info("Bắt đầu tạo khoảng 100 đơn hàng mẫu...");
-        $progressBar = $this->command->getOutput()->createProgressBar(100);
-        $progressBar->start();
-
-        for ($i = 0; $i < 100; $i++) {
-            $selectedUserId = $staffUsers[array_rand($staffUsers)];
-            $selectedWarehouseId = $warehouses[array_rand($warehouses)];
-            $selectedShippingProviderId = !empty($shippingProviders) ? $shippingProviders[array_rand($shippingProviders)] : null;
-
-            $selectedPancakeShopId = null;
-            $selectedPancakePageId = null;
-            if (!empty($pancakeShops)) {
-                $selectedPancakeShopId = $pancakeShops[array_rand($pancakeShops)];
-                $availablePagesForShop = PancakePage::where('pancake_shop_table_id', $selectedPancakeShopId)->pluck('id')->toArray();
-                if (!empty($availablePagesForShop)) {
-                    $selectedPancakePageId = $availablePagesForShop[array_rand($availablePagesForShop)];
-                }
-            }
+        // First, create a pool of customers
+        $this->command->info("Creating customer pool...");
+        $customers = [];
+        for ($i = 0; $i < 20; $i++) {
+            $customerName = $faker->name;
+            $customerPhone = $faker->numerify('09########');
+            $customerEmail = $faker->optional()->safeEmail;
 
             $selectedProvinceCode = $provinces[array_rand($provinces)];
             $districtsInProvince = District::where('province_code', $selectedProvinceCode)->pluck('code')->toArray();
@@ -94,11 +81,6 @@ class OrderSeeder extends Seeder
             }
             $selectedWardCode = !empty($wardsInDistrict) ? $wardsInDistrict[array_rand($wardsInDistrict)] : null;
 
-            // Create or find customer
-            $customerName = $faker->name;
-            $customerPhone = $faker->numerify('09########');
-            $customerEmail = $faker->optional()->safeEmail;
-
             $customer = Customer::create([
                 'name' => $customerName,
                 'email' => $customerEmail,
@@ -109,63 +91,107 @@ class OrderSeeder extends Seeder
                 'street_address' => $faker->streetAddress,
             ]);
 
-            // Create customer phone
             CustomerPhone::create([
                 'customer_id' => $customer->id,
                 'phone_number' => $customerPhone,
                 'is_primary' => true,
             ]);
 
-            $order = Order::create([
-                'order_code' => 'ORD-' . strtoupper(Str::random(4)) . '-' . time() . $i,
-                'customer_name' => $customerName,
-                'customer_phone' => $customerPhone,
-                'shipping_fee' => $faker->numberBetween(0, 100) * 1000,
-                'transfer_money' => $faker->numberBetween(50, 500) * 1000,
-                'payment_method' => $paymentMethods[array_rand($paymentMethods)],
-                'shipping_provider_id' => $selectedShippingProviderId,
-                'internal_status' => 'Seeded Order',
-                'notes' => $faker->optional()->sentence,
-                'additional_notes' => $faker->optional()->paragraph,
-                'total_value' => 0, // Will be updated after items
-                'status' => $orderStatuses[array_rand($orderStatuses)],
-                'user_id' => $selectedUserId,
-                'created_by' => $selectedUserId,
-                'province_code' => $selectedProvinceCode,
-                'district_code' => $selectedDistrictCode,
-                'ward_code' => $selectedWardCode,
-                'street_address' => $faker->streetAddress,
-                'full_address' => $faker->address,
-                'warehouse_id' => $selectedWarehouseId,
-                'pancake_shop_id' => $selectedPancakeShopId,
-                'pancake_page_id' => $selectedPancakePageId,
-                'created_at' => $faker->dateTimeBetween('-1 year', 'now'),
-                'updated_at' => now(),
-            ]);
-
-            $totalOrderValue = 0;
-            $itemCount = $faker->numberBetween(1, 3);
-
-            for ($j = 0; $j < $itemCount; $j++) {
-                $itemPrice = $faker->numberBetween(50, 1000) * 1000;
-                $itemQuantity = $faker->numberBetween(1, 5);
-                $itemName = 'Seeded Item ' . Str::random(3);
-
-                OrderItem::create([
-                    'order_id' => $order->id,
-                    'code' => 'SKU-' . strtoupper(Str::random(5)), // Internal SKU
-                    'quantity' => $itemQuantity,
-                    'name' => $itemName,
-                    'price' => $itemPrice,
-                ]);
-                $totalOrderValue += $itemPrice * $itemQuantity;
-            }
-            $order->total_value = $totalOrderValue + $order->shipping_fee;
-            $order->save();
-
-            $progressBar->advance();
+            $customers[] = [
+                'customer' => $customer,
+                'phone' => $customerPhone,
+            ];
         }
+
+        $this->command->info("Creating orders for each customer...");
+        $progressBar = $this->command->getOutput()->createProgressBar(count($customers) * 5); // 5 orders per customer
+        $progressBar->start();
+
+        // Create multiple orders for each customer
+        foreach ($customers as $customerData) {
+            $customer = $customerData['customer'];
+            $ordersCount = rand(3, 7); // Random number of orders between 3 and 7
+
+            for ($i = 0; $i < $ordersCount; $i++) {
+                $selectedUserId = $staffUsers[array_rand($staffUsers)];
+                $selectedWarehouseId = $warehouses[array_rand($warehouses)];
+                $selectedShippingProviderId = !empty($shippingProviders) ? $shippingProviders[array_rand($shippingProviders)] : null;
+
+                $selectedPancakeShopId = null;
+                $selectedPancakePageId = null;
+                if (!empty($pancakeShops)) {
+                    $selectedPancakeShopId = $pancakeShops[array_rand($pancakeShops)];
+                    $availablePagesForShop = PancakePage::where('pancake_shop_table_id', $selectedPancakeShopId)->pluck('id')->toArray();
+                    if (!empty($availablePagesForShop)) {
+                        $selectedPancakePageId = $availablePagesForShop[array_rand($availablePagesForShop)];
+                    }
+                }
+
+                $order = Order::create([
+                    'order_code' => 'ORD-' . strtoupper(Str::random(4)) . '-' . time() . $i,
+                    'customer_id' => $customer->id,
+                    'customer_name' => $customer->name,
+                    'customer_phone' => $customerData['phone'],
+                    'shipping_fee' => $faker->numberBetween(0, 100) * 1000,
+                    'transfer_money' => $faker->numberBetween(50, 500) * 1000,
+                    'payment_method' => $paymentMethods[array_rand($paymentMethods)],
+                    'shipping_provider_id' => $selectedShippingProviderId,
+                    'internal_status' => 'Seeded Order',
+                    'notes' => $faker->optional()->sentence,
+                    'additional_notes' => $faker->optional()->paragraph,
+                    'total_value' => 0,
+                    'status' => $orderStatuses[array_rand($orderStatuses)],
+                    'user_id' => $selectedUserId,
+                    'created_by' => $selectedUserId,
+                    'province_code' => $customer->province,
+                    'district_code' => $customer->district,
+                    'ward_code' => $customer->ward,
+                    'street_address' => $customer->street_address,
+                    'full_address' => $customer->full_address,
+                    'warehouse_id' => $selectedWarehouseId,
+                    'pancake_shop_id' => $selectedPancakeShopId,
+                    'pancake_page_id' => $selectedPancakePageId,
+                    'created_at' => $faker->dateTimeBetween('-1 year', 'now'),
+                    'updated_at' => now(),
+                ]);
+
+                $totalOrderValue = 0;
+                $itemCount = $faker->numberBetween(1, 5);
+
+                for ($j = 0; $j < $itemCount; $j++) {
+                    $itemPrice = $faker->numberBetween(50, 1000) * 1000;
+                    $itemQuantity = $faker->numberBetween(1, 5);
+                    $itemName = 'Sản phẩm ' . Str::random(3);
+
+                    OrderItem::create([
+                        'order_id' => $order->id,
+                        'code' => 'SKU-' . strtoupper(Str::random(5)),
+                        'quantity' => $itemQuantity,
+                        'name' => $itemName,
+                        'price' => $itemPrice,
+                    ]);
+                    $totalOrderValue += $itemPrice * $itemQuantity;
+                }
+
+                $order->total_value = $totalOrderValue + $order->shipping_fee;
+                $order->save();
+
+                // Update customer's order statistics
+                $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
+                $customer->total_spent = Order::where('customer_id', $customer->id)
+                    ->where('status', Order::STATUS_DA_THU_TIEN)
+                    ->sum('total_value');
+                $customer->last_order_date = $order->created_at;
+                if (!$customer->first_order_date) {
+                    $customer->first_order_date = $order->created_at;
+                }
+                $customer->save();
+
+                $progressBar->advance();
+            }
+        }
+
         $progressBar->finish();
-        $this->command->info("\nĐã tạo xong 100 đơn hàng mẫu.");
+        $this->command->info("\nĐã tạo xong đơn hàng cho tất cả khách hàng.");
     }
 }
