@@ -62,7 +62,9 @@ class RolesAndPermissionsSeeder extends Seeder
             // Add any other core permissions your app needs
             'reports.view', 'settings.manage',
             // Logs Permissions
-            'logs.view', 'logs.details'
+            'logs.view', 'logs.details',
+            // New logs permissions
+            'logs.view_all', 'logs.view_own'
         ];
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission]);
@@ -133,6 +135,22 @@ class RolesAndPermissionsSeeder extends Seeder
                 ])->assignRole($staffRole);
             }
         }
+
+        // Assign logs permissions to roles
+        $superAdminRole->givePermissionTo([
+            'logs.view',
+            'logs.view_all'
+        ]);
+
+        $managerRole->givePermissionTo([
+            'logs.view',
+            'logs.view_all'
+        ]);
+
+        $staffRole->givePermissionTo([
+            'logs.view',
+            'logs.view_own'
+        ]);
 
         echo "Seed: Roles (super-admin, manager, staff), Permissions, and sample Users created successfully.\n";
     }

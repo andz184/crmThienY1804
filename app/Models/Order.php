@@ -10,11 +10,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 // Removed: use App\Models\ProductVariation;
 use App\Models\CallLog;
 // use App\Traits\Loggable; // Temporarily commented out to resolve fatal error
+use App\Traits\LogsActivity;
 
 class Order extends Model
 {
     // use HasFactory, SoftDeletes, Loggable; // Temporarily commented out
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, LogsActivity;
 
     // New Status Constants
     public const STATUS_MOI = 'moi'; // Mới
