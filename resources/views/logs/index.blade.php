@@ -20,7 +20,7 @@
                 <div class="col-md-3">
                     <div class="form-group">
                         <label for="search">Search Term</label>
-                        <input type="text" name="search" id="search" class="form-control form-control-sm" placeholder="Action, Model, ID, IP, User..." value="{{ request('search') }}">
+                        <input type="text" name="search" id="search" class="form-control form-control-sm" placeholder="Action, Description, IP, User..." value="{{ request('search') }}">
                     </div>
                 </div>
                 @if(!auth()->user()->hasRole('staff'))
@@ -49,11 +49,11 @@
                 </div>
                 <div class="col-md-2">
                     <div class="form-group">
-                        <label for="model_type">Model</label>
-                        <select name="model_type" id="model_type" class="form-control form-control-sm">
-                            <option value="">-- All Models --</option>
-                             @foreach($models as $model)
-                                <option value="{{ $model }}" {{ request('model_type') == $model ? 'selected' : '' }}>{{ $model }}</option>
+                        <label for="module">Module</label>
+                        <select name="module" id="module" class="form-control form-control-sm">
+                            <option value="">-- All Modules --</option>
+                            @foreach($models as $model)
+                                <option value="{{ $model }}" {{ request('module') == $model ? 'selected' : '' }}>{{ $model }}</option>
                             @endforeach
                         </select>
                     </div>
@@ -89,8 +89,8 @@
                     <th>ID</th>
                     <th>User</th>
                     <th>Action</th>
-                    <th>Model</th>
-                    <th>Model ID</th>
+                    <th>Module</th>
+                    <th>Description</th>
                     <th>IP Address</th>
                     <th>Date</th>
                     <th>Actions</th>
@@ -102,8 +102,8 @@
                     <td>{{ $log->id }}</td>
                     <td>{{ $log->user->name ?? 'N/A' }}</td>
                     <td>{{ ucfirst($log->action) }}</td>
-                    <td>{{ class_basename($log->model_type) }}</td>
-                    <td>{{ $log->model_id }}</td>
+                    <td>{{ $log->module }}</td>
+                    <td>{{ Str::limit($log->description, 50) }}</td>
                     <td>{{ $log->ip_address }}</td>
                     <td>{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
                     <td>

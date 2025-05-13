@@ -65,6 +65,8 @@ trait LogsActivity
                 'user_id' => $userId,
                 'action' => $action,
                 'module' => class_basename($model),
+                'model_type' => get_class($model),
+                'model_id' => $model->id,
                 'description' => self::getActivityDescription($action, $model),
                 'old_data' => $action === 'updated' ? $model->getOriginal() : null,
                 'new_data' => $model->getAttributes(),

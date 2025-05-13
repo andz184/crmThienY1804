@@ -13,6 +13,8 @@ return new class extends Migration
             $table->unsignedBigInteger('user_id');
             $table->string('action');
             $table->string('module');
+            $table->string('model_type')->nullable();
+            $table->unsignedBigInteger('model_id');
             $table->text('description');
             $table->json('old_data')->nullable();
             $table->json('new_data')->nullable();

@@ -10,6 +10,8 @@ class ActivityLog extends Model
         'user_id',
         'action',
         'module',
+        'model_type',
+        'model_id',
         'description',
         'old_data',
         'new_data',

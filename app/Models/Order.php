@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\CallLog;
 // use App\Traits\Loggable; // Temporarily commented out to resolve fatal error
 use App\Traits\LogsActivity;
+use App\Models\ActivityLog;
 
 class Order extends Model
 {
@@ -282,5 +283,12 @@ class Order extends Model
     public function pancakePage(): BelongsTo
     {
         return $this->belongsTo(PancakePage::class, 'pancake_page_id');
+    }
+
+    public function activities()
+    {
+        return $this->hasMany(ActivityLog::class, 'model_id')
+            ->where('model_type', Order::class)
+            ->latest();
     }
 }

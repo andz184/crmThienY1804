@@ -8,12 +8,17 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Foundation\Validation\ValidatesRequests;
+use Illuminate\Routing\Controller as BaseController;
 
-class ActivityLogController extends Controller
+class ActivityLogController extends BaseController
 {
+    use AuthorizesRequests, ValidatesRequests;
+
     public function __construct()
     {
-        $this->middleware('auth');
+        $this->middleware(['auth']);
     }
 
     public function index(Request $request)
@@ -55,8 +60,8 @@ class ActivityLogController extends Controller
         }
 
         // Filter by module
-        if ($request->filled('model_type')) {
-            $query->where('module', $request->model_type);
+        if ($request->filled('module')) {
+            $query->where('module', $request->module);
         }
 
         // Filter by date range
@@ -72,7 +77,7 @@ class ActivityLogController extends Controller
         $actions = ActivityLog::distinct()->pluck('action');
         $models = ActivityLog::distinct()->pluck('module');
 
-        $logs = $query->paginate(20);
+        $logs = $query->paginate(20)->withQueryString();
 
         return view('logs.index', compact('logs', 'users', 'actions', 'models'));
     }
@@ -89,6 +94,6 @@ class ActivityLogController extends Controller
             abort(403, 'Unauthorized action.');
         }
 
-        return view('admin.logs.show', compact('log'));
+        return view('logs.show', compact('log'));
     }
 }

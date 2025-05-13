@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule; // Added for Rule::in
 use App\Models\OrderWarehouseView;
 use Illuminate\Support\Str;
+use App\Models\ActivityLog;
 
 class OrderController extends Controller
 {
@@ -160,7 +161,7 @@ class OrderController extends Controller
         }
 
         // Eager load relationships if needed
-        $query->with(['user', 'items', 'warehouse', 'shippingProvider']);
+        $query->with(['user', 'items', 'warehouse', 'shippingProvider', 'activities.user']);
 
         $orders = $query->orderByDesc('created_at')->paginate(15)->withQueryString();
 
@@ -214,7 +215,13 @@ class OrderController extends Controller
              abort(403, 'You do not have permission to view this order (not assigned to you).');
         }
 
-        $order->load(['user', 'calls.user']);
+        $order->load([
+            'user',
+            'items',
+            'warehouse',
+            'shippingProvider',
+            'activities.user'
+        ]);
 
         if ($request->ajax()) {
             return view('orders._modal_details', compact('order'))->render();
@@ -351,8 +358,13 @@ class OrderController extends Controller
 
         $validatedData = $request->validate([
             'order_code' => 'required|unique:orders,order_code',
-            'customer_name' => 'required|string|max:255',
-            'customer_phone' => 'required|string|max:20',
+            'customer_name' => 'required|string|max:255|regex:/^[\p{L}\s\-\']+$/u', // Chỉ cho phép chữ cái, khoảng trắng, dấu gạch ngang và dấu nháy đơn
+            'customer_phone' => [
+                'required',
+                'string',
+                'max:20',
+                'regex:/^(0|\+84|84)[3|5|7|8|9][0-9]{8}$/' // Validate số điện thoại Việt Nam
+            ],
             'customer_email' => 'nullable|email|max:255',
             'province_code' => 'nullable|string',
             'district_code' => 'nullable|string',
@@ -460,6 +472,11 @@ class OrderController extends Controller
     {
         $this->authorize('orders.edit');
 
+        // Lưu old data trước khi update
+        $oldData = $order->toArray();
+        $oldItems = $order->items->toArray();
+        $oldData['items'] = $oldItems;
+
         $validatedData = $request->validate([
             'customer_name' => 'required|string|max:255',
             'customer_phone' => 'required|string|max:20',
@@ -500,6 +517,26 @@ class OrderController extends Controller
                     'quantity' => $item['quantity']
                 ]);
             }
+
+            // Lưu activity log với old data và new data
+            $newData = $order->fresh()->toArray();
+            $newItems = $order->items->toArray();
+            $newData['items'] = $newItems;
+
+            /** @var \App\Models\User $user */
+            $user = Auth::user();
+            ActivityLog::create([
+                'user_id' => $user->id,
+                'action' => 'updated',
+                'module' => 'Order',
+                'model_type' => Order::class,
+                'model_id' => $order->id,
+                'description' => "{$user->name} đã cập nhật đơn hàng #{$order->order_code}",
+                'old_data' => $oldData,
+                'new_data' => $newData,
+                'ip_address' => request()->ip(),
+                'user_agent' => request()->userAgent()
+            ]);
 
             DB::commit();
             return redirect()->route('orders.index')->with('success', 'Đơn hàng đã được cập nhật thành công.');

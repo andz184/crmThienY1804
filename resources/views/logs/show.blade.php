@@ -21,13 +21,16 @@
                                 <dd>{{ $log->id }}</dd>
 
                                 <dt>User</dt>
-                                <dd>{{ $log->user->name }}</dd>
+                                <dd>{{ $log->user->name ?? 'N/A' }}</dd>
 
                                 <dt>Action</dt>
-                                <dd>{{ $log->action }}</dd>
+                                <dd>{{ ucfirst($log->action) }}</dd>
 
-                                <dt>Model</dt>
-                                <dd>{{ class_basename($log->model_type) }} #{{ $log->model_id }}</dd>
+                                <dt>Module</dt>
+                                <dd>{{ $log->module }}</dd>
+
+                                <dt>Description</dt>
+                                <dd>{{ $log->description }}</dd>
 
                                 <dt>Date</dt>
                                 <dd>{{ $log->created_at->format('Y-m-d H:i:s') }}</dd>

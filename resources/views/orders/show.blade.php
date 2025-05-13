@@ -7,130 +7,170 @@
 @stop
 
 @section('content')
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card card-primary card-outline">
-                <div class="card-header">
-                    <h3 class="card-title">Thông tin Đơn hàng</h3>
-                </div>
-                <div class="card-body">
-                    <p><strong>Mã Đơn:</strong> {{ $order->order_code }}</p>
-                    <p><strong>Tên Khách hàng:</strong> {{ $order->customer_name }}</p>
-                    @if(!(auth()->user() && auth()->user()->hasRole('staff')))
-                    <p><strong>Điện thoại:</strong> {{ $order->customer_phone }}</p>
-                    @endif
-                    <p><strong>Tổng giá trị:</strong> {{ number_format($order->total_value ?? 0, 0, ',', '.') }} đ</p>
-                    <p><strong>Trạng thái:</strong> <span class="badge {{ $order->getStatusClass() }}">{{ $order->getStatusText() }}</span></p>
-                    <p><strong>Sale phụ trách:</strong> {{ $order->user->name ?? 'Chưa gán' }}</p>
-                    <p><strong>Ngày tạo:</strong> {{ $order->created_at->format('d/m/Y H:i') }}</p>
-                    <p><strong>Cập nhật lần cuối:</strong> {{ $order->updated_at->format('d/m/Y H:i') }}</p>
-                </div>
-                <div class="card-footer">
-                    <a href="{{ route('orders.index') }}" class="btn btn-secondary">Quay lại Danh sách</a>
-                    @can('orders.edit')
-                        <a href="{{ route('orders.edit', $order->id) }}" class="btn btn-warning">Sửa đơn hàng</a>
-                    @endcan
-
-                    <button class="btn btn-success btn-call" data-phone="{{ $order->customer_phone }}" data-order-id="{{ $order->id }}">
-                        <i class="fas fa-phone"></i> Gọi khách
-                    </button>
-
-                    {{-- Added In-Page Call Controls --}}
-                    <div id="in-page-call-controls" style="display: none; margin-top: 10px; padding-top:10px; border-top: 1px solid #eee;">
-                        <span style="margin-right: 10px;"><strong>Điều khiển cuộc gọi:</strong></span>
-                        <span id="in-page-callee-display" style="margin-right: 10px; font-style: italic;"></span>
-                        <button id="btn-mute-call" class="btn btn-info btn-sm" disabled><i class="fas fa-microphone"></i> Tắt tiếng</button>
-                        <button id="btn-hold-call" class="btn btn-info btn-sm" disabled><i class="fas fa-pause"></i> Giữ máy</button>
-                        <button id="btn-hangup-call" class="btn btn-danger btn-sm" disabled><i class="fas fa-phone-slash"></i> Kết thúc</button>
-                        <span id="in-page-call-status-timer" style="margin-left: 15px; font-weight: bold;"></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card card-info card-outline">
-                <div class="card-header">
-                    <h3 class="card-title">Lịch sử Cuộc gọi</h3>
-                    <div class="card-tools">
-                        <button class="btn btn-sm btn-info" id="btn-fetch-voip-history" data-order-id="{{ $order->id }}" data-customer-phone="{{ $order->customer_phone }}">
-                            <i class="fas fa-sync-alt"></i> Tải Lịch sử Voip24h
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body p-0">
-                    {{-- Progress Bar --}}
-                    <div id="call-history-progress-bar-container" class="p-3" style="display: none;">
-                        <div class="progress">
-                            <div id="call-history-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Chi tiết đơn hàng #{{ $order->order_code }}</h3>
+                        <div class="card-tools">
+                            <a href="{{ route('orders.index') }}" class="btn btn-default">
+                                <i class="fas fa-arrow-left"></i> Quay lại
+                            </a>
                         </div>
-                        <p class="text-center mt-1"><small>Đang xử lý...</small></p>
                     </div>
-                    {{-- End Progress Bar --}}
-                    <div id="call-history-loading" class="p-3 text-center" style="display: none;"> {{-- Giữ lại nếu muốn dùng spinner ở đâu đó, hoặc xóa đi --}}
-                        <i class="fas fa-spinner fa-spin"></i> Đang tải lịch sử từ Voip24h...
-                    </div>
-                    <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Người gọi</th>
-                                <th>Thời gian</th>
-                                <th>Thời lượng</th>
-                                <th>Ghi chú</th>
-                                <th>Ghi âm</th>
-                            </tr>
-                        </thead>
-                        <tbody id="call-history-table-body">
-                            @forelse ($order->calls as $call)
-                                <tr>
-                                    <td>{{ $call->user->name ?? ($call->sip_extension ?? 'N/A') }}</td>
-                                    <td>{{ $call->start_time ? $call->start_time->format('d/m/Y H:i') : ($call->call_time ? $call->call_time->format('d/m/Y H:i') : 'N/A') }}</td>
-                                    <td>{{ $call->duration_seconds ?? ($call->call_duration ?? '0') }}s</td>
-                                    <td>{{ $call->notes ?? '-' }}</td>
-                                    <td>
-                                        @if($call->recording_url)
-                                            <a href="{{ $call->recording_url }}" target="_blank">Nghe</a>
-                                        @else
-                                            -
-                                        @endif
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr><td colspan="5" class="text-center">Chưa có cuộc gọi nào.</td></tr>
-                            @endforelse
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                    <div class="card-body">
+                        <ul class="nav nav-tabs" id="orderTabs" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" id="details-tab" data-toggle="tab" href="#details" role="tab">
+                                    Thông tin đơn hàng
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" id="logs-tab" data-toggle="tab" href="#logs" role="tab">
+                                    Lịch sử thay đổi
+                                </a>
+                            </li>
+                        </ul>
 
-            {{-- Lịch sử thay đổi (Logs) --}}
-            <div class="card card-secondary card-outline">
-                <div class="card-header">
-                    <h3 class="card-title">Lịch sử Thay đổi</h3>
-                </div>
-                <div class="card-body p-0" id="order-log-history">
-                    {{-- Placeholder - Logs will be loaded via AJAX --}}
-                    <div class="p-3 text-center"><i class="fas fa-spinner fa-spin"></i> Loading history...</div>
+                        <div class="tab-content mt-3" id="orderTabContent">
+                            <div class="tab-pane fade show active" id="details" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <dl class="row">
+                                            <dt class="col-sm-4">Mã đơn hàng</dt>
+                                            <dd class="col-sm-8">{{ $order->order_code }}</dd>
+
+                                            <dt class="col-sm-4">Khách hàng</dt>
+                                            <dd class="col-sm-8">{{ $order->customer_name }}</dd>
+
+                                            <dt class="col-sm-4">Số điện thoại</dt>
+                                            <dd class="col-sm-8">{{ $order->customer_phone }}</dd>
+
+                                            <dt class="col-sm-4">Email</dt>
+                                            <dd class="col-sm-8">{{ $order->customer_email ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Địa chỉ</dt>
+                                            <dd class="col-sm-8">{{ $order->full_address ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Nhân viên phụ trách</dt>
+                                            <dd class="col-sm-8">{{ $order->user->name ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Trạng thái</dt>
+                                            <dd class="col-sm-8">{{ $order->status }}</dd>
+                                        </dl>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <dl class="row">
+                                            <dt class="col-sm-4">Kho hàng</dt>
+                                            <dd class="col-sm-8">{{ $order->warehouse->name ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Phí vận chuyển</dt>
+                                            <dd class="col-sm-8">{{ number_format($order->shipping_fee ?? 0) }} VNĐ</dd>
+
+                                            <dt class="col-sm-4">Phương thức thanh toán</dt>
+                                            <dd class="col-sm-8">{{ $order->payment_method ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Đơn vị vận chuyển</dt>
+                                            <dd class="col-sm-8">{{ $order->shippingProvider->name ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Ghi chú</dt>
+                                            <dd class="col-sm-8">{{ $order->notes ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Ghi chú bổ sung</dt>
+                                            <dd class="col-sm-8">{{ $order->additional_notes ?? 'N/A' }}</dd>
+
+                                            <dt class="col-sm-4">Ngày tạo</dt>
+                                            <dd class="col-sm-8">{{ $order->created_at->format('d/m/Y H:i:s') }}</dd>
+                                        </dl>
+                                    </div>
+                                </div>
+
+                                <h5 class="mt-4">Sản phẩm</h5>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered">
+                                        <thead>
+                                            <tr>
+                                                <th>Mã sản phẩm</th>
+                                                <th>Số lượng</th>
+                                                <th>Giá</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach($order->items as $item)
+                                            <tr>
+                                                <td>{{ $item->code }}</td>
+                                                <td>{{ $item->quantity }}</td>
+                                                <td>{{ number_format($item->price ?? 0) }} VNĐ</td>
+                                            </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="tab-pane fade" id="logs" role="tabpanel">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Thời gian</th>
+                                                <th>Người thực hiện</th>
+                                                <th>Hành động</th>
+                                                <th>Chi tiết</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @forelse($order->activities as $activity)
+                                            <tr>
+                                                <td>{{ $activity->created_at->format('d/m/Y H:i:s') }}</td>
+                                                <td>{{ $activity->user->name ?? 'N/A' }}</td>
+                                                <td>{{ ucfirst($activity->action) }}</td>
+                                                <td>
+                                                    <button type="button" class="btn btn-sm btn-info view-changes"
+                                                            data-old="{{ json_encode($activity->old_data) }}"
+                                                            data-new="{{ json_encode($activity->new_data) }}">
+                                                        <i class="fas fa-eye"></i> Xem thay đổi
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            @empty
+                                            <tr>
+                                                <td colspan="4" class="text-center">Không có dữ liệu</td>
+                                            </tr>
+                                            @endforelse
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Progress Modal for Fetching VoIP History -->
-    <div class="modal fade" id="fetchVoipHistoryProgressModal" tabindex="-1" role="dialog" aria-labelledby="fetchVoipHistoryProgressModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
-        <div class="modal-dialog" role="document">
+    <!-- Modal hiển thị chi tiết thay đổi -->
+    <div class="modal fade" id="changesModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title" id="fetchVoipHistoryProgressModalLabel">Đang tải Lịch sử Voip24h...</h5>
-                    {{-- No close button initially --}}
+                    <h5 class="modal-title">Chi tiết thay đổi</h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        <span>&times;</span>
+                    </button>
                 </div>
                 <div class="modal-body">
-                    <p id="fetch-voip-message">Đang xử lý, vui lòng đợi...</p>
-                    <div class="progress mt-2" style="height: 25px;">
-                        <div id="fetch-voip-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Dữ liệu cũ</h6>
+                            <pre id="oldData"></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Dữ liệu mới</h6>
+                            <pre id="newData"></pre>
+                        </div>
                     </div>
-                </div>
-                <div class="modal-footer" id="fetch-voip-progress-modal-footer" style="display: none;">
-                     <button type="button" class="btn btn-secondary" data-dismiss="modal" id="close-fetch-voip-modal-btn">Đóng</button>
                 </div>
             </div>
         </div>
@@ -543,6 +583,16 @@
                     console.warn('Call window not available for hangup.');
                     updateInPageControlsUI(null);
                 }
+            });
+
+            $('.view-changes').click(function() {
+                var oldData = $(this).data('old');
+                var newData = $(this).data('new');
+
+                $('#oldData').text(JSON.stringify(oldData, null, 2));
+                $('#newData').text(JSON.stringify(newData, null, 2));
+
+                $('#changesModal').modal('show');
             });
 
         });

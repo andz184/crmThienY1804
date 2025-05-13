@@ -180,15 +180,13 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
             ->name('pancake.sync.now')
             ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.manage'); // Reuse a suitable permission
 
-        // Activity Logs
+        // Activity Logs - Remove duplicate route definitions and consolidate here
         Route::middleware(['auth'])
-            ->prefix('admin')
-            ->name('admin.')
             ->group(function () {
-                Route::get('logs', [App\Http\Controllers\Admin\ActivityLogController::class, 'index'])
+                Route::get('activity-logs', [App\Http\Controllers\Admin\ActivityLogController::class, 'index'])
                     ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':logs.view_all|logs.view_own')
                     ->name('logs.index');
-                Route::get('logs/{log}', [App\Http\Controllers\Admin\ActivityLogController::class, 'show'])
+                Route::get('activity-logs/{log}', [App\Http\Controllers\Admin\ActivityLogController::class, 'show'])
                     ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':logs.view_all|logs.view_own')
                     ->name('logs.show');
             });
