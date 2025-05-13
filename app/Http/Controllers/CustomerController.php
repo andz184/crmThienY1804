@@ -529,8 +529,8 @@ class CustomerController extends Controller
     {
         try {
             // Set execution time
-            set_time_limit(3600); // 1 hour
-            ini_set('memory_limit', '512M');
+            set_time_limit(7200); // Tăng lên 2 giờ
+            ini_set('memory_limit', '1024M'); // Tăng memory limit lên 1GB
 
             $result = $this->pancakeService->syncCustomers();
 

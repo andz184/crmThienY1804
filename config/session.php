@@ -32,12 +32,9 @@ return [
     |
     */
 
-    'lifetime' => env('SESSION_LIFETIME', 120),
+    'lifetime' => (int) env('SESSION_LIFETIME', 120),
 
-    'expire_on_close' => false,
-
-    'gc_maxlifetime' => env('SESSION_LIFETIME', 120) * 60, // Convert minutes to seconds
-    'cookie_lifetime' => env('SESSION_LIFETIME', 120) * 60, // Convert minutes to seconds
+    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
 
     /*
     |--------------------------------------------------------------------------

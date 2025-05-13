@@ -19,7 +19,7 @@ class PancakeService
     protected $progressKey = 'pancake_sync_progress';
     protected $statsKey = 'pancake_sync_stats';
     protected $lastSyncKey = 'pancake_last_sync';
-    protected $timeout = 3600; // 1 hour timeout
+    protected $timeout = 7200; // Tăng timeout lên 2 giờ
 
     public function __construct()
     {

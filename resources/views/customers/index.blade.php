@@ -287,7 +287,7 @@ $(document).ready(function() {
             url: "{{ route('customers.sync') }}",
             type: 'POST',
             data: { _token: '{{ csrf_token() }}' },
-            timeout: 600000, // 10 minutes timeout
+            timeout: 7200000, // Tăng lên 2 giờ (2 * 60 * 60 * 1000 ms)
             success: function(res) {
                 $bar.css('width', '100%');
 

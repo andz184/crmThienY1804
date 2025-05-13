@@ -173,14 +173,15 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
              ->name('logs.model');
 
         // Pancake Sync Routes
-        Route::middleware(['auth', 'pancake.timeout'])->group(function () {
-            Route::post('/pancake/sync', [PancakeSyncController::class, 'sync'])->name('pancake.sync');
-            Route::get('/pancake/sync/status', [PancakeSyncController::class, 'status'])->name('pancake.sync.status');
-            Route::post('/customers/sync', [App\Http\Controllers\CustomerController::class, 'syncFromPancake'])->name('customers.sync');
-        });
+        Route::get('pancake-sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'index'])
+            ->name('pancake.sync.index')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.manage'); // Reuse a suitable permission
+        Route::post('pancake-sync/now', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'syncNow'])
+            ->name('pancake.sync.now')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.manage'); // Reuse a suitable permission
 
         // Activity Logs - Remove duplicate route definitions and consolidate here
-        Route::middleware(['auth', \App\Http\Middleware\SetRequestTimeout::class])
+        Route::middleware(['auth'])
             ->group(function () {
                 Route::get('activity-logs', [App\Http\Controllers\Admin\ActivityLogController::class, 'index'])
                     ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':logs.view_all|logs.view_own')
@@ -199,3 +200,10 @@ Route::post('/api/log-call', [OrderController::class, 'logCall'])->middleware('a
 Route::get('/call-window', function () {
     return view('calls.call_window');
 })->name('calls.window');
+
+// Pancake Sync Routes
+Route::middleware(['auth'])->group(function () {
+    Route::post('/pancake/sync', [PancakeSyncController::class, 'sync'])->name('pancake.sync');
+    Route::get('/pancake/sync/status', [PancakeSyncController::class, 'status'])->name('pancake.sync.status');
+    Route::post('/customers/sync', [App\Http\Controllers\CustomerController::class, 'syncFromPancake'])->name('customers.sync');
+});
