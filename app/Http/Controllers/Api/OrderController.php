@@ -174,7 +174,7 @@ class OrderController extends Controller
                 'subtotal' => $subtotal,
                 'total_value' => $total,
                 'status' => Order::STATUS_MOI,
-                'user_id' => $request->assigning_seller_id,
+                'user_id' => $request->user_id ?? null,
                 'warehouse_id' => $request->warehouse_id,
                 'pancake_page_id' => $request->page_id,
                 'additional_data' => [
