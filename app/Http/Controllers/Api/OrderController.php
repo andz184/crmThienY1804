@@ -144,19 +144,19 @@ class OrderController extends Controller
                 'additional_notes' => $request->note_print ?? null,
                 'shipping_fee' => $request->shipping_fee ?? 0,
                 'transfer_money' => $request->transfer_money ?? 0,
-                'subtotal' => $subtotal,
-                'total_value' => $total,
-                'status' => Order::STATUS_MOI,
+                'subtotal' => $subtotal ?? 0,
+                'total_value' => $total ?? 0,
+                'status' => Order::STATUS_MOI ?? null,
                 'user_id' => $request->user_id ?? null,
                 'warehouse_id' => $request->warehouse_id ?? null,
                 'pancake_page_id' => $request->page_id ?? null,
                 'additional_data' => [
-                    'assigning_care_id' => $request->assigning_care_id,
-                    'partner' => $request->partner,
-                    'third_party' => $request->third_party,
-                    'order_sources' => $request->order_sources,
-                    'account' => $request->account,
-                    'shipping_address_full' => $request->shipping_address
+                    'assigning_care_id' => $request->assigning_care_id ?? null,
+                    'partner' => $request->partner ?? null,
+                    'third_party' => $request->third_party ?? null,
+                    'order_sources' => $request->order_sources ?? null,
+                    'account' => $request->account ?? null,
+                    'shipping_address_full' => $request->shipping_address ?? null
                 ]
             ]);
 
