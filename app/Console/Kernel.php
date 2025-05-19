@@ -17,6 +17,7 @@ class Kernel extends ConsoleKernel
         Commands\CalculateDailyRevenueSummary::class, // Đảm bảo dòng này được thêm hoặc đã có
         Commands\SyncPancakeCustomers::class,
         Commands\TestPancakeApi::class,
+        Commands\EnsureSuperAdminPermissions::class,
     ];
 
     /**
@@ -28,6 +29,9 @@ class Kernel extends ConsoleKernel
 
         // Chạy lệnh tính toán doanh thu hàng ngày, ví dụ vào lúc 1:00 AM mỗi ngày
         $schedule->command('app:calculate-daily-revenue')->dailyAt('01:00');
+
+        // Đảm bảo super-admin luôn có đầy đủ quyền
+        $schedule->command('admin:ensure-permissions')->daily();
 
         // Bạn cũng có thể chạy cho ngày hôm qua một cách tường minh
         // $schedule->command('app:calculate-daily-revenue '.now()->subDay()->toDateString())->dailyAt('01:05');

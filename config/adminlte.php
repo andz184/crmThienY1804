@@ -377,6 +377,69 @@ return [
             'icon' => 'fas fa-fw fa-sitemap',
             'can'  => 'teams.view',
         ],
+        // Reports Menu
+        [
+            'text'    => 'Báo Cáo',
+            'route'   => 'reports.index',
+            'icon'    => 'fas fa-fw fa-chart-bar',
+            'can'     => 'reports.view',
+            'submenu' => [
+                [
+                    'text' => 'Tổng Doanh Thu',
+                    'route' => 'reports.total_revenue',
+                    'icon' => 'fas fa-fw fa-chart-line',
+                    'can' => 'reports.total_revenue',
+                ],
+                [
+                    'text' => 'Báo Cáo Chi Tiết',
+                    'route' => 'reports.detail',
+                    'icon' => 'fas fa-fw fa-file-alt',
+                    'can' => 'reports.detailed',
+                ],
+                [
+                    'text' => 'Theo Nhóm Hàng Hóa',
+                    'route' => 'reports.product_groups',
+                    'icon' => 'fas fa-fw fa-boxes',
+                    'can' => 'reports.product_groups',
+                ],
+                [
+                    'text' => 'Theo Chiến Dịch',
+                    'route' => 'reports.campaigns',
+                    'icon' => 'fas fa-fw fa-bullhorn',
+                    'can' => 'reports.campaigns',
+                ],
+                [
+                    'text' => 'Phiên Live',
+                    'route' => 'reports.live_sessions',
+                    'icon' => 'fas fa-fw fa-video',
+                    'can' => 'reports.live_sessions',
+                ],
+                [
+                    'text' => 'Thanh Toán',
+                    'route' => 'reports.payments',
+                    'icon' => 'fas fa-fw fa-money-bill-wave',
+                    'can' => 'reports.view',
+                ],
+                [
+                    'text' => 'Tỉ Lệ Chốt Đơn',
+                    'route' => 'reports.conversion_rates',
+                    'icon' => 'fas fa-fw fa-percentage',
+                    'can' => 'reports.conversion_rates',
+                ],
+                [
+                    'text' => 'Khách Hàng Mới',
+                    'route' => 'reports.new_customers',
+                    'icon' => 'fas fa-fw fa-user-plus',
+                    'can' => 'reports.customer_new',
+                ],
+                [
+                    'text' => 'Khách Hàng Cũ',
+                    'route' => 'reports.returning_customers',
+                    'icon' => 'fas fa-fw fa-user-clock',
+                    'can' => 'reports.customer_returning',
+                ],
+            ],
+        ],
         // Settings Link
         ['header' => 'CÀI ĐẶT TÀI KHOẢN'],
         [
@@ -415,6 +478,13 @@ return [
             'route'  => 'admin.pancake.sync.index',
             'icon' => 'fas fa-fw fa-sync-alt',
             'can'  => 'settings.manage', // Or your new pancake.sync permission
+        ],
+        // Add the Pancake Webhook Configuration menu item
+        [
+            'text' => 'Cấu hình Webhook Pancake',
+            'route'  => 'admin.pancake.webhooks',
+            'icon' => 'fas fa-fw fa-link',
+            'can'  => 'settings.manage',
         ],
     ],
 

@@ -107,6 +107,73 @@
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {{-- Pancake Information Section --}}
+                                <h5 class="mt-4">Thông tin Pancake</h5>
+                                <div class="card card-outline card-primary">
+                                    <div class="card-body">
+                                        <div class="row">
+                                            <div class="col-md-6">
+                                                <dl class="row">
+                                                    <dt class="col-sm-5">Pancake Order ID</dt>
+                                                    <dd class="col-sm-7">
+                                                        @if($order->pancake_order_id)
+                                                            <span class="badge badge-primary">{{ $order->pancake_order_id }}</span>
+                                                            <small class="text-muted ml-2">(Đơn được tạo từ Pancake)</small>
+                                                        @else
+                                                            <span class="text-muted">Không có</span>
+                                                        @endif
+                                                    </dd>
+
+                                                    <dt class="col-sm-5">Pancake Push Status</dt>
+                                                    <dd class="col-sm-7">
+                                                        @if($order->pancake_push_status === 'success' || $order->internal_status === 'Pushed to Pancake successfully.')
+                                                            <span class="badge badge-success">Đã đẩy thành công</span>
+                                                        @elseif($order->pancake_push_status === 'failed_stock')
+                                                            <span class="badge badge-danger">Lỗi tồn kho</span>
+                                                        @elseif($order->pancake_push_status === 'failed_other')
+                                                            <span class="badge badge-warning">Lỗi khác</span>
+                                                        @elseif($order->pancake_push_status)
+                                                            <span class="badge badge-secondary">{{ ucfirst(str_replace('_', ' ', $order->pancake_push_status)) }}</span>
+                                                        @else
+                                                            <span class="text-muted">Chưa đẩy</span>
+                                                        @endif
+                                                    </dd>
+                                                </dl>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <dl class="row">
+                                                    <dt class="col-sm-5">Post ID (Campaign)</dt>
+                                                    <dd class="col-sm-7">{{ $order->post_id ?? 'N/A' }}</dd>
+
+                                                    <dt class="col-sm-5">Shop/Page</dt>
+                                                    <dd class="col-sm-7">
+                                                        @if($order->pancake_shop_id)
+                                                            {{ \App\Models\PancakeShop::find($order->pancake_shop_id)->name ?? 'Shop ID: '.$order->pancake_shop_id }}
+                                                            @if($order->pancake_page_id)
+                                                                / {{ \App\Models\PancakePage::find($order->pancake_page_id)->name ?? 'Page ID: '.$order->pancake_page_id }}
+                                                            @endif
+                                                        @else
+                                                            N/A
+                                                        @endif
+                                                    </dd>
+                                                </dl>
+                                            </div>
+                                        </div>
+
+                                        @if(!$order->pancake_order_id && (!$order->pancake_push_status || $order->pancake_push_status !== 'success') && $order->internal_status !== 'Pushed to Pancake successfully.')
+                                            <div class="text-center mt-2">
+                                                @can('orders.push_to_pancake')
+                                                    <button class="btn btn-primary btn-push-pancake"
+                                                            data-order-id="{{ $order->id }}"
+                                                            data-url="{{ route('orders.pushToPancake', $order->id) }}">
+                                                        <i class="fas fa-rocket mr-1"></i> Đẩy đơn lên Pancake
+                                                    </button>
+                                                @endcan
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="tab-pane fade" id="logs" role="tabpanel">

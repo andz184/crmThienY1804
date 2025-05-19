@@ -64,6 +64,7 @@ class OrderController extends Controller
         $maxShippingFee = $request->input('max_shipping_fee');
         $filterType = $request->input('filter_type');
         $pancakeStatusFilter = $request->input('status'); // Value from the Pancake Status dropdown
+        $pancakeOrigin = $request->input('pancake_origin'); // New filter for Pancake-originated orders
 
         if ($user->hasRole('manager')) {
             $teamId = $user->manages_team_id;
@@ -148,6 +149,29 @@ class OrderController extends Controller
             }
         }
 
+        // Filter by Pancake Origin
+        if ($pancakeOrigin) {
+            if ($pancakeOrigin === 'from_pancake') {
+                $query->whereNotNull('pancake_order_id');
+            } elseif ($pancakeOrigin === 'to_pancake') {
+                $query->whereNull('pancake_order_id')
+                      ->where(function($q) {
+                          $q->where('pancake_push_status', 'pushed')
+                            ->orWhere('internal_status', 'Pushed to Pancake successfully.');
+                      });
+            } elseif ($pancakeOrigin === 'not_synced') {
+                $query->whereNull('pancake_order_id')
+                      ->where(function($q) {
+                          $q->whereNull('pancake_push_status')
+                            ->orWhere('pancake_push_status', '!=', 'pushed');
+                      })
+                      ->where(function($q) {
+                          $q->whereNull('internal_status')
+                            ->orWhere('internal_status', '!=', 'Pushed to Pancake successfully.');
+                      });
+            }
+        }
+
         if ($request->filled('date_from') && $request->filled('date_to')) {
             $query->whereBetween('created_at', [$request->date_from, $request->date_to]);
         }
@@ -190,6 +214,7 @@ class OrderController extends Controller
             'maxShippingFee' => $maxShippingFee,
             'shippingProviders' => $shippingProviders,
             'filterType' => $filterType,
+            'pancakeOrigin' => $pancakeOrigin,
         ]);
     }
 
@@ -964,237 +989,95 @@ class OrderController extends Controller
 
     public function pushToPancake(Request $request, Order $order)
     {
-        // TODO: Replace with actual permission check
-        // $this->authorize('orders.push_to_pancake');
+        try {
+            $this->authorize('orders.push_to_pancake'); // Ensure the user has the right permission
 
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
+            // Use the PancakeSyncController to push the order
+            $pancakeSyncController = new \App\Http\Controllers\PancakeSyncController();
+            $result = $pancakeSyncController->pushOrderToPancake($order);
 
-        // Load necessary relationships
-        $order->load(['items', 'user', 'warehouse', 'province', 'district', 'ward', 'pancakeShop', 'pancakePage']);
-
-        $apiKey = config('pancake.api_key');
-        $baseUri = config('pancake.base_uri');
-
-        // Determine the API Shop ID to use for the endpoint and payload
-        $pancakeApiShopId = null;
-        if ($order->pancakeShop && !empty($order->pancakeShop->pancake_id)) {
-            $pancakeApiShopId = $order->pancakeShop->pancake_id;
-            Log::info("Using Shop ID from Order's associated PancakeShop: {$pancakeApiShopId} for Order ID: {$order->id}");
-        } else {
-            $pancakeApiShopId = config('pancake.shop_id');
-            Log::info("Falling back to Shop ID from config: {$pancakeApiShopId} for Order ID: {$order->id} (Order had no PancakeShop or its pancake_id was empty/null).", [
-                'order_has_pancake_shop_linked' => !is_null($order->pancake_shop_id),
-                'linked_pancake_shop_api_id' => $order->pancakeShop->pancake_id ?? null
-            ]);
-        }
-
-        // Check if a valid API key and Shop ID are available
-        if (empty($apiKey) || empty($pancakeApiShopId)) {
-            $missingItems = [];
-            if (empty($apiKey)) $missingItems[] = 'API Key';
-            if (empty($pancakeApiShopId)) $missingItems[] = 'Shop ID (neither order-specific nor config provided a valid one)';
-
-            $errorMessage = 'Pancake configuration error: ' . implode(' and ', $missingItems) . ' missing.';
-            Log::error($errorMessage, [
+            if ($result['success']) {
+                // Success
+                return response()->json([
+                    'success' => true,
+                    'message' => $result['message']
+                ]);
+            } else {
+                // Error
+                return response()->json([
+                    'success' => false,
+                    'message' => $result['message']
+                ], 500);
+            }
+        } catch (\Exception $e) {
+            Log::error('Error pushing order to Pancake', [
                 'order_id' => $order->id,
-                'order_pancake_shop_linked' => !is_null($order->pancakeShop),
-                'order_pancake_shop_api_id_value' => $order->pancakeShop->pancake_id ?? null,
-                'config_pancake_shop_id_value' => config('pancake.shop_id'),
-                'final_pancake_api_shop_id_used_for_check' => $pancakeApiShopId
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            $order->update(['internal_status' => 'Pancake Config Error: ' . Str::limit($errorMessage, 240)]);
-            return response()->json(['success' => false, 'message' => $errorMessage], 500);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Đã xảy ra lỗi: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a consolidated view of all orders with sync capabilities
+     *
+     * @return \Illuminate\View\View
+     */
+    public function consolidated()
+    {
+        // Authorize the user
+        $this->authorize('orders.view');
+
+        // Get all orders with pagination
+        $query = Order::with(['items', 'user', 'creator', 'pancakeShop', 'pancakePage', 'warehouse', 'shippingProvider'])
+            ->latest();
+
+        // Filter by status if provided
+        if (request()->has('status') && request('status') !== 'all') {
+            $query->where('status', request('status'));
         }
 
-        // Determine the Page ID for the payload
-        $pancakeApiPageId = null;
-        if ($order->pancakePage && !empty($order->pancakePage->pancake_page_id)) {
-            $pancakeApiPageId = $order->pancakePage->pancake_page_id;
-            Log::info("Using Page ID from Order's associated PancakePage: {$pancakeApiPageId} for Order ID: {$order->id}");
-        } else {
-            $pancakeApiPageId = config('pancake.default_page_id');
-            Log::info("Falling back to Page ID from config: {$pancakeApiPageId} for Order ID: {$order->id} (Order had no PancakePage or its pancake_page_id was empty/null).", [
-                'order_has_pancake_page_link' => !is_null($order->pancake_page_id),
-                'linked_pancake_page_api_id' => $order->pancakePage->pancake_page_id ?? null
-            ]);
-        }
-        // Note: $pancakeApiPageId can be null/empty here if config('pancake.default_page_id') is also null/empty.
+        // Filter by Pancake sync status
+        if (request()->has('pancake_status')) {
+            $pancake_status = request('pancake_status');
 
-        // --- Data Mapping ---
-        $pancakeOrderData = [
-            'assigning_seller_id' => $order->user->pancake_uuid ?? null,
-            'assigning_care_id' => $order->user->pancake_care_uuid ?? $order->user->pancake_uuid ?? null,
-            'warehouse_id' => $order->warehouse ? $order->warehouse->pancake_id : null,
-            'bill_phone_number' => $order->customer_phone,
-            'bill_full_name' => $order->customer_name,
-            // First occurrence of shipping_address (string) - this key will likely be overwritten by the object version below
-            // when PHP array is converted to JSON by standard methods.
-            'shipping_address' => $order->street_address ?? $order->full_address ?? '',
-            'shipping_fee' => isset($order->shipping_fee) ? (string)$order->shipping_fee : "0",
-            'note' => $order->notes ?? '',
-            'note_print' => $order->additional_notes ?? "",
-            'transfer_money' => isset($order->transfer_money) ? (string)$order->transfer_money : null,
-            'partner' => $order->shippingProvider ? [
-                'partner_id' => $order->shippingProvider->pancake_id ?? null,
-                'partner_name' => "", // Hardcoded empty as per target JSON
-            ] : null,
-            // Second occurrence of shipping_address (object) - this is what will likely be sent for the 'shipping_address' key
-            'shipping_address' => [
-                'address' => $order->street_address ?? '',
-                'commune_id' => ($order->ward_code && $order->ward) ? (string)$order->ward_code : "",
-                'country_code' => '84',
-                'district_id' => ($order->district_code && $order->district) ? (string)$order->district_code : "",
-                'full_address' => "", // Hardcoded empty as per target JSON
-                'full_name' => $order->customer_name,
-                'phone_number' => $order->customer_phone,
-                'post_code' => null,
-                'province_id' => ($order->province_code && $order->province) ? (string)$order->province_code : "",
-            ],
-            'third_party' => [
-                'custom_information' => new \stdClass() // Creates an empty JSON object {}
-            ],
-            'order_sources' => -1, // Integer
-            'page_id' => $pancakeApiPageId, // Resolved Page ID
-            'account' => is_numeric($pancakeApiPageId) ? (int)$pancakeApiPageId : null, // Page ID as integer if numeric
-            'items' => $order->items->map(function ($item) {
-                return [
-                    'variation_id' => $item->pancake_variation_id,
-                    'quantity' => (int)($item->quantity ?? 1),
-                    'variation_info' => [
-                        'retail_price' => isset($item->price) ? (string)$item->price : "0",
-                    ]
-                ];
-            })->toArray(),
-            // Fields OMITTED from this version based on target JSON:
-            // is_free_shipping, received_at_shop, custom_id (top-level)
+            if ($pancake_status === 'pushed') {
+                $query->whereNotNull('pancake_order_id');
+            } elseif ($pancake_status === 'not_pushed') {
+                $query->whereNull('pancake_order_id');
+            } elseif ($pancake_status === 'failed') {
+                $query->where('pancake_push_status', 'failed');
+            }
+        }
+
+        // Search functionality
+        if (request()->has('search') && !empty(request('search'))) {
+            $search = request('search');
+            $query->where(function($q) use ($search) {
+                $q->where('order_code', 'like', "%{$search}%")
+                  ->orWhere('customer_name', 'like', "%{$search}%")
+                  ->orWhere('customer_phone', 'like', "%{$search}%")
+                  ->orWhere('customer_email', 'like', "%{$search}%");
+            });
+        }
+
+        $orders = $query->paginate(15)->withQueryString();
+
+        // Get all possible statuses for filter
+        $statuses = Order::getAllStatuses();
+
+        // Get Pancake config
+        $pancakeConfig = [
+            'api_key' => config('pancake.api_key'),
+            'shop_id' => config('pancake.shop_id'),
+            'webhook_enabled' => (bool) config('pancake.webhook_secret')
         ];
 
-
-
-// $abc definition starts here. It should be a single payload object.
-// The fields like assigning_seller_id, assigning_care_id, warehouse_id are kept as per your
-// hardcoded example, assuming you might be testing with specific IDs.
-// Other fields are sourced from the $order object or other variables available in scope.
-$abc = [
-    'assigning_seller_id' => '2945126d-4d6f-4057-b0f2-d523721a69c4', // As per your example
-    'assigning_care_id' => '2945126d-4d6f-4057-b0f2-d523721a69c4', // As per your example
-    'warehouse_id' => '89e4d1c1-e0a6-4a9a-b4d5-3d67318ab6e0', // As per your example
-    'bill_phone_number' => $order->customer_phone,
-    'bill_full_name' => $order->customer_name,
-
-    'shipping_fee' =>  "0",
-    'note' => $order->notes ?? '',
-    'note_print' => $order->additional_notes ?? "",
-    'transfer_money' => isset($order->transfer_money) ? (string)$order->transfer_money : null,
-    'partner' => [
-        'partner_id' => $order->shippingProvider->pancake_id ?? null,
-        'partner_name' => "" // Hardcoded empty as per your example
-    ],
-    'shipping_address' => [ // This is the object version as per your target JSON
-        'address' => $order->street_address ?? $order->full_address ?? '',
-        'commune_id' => ($order->ward_code && $order->ward) ? (string)$order->ward_code : "",
-        'country_code' => '84',
-        'district_id' => ($order->district_code && $order->district) ? (string)$order->district_code : "",
-        'full_address' => '', // Hardcoded empty as per your example
-        'full_name' => $order->customer_name,
-        'phone_number' => $order->customer_phone,
-        'post_code' => null,
-        'province_id' => ($order->province_code && $order->province) ? (string)$order->province_code : "",
-    ],
-    'third_party' => [
-        'custom_information' => new \stdClass()
-    ],
-    'order_sources' => -1, // Hardcoded as per your example
-    'page_id' => $pancakeApiPageId, // Resolved earlier in the function
-    'account' => $pancakeApiPageId,
-    'items' => [
-        [
-          "variation_id" => "dc6f33f4-00d6-4f5c-b2e5-55ee1c4acaed",
-          "quantity" => 1,
-          "variation_info" => [
-          "retail_price" => "11111"
-          ]
-        ]
-      ]
-];
-
-
-        $endpoint = rtrim($baseUri, '/') . "/shops/{$pancakeApiShopId}/orders?api_key={$apiKey}";
-
-        Log::info("Pushing order {$order->id} to Pancake.", ['endpoint' => $endpoint, 'data' => $abc]); // Log $abc
-
-        try {
-            $response = Http::withHeaders(['Content-Type' => 'application/json'])
-                ->post($endpoint, $abc);
-
-            Log::info("Pancake API Response for order {$order->id}:", ['status' => $response->status(), 'body' => $response->body()]);
-            $responseData = $response->json();
-
-            // Check for Pancake's logical success/failure even if HTTP status is 2xx
-            if ($response->successful() && (isset($responseData['success']) && $responseData['success'] === true)) {
-                // True success from Pancake
-                $order->update([
-                    'internal_status' => 'Pushed to Pancake successfully.',
-                    // 'pancake_order_id' => $responseData['data']['id'] ?? null // Optional: store pancake order ID if available
-                ]);
-                return response()->json(['success' => true, 'message' => 'Đơn hàng đã được đẩy lên Pancake thành công.', 'data' => $responseData]);
-            } else {
-                // Either HTTP error, or HTTP success but Pancake logical error
-                $errorBody = $responseData ?? $response->body(); // Use parsed JSON if available
-                $pancakeErrorMessage = 'Lỗi không xác định từ Pancake.';
-                $fieldErrors = [];
-
-                if (is_array($errorBody)) {
-                    if (isset($errorBody['success']) && $errorBody['success'] === false) {
-                        // Pancake specific logical error within a 2xx or other response
-                        $pancakeErrorMessage = $errorBody['message'] ?? $pancakeErrorMessage;
-                        if (isset($errorBody['errors']) && is_array($errorBody['errors'])) {
-                            foreach ($errorBody['errors'] as $field => $messages) {
-                                $fieldErrors[] = $field . ': ' . implode(', ', (array)$messages);
-                            }
-                        }
-                    } elseif (isset($errorBody['error']['message'])) {
-                        // Structure like { "error": { "message": "..." } }
-                        $pancakeErrorMessage = $errorBody['error']['message'];
-                        if (isset($errorBody['error']['fields']) && is_array($errorBody['error']['fields'])) {
-                             foreach ($errorBody['error']['fields'] as $field => $messages) {
-                                $fieldErrors[] = $field . ': ' . implode(', ', (array)$messages);
-                            }
-                        }
-                    } elseif (isset($errorBody['message'])) {
-                        // Structure like { "message": "...", "errors": { ... } }
-                        $pancakeErrorMessage = $errorBody['message'];
-                        if (isset($errorBody['errors']) && is_array($errorBody['errors'])) {
-                            foreach ($errorBody['errors'] as $field => $messages) {
-                                $fieldErrors[] = $field . ': ' . implode(', ', (array)$messages);
-                            }
-                        }
-                    }
-                } elseif (is_string($errorBody) && !empty($errorBody)) {
-                    $pancakeErrorMessage = $errorBody;
-                }
-
-                $fullErrorMessage = $pancakeErrorMessage;
-                if (!empty($fieldErrors)) {
-                    $fullErrorMessage .= " Chi tiết: " . implode('; ', $fieldErrors);
-                }
-
-                Log::error("Error pushing order {$order->id} to Pancake: ", ['status' => $response->status(), 'response_body' => $errorBody, 'parsed_message' => $fullErrorMessage]);
-                $order->update(['internal_status' => 'Pancake Push Error: ' . Str::limit($fullErrorMessage, 240) ]); // Max length for internal_status
-
-                // Use $response->status() for the HTTP status code, or 400/500 if it was a logical Pancake error in a 2xx response
-                $httpStatusCode = $response->successful() ? 400 : $response->status(); // If HTTP was 2xx but Pancake said error, treat as 400
-                return response()->json(['success' => false, 'message' => $fullErrorMessage, 'details' => $errorBody], $httpStatusCode);
-            }
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            Log::error("ConnectionException while pushing order {$order->id} to Pancake: " . $e->getMessage());
-            $order->update(['internal_status' => 'Pancake Push Error: Connection failed']);
-            return response()->json(['success' => false, 'message' => 'Không thể kết nối đến Pancake API: ' . $e->getMessage()], 503);
-        } catch (\Exception $e) {
-            Log::error("General Exception while pushing order {$order->id} to Pancake: " . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
-            $order->update(['internal_status' => 'Pancake Push Error: General error']);
-            return response()->json(['success' => false, 'message' => 'Có lỗi xảy ra: ' . $e->getMessage()], 500);
-        }
+        return view('orders.consolidated', compact('orders', 'statuses', 'pancakeConfig'));
     }
 }

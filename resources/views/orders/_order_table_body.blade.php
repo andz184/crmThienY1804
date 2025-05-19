@@ -1,6 +1,17 @@
 @forelse ($orders as $order)
     <tr>
-        <td>{{ $order->order_code }}</td>
+        <td>
+            {{ $order->order_code }}
+            @if($order->pancake_order_id)
+                <span class="badge badge-primary ml-1" title="Đơn hàng tạo từ Pancake">
+                    <i class="fas fa-arrow-down"></i> P
+                </span>
+            @elseif($order->pancake_push_status === 'success' || $order->internal_status === 'Pushed to Pancake successfully.')
+                <span class="badge badge-success ml-1" title="Đơn hàng đã đẩy lên Pancake">
+                    <i class="fas fa-arrow-up"></i> P
+                </span>
+            @endif
+        </td>
         <td>{{ $order->customer_name }}</td>
         <td>
             @if(auth()->user()->hasRole('staff'))

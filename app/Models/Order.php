@@ -65,6 +65,8 @@ class Order extends Model
         'warehouse_id',
         'pancake_shop_id',
         'pancake_page_id',
+        'pancake_order_id',
+        'post_id',
         'transfer_money',
         'pancake_push_status',
     ];

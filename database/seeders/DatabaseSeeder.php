@@ -59,6 +59,9 @@ class DatabaseSeeder extends Seeder
             DailyRevenueAggregateSeeder::class,
         ]);
 
+        // Ensure super-admin has all permissions (including any added by other seeders)
+        $this->command->call('admin:ensure-permissions');
+
         // Remove the separate WardSeeder call section
         // DB::statement('SET FOREIGN_KEY_CHECKS=0;');
         // DB::table('wards')->delete();

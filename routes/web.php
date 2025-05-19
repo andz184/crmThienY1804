@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\Admin\PancakeSyncController;
+use App\Http\Controllers\PancakeConfigController;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -38,6 +39,9 @@ Route::get('/ajax/staff-by-manager/{manager}', [DashboardController::class, 'get
 Route::middleware(['auth', 'verified'])->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Main Orders Page (Consolidated)
+    Route::get('/orders', [OrderController::class, 'consolidated'])->name('orders.consolidated');
 
     // Orders
     Route::get('orders/trashed', [OrderController::class, 'trashed'])->name('orders.trashed');
@@ -211,5 +215,75 @@ Route::get('/call-window', function () {
 Route::middleware(['auth'])->group(function () {
     Route::post('/pancake/sync', [PancakeSyncController::class, 'sync'])->name('pancake.sync');
     Route::get('/pancake/sync/status', [PancakeSyncController::class, 'status'])->name('pancake.sync.status');
+    Route::post('/pancake/sync/cancel', [PancakeSyncController::class, 'cancelSync'])->name('pancake.sync.cancel');
     Route::post('/customers/sync', [App\Http\Controllers\CustomerController::class, 'syncFromPancake'])->name('customers.sync');
+
+    // New order sync routes
+    Route::post('/pancake/orders/sync', [PancakeSyncController::class, 'syncOrders'])->name('pancake.orders.sync');
+    Route::post('/pancake/orders/push/bulk', [PancakeSyncController::class, 'bulkPushOrdersToPancake'])->name('pancake.orders.push.bulk');
+    Route::get('/pancake/sync', [PancakeSyncController::class, 'index'])->name('pancake.sync.index');
+});
+
+Route::get('/pancake-config', [PancakeConfigController::class, 'index'])->name('pancake.config');
+Route::post('/pancake-config', [PancakeConfigController::class, 'update'])->name('pancake.config.update');
+Route::post('/pancake-config/test', [PancakeConfigController::class, 'testConnection'])->name('pancake.config.test');
+
+// Pancake Webhook Configuration
+Route::get('/admin/pancake/webhooks', [App\Http\Controllers\Admin\PancakeWebhookConfigController::class, 'index'])->name('admin.pancake.webhooks');
+
+// Report routes
+Route::middleware(['auth'])->prefix('reports')->name('reports.')->group(function () {
+    Route::get('/', [App\Http\Controllers\ReportController::class, 'index'])->name('index');
+
+    // API đồng bộ dữ liệu từ Pancake
+    Route::post('/sync-from-pancake', [App\Http\Controllers\ReportController::class, 'syncFromPancake'])->name('sync_from_pancake');
+
+    // Order Reports
+    Route::get('/orders', [App\Http\Controllers\ReportController::class, 'orderReportIndex'])->name('orders');
+    Route::get('/orders/data', [App\Http\Controllers\ReportController::class, 'getOrderReportData'])->name('orders.data');
+
+    // Báo cáo tổng doanh thu
+    Route::get('/total-revenue', [App\Http\Controllers\ReportController::class, 'totalRevenuePage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.total_revenue')
+        ->name('total_revenue');
+
+    // Báo cáo chi tiết
+    Route::get('/detail', [App\Http\Controllers\ReportController::class, 'detailPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.detailed')
+        ->name('detail');
+
+    // Báo cáo theo nhóm hàng hóa
+    Route::get('/product-groups', [App\Http\Controllers\ReportController::class, 'productGroupsPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.product_groups')
+        ->name('product_groups');
+
+    // Báo cáo theo chiến dịch (bài post)
+    Route::get('/campaigns', [App\Http\Controllers\ReportController::class, 'campaignsPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.campaigns')
+        ->name('campaigns');
+
+    // Báo cáo phiên live
+    Route::get('/live-sessions', [App\Http\Controllers\ReportController::class, 'liveSessionsPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.live_sessions')
+        ->name('live_sessions');
+
+    // Báo cáo thanh toán
+    Route::get('/payments', [App\Http\Controllers\ReportController::class, 'paymentsPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.view')
+        ->name('payments');
+
+    // Báo cáo tỷ lệ chốt đơn
+    Route::get('/conversion-rates', [App\Http\Controllers\ReportController::class, 'conversionRatesPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.conversion_rates')
+        ->name('conversion_rates');
+
+    // Báo cáo khách hàng mới
+    Route::get('/new-customers', [App\Http\Controllers\ReportController::class, 'newCustomersPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.customer_new')
+        ->name('new_customers');
+
+    // Báo cáo khách hàng cũ
+    Route::get('/returning-customers', [App\Http\Controllers\ReportController::class, 'returningCustomersPage'])
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.customer_returning')
+        ->name('returning_customers');
 });

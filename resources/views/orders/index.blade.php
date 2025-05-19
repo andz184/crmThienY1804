@@ -127,6 +127,17 @@
                             <input type="hidden" name="pancake_push_status_filter" value="{{ App\Models\Order::STATUS_MOI }}" />
                         @endif
                     </div>
+
+                    {{-- New Filter for Pancake Origin --}}
+                    <div class="form-group w-100 mb-3">
+                        <label for="pancake_origin" class="d-block w-100 mb-2">Nguồn gốc Pancake:</label>
+                        <select name="pancake_origin" id="pancake_origin" class="form-control select2 w-100">
+                            <option value="">-- Tất cả --</option>
+                            <option value="from_pancake" {{ request('pancake_origin') == 'from_pancake' ? 'selected' : '' }}>Tạo từ Pancake</option>
+                            <option value="to_pancake" {{ request('pancake_origin') == 'to_pancake' ? 'selected' : '' }}>Đã đẩy lên Pancake</option>
+                            <option value="not_synced" {{ request('pancake_origin') == 'not_synced' ? 'selected' : '' }}>Chưa đồng bộ</option>
+                        </select>
+                    </div>
                 </div>
 
                 <!-- Cột 2 -->

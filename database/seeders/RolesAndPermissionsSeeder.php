@@ -60,16 +60,34 @@ class RolesAndPermissionsSeeder extends Seeder
             // Settings Permissions
             'settings.view', 'settings.update', 'settings.manage_favicon', 'settings.manage_seo', 'settings.clear_cache',
             // Add any other core permissions your app needs
-            'reports.view', 'settings.manage',
+            'settings.manage',
             // Logs Permissions
             'logs.view', 'logs.details',
             // New logs permissions
-            'logs.view_all', 'logs.view_own'
+            'logs.view_all', 'logs.view_own',
+            // Pancake sync permission
+            'sync-pancake',
+
+            // Report Permissions
+            'reports.view', // Tổng quan báo cáo
+            'reports.total_revenue', // Báo cáo tổng doanh thu
+            'reports.detailed', // Báo cáo chi tiết
+            'reports.product_groups', // Báo cáo theo nhóm hàng hóa
+            'reports.campaigns', // Báo cáo theo chiến dịch (bài post)
+            'reports.live_sessions', // Báo cáo phiên live
+            'reports.conversion_rates', // Báo cáo tỉ lệ chốt đơn
+            'reports.customer_new', // Báo cáo khách hàng mới (đơn đầu tiên)
+            'reports.customer_returning', // Báo cáo khách hàng cũ (đơn thứ 2+)
+            'reports.view_all', // Xem báo cáo của tất cả người dùng
+            'reports.view_team', // Xem báo cáo của team
+            'reports.view_own', // Chỉ xem báo cáo của bản thân
         ];
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission]);
         }
-        $allPermissionIds = Permission::pluck('id')->toArray();
+
+        // Get all permissions
+        $allPermissions = Permission::all();
 
         // --- Create Core Roles ---
         $superAdminRole = Role::firstOrCreate(['name' => 'super-admin']);
@@ -77,29 +95,56 @@ class RolesAndPermissionsSeeder extends Seeder
         $staffRole = Role::firstOrCreate(['name' => 'staff']);
 
         // --- Assign Permissions to Core Roles ---
+        // Super admin gets all permissions including any that might be added later
+        // Use a direct DB query to make sure ALL permissions are assigned to super-admin
+        $allPermissionIds = Permission::all()->pluck('id')->toArray();
         $superAdminRole->syncPermissions($allPermissionIds);
 
         // Manager permissions
-        $managerPermissions = Permission::whereIn('name', [
+        $managerPermissions = [
             'users.view',
             'orders.view', 'orders.create', 'orders.edit', 'orders.push_to_pancake',
             'orders.filter_by_staff',
             'teams.view', 'teams.assign',
             'dashboard.view', 'dashboard.view_revenue',
-            'logs.view', 'logs.details',
-            'customers.view', 'customers.create', 'customers.edit', 'customers.sync'
-        ])->pluck('id');
-        $managerRole->syncPermissions($managerPermissions);
+            'logs.view', 'logs.details', 'logs.view_all',
+            'customers.view', 'customers.create', 'customers.edit', 'customers.sync',
+            'sync-pancake',
+            // Thêm quyền báo cáo cho manager
+            'reports.view',
+            'reports.total_revenue',
+            'reports.detailed',
+            'reports.product_groups',
+            'reports.campaigns',
+            'reports.live_sessions',
+            'reports.conversion_rates',
+            'reports.customer_new',
+            'reports.customer_returning',
+            'reports.view_team',
+        ];
+        $managerRole->syncPermissions(Permission::whereIn('name', $managerPermissions)->get());
 
         // Staff permissions
-        $staffPermissions = Permission::whereIn('name', [
+        $staffPermissions = [
             'orders.view', 'orders.create', 'orders.edit', 'orders.push_to_pancake',
             'orders.filter_by_self',
             'calls.manage',
             'dashboard.view',
-            'customers.view'
-        ])->pluck('id');
-        $staffRole->syncPermissions($staffPermissions);
+            'customers.view',
+            'logs.view', 'logs.view_own',
+            // Thêm quyền báo cáo cho staff
+            'reports.view',
+            'reports.total_revenue',
+            'reports.detailed',
+            'reports.product_groups',
+            'reports.campaigns',
+            'reports.live_sessions',
+            'reports.conversion_rates',
+            'reports.customer_new',
+            'reports.customer_returning',
+            'reports.view_own',
+        ];
+        $staffRole->syncPermissions(Permission::whereIn('name', $staffPermissions)->get());
 
         // --- Create Core Users ---
         User::create([
@@ -135,22 +180,6 @@ class RolesAndPermissionsSeeder extends Seeder
                 ])->assignRole($staffRole);
             }
         }
-
-        // Assign logs permissions to roles
-        $superAdminRole->givePermissionTo([
-            'logs.view',
-            'logs.view_all'
-        ]);
-
-        $managerRole->givePermissionTo([
-            'logs.view',
-            'logs.view_all'
-        ]);
-
-        $staffRole->givePermissionTo([
-            'logs.view',
-            'logs.view_own'
-        ]);
 
         echo "Seed: Roles (super-admin, manager, staff), Permissions, and sample Users created successfully.\n";
     }

@@ -4,6 +4,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\Api\PancakeWebhookController;
 
 // Authentication Routes
 Route::group([
@@ -30,4 +32,45 @@ Route::middleware(['auth:api'])->group(function () {
     Route::post('orders', 'App\Http\Controllers\Api\OrderController@store');
     Route::put('orders/{id}', 'App\Http\Controllers\Api\OrderController@update');
     Route::delete('orders/{id}', 'App\Http\Controllers\Api\OrderController@destroy');
+});
+
+// Reporting Routes
+Route::prefix('reports')->group(function () {
+    // Báo cáo tổng quan
+    Route::get('total-revenue', [ReportController::class, 'getTotalRevenue']);
+    Route::get('daily-revenue', [ReportController::class, 'getDailyRevenue'])->name('api.reports.daily-revenue');
+    Route::get('daily', [ReportController::class, 'getDailyReport']);
+
+    // Báo cáo chi tiết
+    Route::get('detail', [ReportController::class, 'getDetailReport']);
+
+    // Báo cáo theo chiến dịch
+    Route::get('campaign', [ReportController::class, 'getCampaignReport']);
+    Route::get('campaign-products', [ReportController::class, 'getCampaignProducts']);
+
+    // Báo cáo theo nhóm hàng hóa
+    Route::get('product-group', [ReportController::class, 'getProductGroupReport']);
+
+    // Báo cáo phiên live
+    Route::get('live-session', [ReportController::class, 'getLiveSessionReport']);
+    Route::get('live-session-detail', [ReportController::class, 'getLiveSessionDetail']);
+
+    // Báo cáo thanh toán
+    Route::get('payment', [ReportController::class, 'getPaymentReport']);
+    Route::post('payment/generate', [ReportController::class, 'generatePaymentReport']);
+
+    // Báo cáo tỷ lệ chốt đơn
+    Route::get('conversion', [ReportController::class, 'getConversionReport']);
+
+    // Báo cáo khách hàng mới/cũ
+    Route::get('customer-orders', [ReportController::class, 'getCustomerOrderReport']);
+});
+
+// Pancake Webhook Endpoint
+Route::post('/webhooks/pancake', [PancakeWebhookController::class, 'handleWebhook'])->middleware(['api']);
+
+// For backward compatibility - these will be deprecated
+Route::middleware(['api'])->group(function () {
+    Route::post('/webhooks/pancake/order', [PancakeWebhookController::class, 'handleOrderWebhook'])->middleware('can:orders.create');
+    Route::post('/webhooks/pancake/customer', [PancakeWebhookController::class, 'handleCustomerWebhook'])->middleware('can:customers.create');
 });
