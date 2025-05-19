@@ -103,9 +103,9 @@ class OrderController extends Controller
             $validator = Validator::make($request->all(), [
                 'bill_phone_number' => 'required|string|max:20',
                 'bill_full_name' => 'required|string|max:255',
-                'assigning_seller_id' => 'nullable|uuid',
-                'assigning_care_id' => 'nullable|uuid',
-                'warehouse_id' => 'nullable|uuid',
+                'assigning_seller_id' => 'nullable',
+                'assigning_care_id' => 'nullable',
+                'warehouse_id' => 'nullable',
                 'shipping_fee' => 'nullable|numeric',
                 'note' => 'nullable|string',
                 'note_print' => 'nullable|string',
