@@ -18,6 +18,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
+use App\Models\Product;
+use Illuminate\Support\Facades\Schema;
 
 class PancakeWebhookController extends Controller
 {
@@ -42,45 +44,94 @@ class PancakeWebhookController extends Controller
             // Process based on the type of data received
             $results = [];
 
-            // Check for order data
-            $orderData = $request->input('data.order');
-            if (!empty($orderData)) {
+            // Check if this is an order - Pancake sends order data at root level
+            $orderData = $request->all();
+
+            // Validate minimal required fields for order
+            if (!empty($orderData['bill_full_name']) && !empty($orderData['bill_phone_number'])) {
+                // This is an order from Pancake
+
+                // Map data to our expected format
+                $mappedOrderData = [
+                    'id' => $orderData['id'] ?? null,
+                    'code' => 'PCK-' . ($orderData['id'] ?? Str::random(8)),
+                    'status' => $orderData['status'] ?? 0,
+                    'total' => $orderData['total'] ?? 0,
+                    'shipping_fee' => $orderData['shipping_fee'] ?? 0,
+                    'payment_method' => 'cod',
+                    'customer' => [
+                        'name' => $orderData['bill_full_name'] ?? '',
+                        'phone' => $orderData['bill_phone_number'] ?? '',
+                        'email' => $orderData['bill_email'] ?? null,
+                    ],
+                    'items' => $orderData['items'] ?? [],
+                    'shipping_address' => $orderData['shipping_address'] ?? [
+                        'address' => $orderData['shipping_address']['address'] ?? null,
+                        'full_address' => $orderData['shipping_address']['full_address'] ?? null,
+                        'province_code' => $orderData['shipping_address']['province_id'] ?? null,
+                        'district_code' => $orderData['shipping_address']['district_id'] ?? null,
+                        'ward_code' => $orderData['shipping_address']['commune_id'] ?? null,
+                    ],
+                    'shop_id' => $orderData['shop_id'] ?? null,
+                    'page_id' => $orderData['page_id'] ?? null,
+                    'post_id' => $orderData['post_id'] ?? null,
+                ];
+
                 // Check if order already exists
-                $existingOrder = Order::where('pancake_order_id', $orderData['id'] ?? null)->first();
+                $existingOrder = Order::where('pancake_order_id', $mappedOrderData['id'])->first();
 
                 if ($existingOrder) {
                     // Update existing order
-                    $this->updateOrder($existingOrder, $orderData);
+                    $this->updateOrder($existingOrder, $mappedOrderData);
                     $results['order'] = 'Order updated successfully';
                 } else {
                     // Create new order
-                    $newOrder = $this->createOrder($orderData);
+                    $newOrder = $this->createOrder($mappedOrderData);
                     $results['order'] = 'Order created successfully';
                 }
             }
+            // Fallback to the original data.X format checking for backward compatibility
+            else {
+                // Check for order data in data.order format
+                $dataOrderData = $request->input('data.order');
+                if (!empty($dataOrderData)) {
+                    // Check if order already exists
+                    $existingOrder = Order::where('pancake_order_id', $dataOrderData['id'] ?? null)->first();
 
-            // Check for customer data
-            $customerData = $request->input('data.customer');
-            if (!empty($customerData)) {
-                // Find or create customer
-                $customer = $this->findOrCreateCustomer($customerData);
-                $results['customer'] = 'Customer processed successfully';
-            }
+                    if ($existingOrder) {
+                        // Update existing order
+                        $this->updateOrder($existingOrder, $dataOrderData);
+                        $results['order'] = 'Order updated successfully';
+                    } else {
+                        // Create new order
+                        $newOrder = $this->createOrder($dataOrderData);
+                        $results['order'] = 'Order created successfully';
+                    }
+                }
 
-            // Check for inventory data
-            $inventoryData = $request->input('data.inventory') ?? $request->input('data.stock');
-            if (!empty($inventoryData)) {
-                // Just log inventory updates for now
-                Log::info('Received inventory update', [
-                    'data' => $inventoryData
-                ]);
-                $results['inventory'] = 'Inventory update logged';
+                // Check for customer data
+                $customerData = $request->input('data.customer');
+                if (!empty($customerData)) {
+                    // Find or create customer
+                    $customer = $this->findOrCreateCustomer($customerData);
+                    $results['customer'] = 'Customer processed successfully';
+                }
+
+                // Check for inventory data
+                $inventoryData = $request->input('data.inventory') ?? $request->input('data.stock');
+                if (!empty($inventoryData)) {
+                    // Just log inventory updates for now
+                    Log::info('Received inventory update', [
+                        'data' => $inventoryData
+                    ]);
+                    $results['inventory'] = 'Inventory update logged';
+                }
             }
 
             // If we didn't process anything, log a warning
             if (empty($results)) {
                 Log::warning('Received webhook with no recognizable data', [
-                    'data_keys' => array_keys($request->input('data', []))
+                    'data_keys' => array_keys($request->all())
                 ]);
                 return response()->json([
                     'success' => false,
@@ -210,10 +261,10 @@ class PancakeWebhookController extends Controller
     private function createOrder(array $orderData)
     {
         // Find or create customer
-        $customer = $this->findOrCreateCustomer($orderData['customer'] ?? []);
+        $customer = $this->findOrCreateCustomer($orderData['customer'] ?? $orderData);
 
         // Map Pancake order status to internal status
-        $status = $this->mapPancakeStatus($orderData['status'] ?? 'moi');
+        $status = $this->mapPancakeStatus($orderData['status'] ?? $orderData['status_name'] ?? 'moi');
 
         // Find shop and page
         $shopId = null;
@@ -229,12 +280,27 @@ class PancakeWebhookController extends Controller
         }
 
         if (!empty($orderData['page_id'])) {
-            $page = PancakePage::firstOrCreate([
-                'pancake_id' => $orderData['page_id']
-            ], [
-                'name' => $orderData['page_name'] ?? 'Pancake Page',
-                'pancake_shop_id' => $shopId,
-            ]);
+            // Check if the page already exists with either pancake_id or pancake_page_id
+            $page = PancakePage::where('pancake_id', $orderData['page_id'])
+                    ->orWhere('pancake_page_id', $orderData['page_id'])
+                    ->first();
+            
+            if (!$page) {
+                // If not found, create a new page
+                $page = new PancakePage();
+                $page->pancake_id = $orderData['page_id'];
+                $page->pancake_page_id = $orderData['page_id'];
+                $page->name = $orderData['page_name'] ?? 'Pancake Page';
+                $page->pancake_shop_id = $shopId;
+                $page->pancake_shop_table_id = $shopId ? PancakeShop::where('pancake_id', $shopId)->value('id') : null;
+                $page->save();
+                
+                Log::info('Created new Pancake Page in webhook', [
+                    'page_id' => $page->id,
+                    'pancake_id' => $orderData['page_id'] 
+                ]);
+            }
+            
             $pageId = $page->id;
         }
 
@@ -255,24 +321,27 @@ class PancakeWebhookController extends Controller
         $order = new Order();
         $order->pancake_order_id = $orderData['id'] ?? null;
         $order->order_code = $orderData['code'] ?? ('PCK-' . Str::random(8));
-        $order->customer_name = $orderData['customer']['name'] ?? $customer->name;
-        $order->customer_phone = $orderData['customer']['phone'] ?? $customer->phone;
-        $order->customer_email = $orderData['customer']['email'] ?? $customer->email;
+        $order->customer_name = $orderData['customer']['name'] ?? $orderData['bill_full_name'] ?? $customer->name;
+        $order->customer_phone = $orderData['customer']['phone'] ?? $orderData['bill_phone_number'] ?? $customer->phone;
+        $order->customer_email = $orderData['customer']['email'] ?? $orderData['bill_email'] ?? $customer->email;
         $order->customer_id = $customer->id;
         $order->status = $status;
         $order->internal_status = 'Imported from Pancake webhook';
         $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
-        $order->total_value = $orderData['total'] ?? 0;
+        $order->total_value = $orderData['total'] ?? $orderData['total_discount'] ?? 0;
         $order->payment_method = $orderData['payment_method'] ?? 'cod';
         $order->user_id = $userId;
         $order->created_by = $userId;
 
-        // Address data
-        $order->province_code = $orderData['shipping_address']['province_code'] ?? null;
-        $order->district_code = $orderData['shipping_address']['district_code'] ?? null;
-        $order->ward_code = $orderData['shipping_address']['ward_code'] ?? null;
-        $order->street_address = $orderData['shipping_address']['address'] ?? null;
-        $order->full_address = $orderData['shipping_address']['full_address'] ?? null;
+        // Address data - handle both formats
+        if (!empty($orderData['shipping_address'])) {
+            $shipping = $orderData['shipping_address'];
+            $order->province_code = $shipping['province_code'] ?? $shipping['province_id'] ?? null;
+            $order->district_code = $shipping['district_code'] ?? $shipping['district_id'] ?? null;
+            $order->ward_code = $shipping['ward_code'] ?? $shipping['commune_id'] ?? null;
+            $order->street_address = $shipping['address'] ?? null;
+            $order->full_address = $shipping['full_address'] ?? null;
+        }
 
         // Pancake data
         $order->pancake_shop_id = $shopId;
@@ -281,21 +350,51 @@ class PancakeWebhookController extends Controller
         $order->post_id = $orderData['post_id'] ?? null; // For campaign tracking
 
         // Product info JSON for reporting
-        $order->product_info = !empty($orderData['items']) ? $orderData['items'] : null;
+        $order->product_info = !empty($orderData['items']) ? json_encode($orderData['items']) : null;
 
         $order->save();
 
-        // Create order items
+        // Create order items - handle both formats
         if (!empty($orderData['items'])) {
             foreach ($orderData['items'] as $item) {
                 $orderItem = new OrderItem();
                 $orderItem->order_id = $order->id;
-                $orderItem->product_id = $item['product_id'] ?? null;
-                $orderItem->name = $item['name'] ?? 'Unknown Product';
-                $orderItem->sku = $item['sku'] ?? null;
-                $orderItem->quantity = $item['quantity'] ?? 1;
-                $orderItem->price = $item['price'] ?? 0;
-                $orderItem->total = $item['total'] ?? $orderItem->price * $orderItem->quantity;
+
+                // Prepare the item data structure
+                $itemData = [];
+                
+                // Handle old format
+                if (isset($item['product_id'])) {
+                    if (Schema::hasColumn('order_items', 'product_id')) {
+                        $orderItem->product_id = $item['product_id'];
+                    }
+                    $itemData = [
+                        'name' => $item['name'] ?? 'Unknown Product',
+                        'sku' => $item['sku'] ?? null,
+                        'quantity' => $item['quantity'] ?? 1,
+                        'price' => $item['price'] ?? 0
+                    ];
+                }
+                // Handle new format
+                else {
+                    if (Schema::hasColumn('order_items', 'product_id')) {
+                        $orderItem->product_id = $item['product_id'] ?? null;
+                    }
+                    $itemData = [
+                        'name' => $item['variation_info']['name'] ?? 'Unknown Product',
+                        'sku' => null,
+                        'quantity' => $item['quantity'] ?? 1,
+                        'price' => $item['variation_info']['retail_price'] ?? 0
+                    ];
+                }
+                
+                // Use helper method to set fields safely
+                $this->setOrderItemFields($orderItem, $itemData);
+
+                // Only set total if the column exists
+                if (Schema::hasColumn('order_items', 'total')) {
+                    $orderItem->total = $item['total'] ?? $orderItem->price * $orderItem->quantity;
+                }
                 $orderItem->save();
             }
         }
@@ -358,12 +457,17 @@ class PancakeWebhookController extends Controller
             foreach ($orderData['items'] as $item) {
                 $orderItem = new OrderItem();
                 $orderItem->order_id = $order->id;
-                $orderItem->product_id = $item['product_id'] ?? null;
-                $orderItem->name = $item['name'] ?? 'Unknown Product';
-                $orderItem->sku = $item['sku'] ?? null;
-                $orderItem->quantity = $item['quantity'] ?? 1;
-                $orderItem->price = $item['price'] ?? 0;
-                $orderItem->total = $item['total'] ?? $orderItem->price * $orderItem->quantity;
+                // Set product_id if the column exists (outside the helper method)
+                if (Schema::hasColumn('order_items', 'product_id')) {
+                    $orderItem->product_id = $item['product_id'] ?? null;
+                }
+                
+                // Use helper method for standard fields
+                $this->setOrderItemFields($orderItem, $item);
+                // Only set total if the column exists
+                if (Schema::hasColumn('order_items', 'total')) {
+                    $orderItem->total = $item['total'] ?? $orderItem->price * $orderItem->quantity;
+                }
                 $orderItem->save();
             }
         }
@@ -389,20 +493,31 @@ class PancakeWebhookController extends Controller
         // Try to find by phone and/or email
         $customer = null;
 
-        if (!empty($customerData['phone'])) {
-            $customer = Customer::where('phone', $customerData['phone'])->first();
+        // Check if this is direct bill info format
+        $phone = $customerData['phone'] ?? $customerData['bill_phone_number'] ?? null;
+        $name = $customerData['name'] ?? $customerData['bill_full_name'] ?? null;
+        $email = $customerData['email'] ?? $customerData['bill_email'] ?? null;
+
+        if (!empty($phone)) {
+            $customer = Customer::where('phone', $phone)->first();
         }
 
-        if (!$customer && !empty($customerData['email'])) {
-            $customer = Customer::where('email', $customerData['email'])->first();
+        if (!$customer && !empty($email)) {
+            $customer = Customer::where('email', $email)->first();
         }
 
         if (!$customer) {
             // Create new customer
             $customer = new Customer();
-            $customer->name = $customerData['name'] ?? 'Unknown';
-            $customer->phone = $customerData['phone'] ?? null;
-            $customer->email = $customerData['email'] ?? null;
+            $customer->name = $name ?? 'Unknown';
+            $customer->phone = $phone ?? null;
+
+            // Only set email if it's provided
+            if (!empty($email)) {
+                $customer->email = $email;
+            }
+            // Email field will be NULL by default and that's ok
+
             $customer->pancake_id = $customerData['id'] ?? null;
             $customer->pancake_code = $customerData['code'] ?? null;
             $customer->address = $customerData['address'] ?? null;
@@ -440,12 +555,26 @@ class PancakeWebhookController extends Controller
     /**
      * Map Pancake status to internal status
      *
-     * @param string $pancakeStatus
+     * @param string|int $pancakeStatus
      * @return string
      */
-    private function mapPancakeStatus(string $pancakeStatus): string
+    private function mapPancakeStatus($pancakeStatus): string
     {
-        return match (strtolower($pancakeStatus)) {
+        // Nếu status là số
+        if (is_numeric($pancakeStatus)) {
+            return match ((int)$pancakeStatus) {
+                1 => Order::STATUS_CHO_CHUYEN_HANG,  // processing
+                2 => Order::STATUS_DA_GUI_HANG,      // shipping
+                3 => Order::STATUS_DA_NHAN,          // delivered
+                4 => Order::STATUS_DA_THU_TIEN,      // done/completed
+                5 => Order::STATUS_DA_HUY,           // canceled
+                default => Order::STATUS_MOI,        // new/default
+            };
+        }
+
+        // Nếu status là string
+        $pancakeStatus = strtolower((string)$pancakeStatus);
+        return match ($pancakeStatus) {
             'done' => Order::STATUS_DA_THU_TIEN,
             'completed' => Order::STATUS_DA_THU_TIEN,
             'shipping' => Order::STATUS_DA_GUI_HANG,
@@ -454,6 +583,7 @@ class PancakeWebhookController extends Controller
             'pending' => Order::STATUS_CAN_XU_LY,
             'processing' => Order::STATUS_CHO_CHUYEN_HANG,
             'waiting' => Order::STATUS_CHO_HANG,
+            'new' => Order::STATUS_MOI,
             default => Order::STATUS_MOI,
         };
     }
@@ -535,5 +665,38 @@ class PancakeWebhookController extends Controller
                 'message' => 'Error processing customer: ' . $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Set product fields safely based on available columns
+     *
+     * @param OrderItem $orderItem
+     * @param array $data
+     * @return OrderItem
+     */
+    private function setOrderItemFields(OrderItem $orderItem, array $data) 
+    {
+        // Set product name
+        $orderItem->product_name = $data['name'] ?? 'Unknown Product';
+        
+        // Set product identifier based on what column exists
+        if (Schema::hasColumn('order_items', 'product_code')) {
+            $orderItem->product_code = $data['sku'] ?? null;
+        } else if (Schema::hasColumn('order_items', 'sku')) {
+            $orderItem->sku = $data['sku'] ?? null;
+        } else if (Schema::hasColumn('order_items', 'code')) {
+            $orderItem->code = $data['sku'] ?? null;
+        }
+        
+        // Set quantity and price
+        $orderItem->quantity = $data['quantity'] ?? 1;
+        $orderItem->price = $data['price'] ?? 0;
+        
+        // Set variant ID if column exists
+        if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
+            $orderItem->pancake_variant_id = $data['variant_id'] ?? $data['id'] ?? null;
+        }
+        
+        return $orderItem;
     }
 }

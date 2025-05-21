@@ -25,6 +25,7 @@ class WarehouseSeeder extends Seeder
                 'name' => 'THIÊN Ý PHARMA',
                 'description' => null, // Add description if needed
                 'status' => true,    // Assuming default status is active
+                'pancake_id' => 'e6733492-2955-4fd0-89e0-89c0d28a4c55',  // Same as code as these appear to be UUID values
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -33,6 +34,7 @@ class WarehouseSeeder extends Seeder
                 'name' => 'TÍN ĐỒ HÀNG HIỆU',
                 'description' => null,
                 'status' => true,
+                'pancake_id' => '61e18748-e6c1-4333-806d-ed0663baf68f',  // Same as code
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -41,6 +43,7 @@ class WarehouseSeeder extends Seeder
                 'name' => '22 Thành Công',
                 'description' => null,
                 'status' => true,
+                'pancake_id' => '9c240040-2dbc-4137-81f5-3c99a0d691a9',  // Same as code
                 'created_at' => now(),
                 'updated_at' => now(),
             ],

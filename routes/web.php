@@ -52,7 +52,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/orders/{order}/assign', [OrderController::class, 'updateAssignment'])->name('orders.updateAssignment')->middleware('can:teams.assign');
     Route::get('/orders/{order}/assign', [OrderController::class, 'assign'])->name('orders.assign')->middleware('can:teams.assign');
     Route::post('/orders/{order}/update-status', [OrderController::class, 'updateStatus'])->name('orders.updateStatus')->middleware('can:calls.manage');
-    Route::post('/orders/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])->name('orders.pushToPancake'); // Add permission check later
+    Route::post('/orders/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])->name('orders.pushToPancake')->middleware('can:orders.push_to_pancake');
 
     // New Filtered Order List Routes
     Route::get('/orders/status/new', [OrderController::class, 'index'])->name('orders.index.new_orders');
@@ -76,7 +76,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{order}', [OrderController::class, 'show'])->name('show');
         Route::post('/{order}/fetch-voip-history', [OrderController::class, 'fetchVoipHistory'])->name('fetchVoipHistory');
         Route::get('/{order}/call-history-rows', [OrderController::class, 'getCallHistoryTableRows'])->name('callHistoryRows');
-        Route::post('/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])->name('pushToPancake');
+        Route::post('/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])->name('pushToPancake')->middleware('can:orders.push_to_pancake');
     });
 
     // Routes for fetching address data for order forms
@@ -213,15 +213,28 @@ Route::get('/call-window', function () {
 
 // Pancake Sync Routes
 Route::middleware(['auth'])->group(function () {
-    Route::post('/pancake/sync', [PancakeSyncController::class, 'sync'])->name('pancake.sync');
-    Route::get('/pancake/sync/status', [PancakeSyncController::class, 'status'])->name('pancake.sync.status');
-    Route::post('/pancake/sync/cancel', [PancakeSyncController::class, 'cancelSync'])->name('pancake.sync.cancel');
+    Route::post('/pancake/sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'sync'])->name('pancake.sync');
+    Route::get('/pancake/sync/status', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'status'])->name('pancake.sync.status');
+    Route::post('/pancake/sync/cancel', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'cancelSync'])->name('pancake.sync.cancel');
     Route::post('/customers/sync', [App\Http\Controllers\CustomerController::class, 'syncFromPancake'])->name('customers.sync');
 
     // New order sync routes
-    Route::post('/pancake/orders/sync', [PancakeSyncController::class, 'syncOrders'])->name('pancake.orders.sync');
-    Route::post('/pancake/orders/push/bulk', [PancakeSyncController::class, 'bulkPushOrdersToPancake'])->name('pancake.orders.push.bulk');
-    Route::get('/pancake/sync', [PancakeSyncController::class, 'index'])->name('pancake.sync.index');
+    Route::post('/pancake/orders/sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'syncOrders'])->name('pancake.orders.sync');
+    Route::post('/pancake/orders/push/bulk', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'bulkPushOrdersToPancake'])->name('pancake.orders.push.bulk');
+    Route::get('/pancake/sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'index'])->name('pancake.sync.index');
+
+    // Đồng bộ đơn hàng Pancake theo ngày
+    Route::post('/pancake/orders/sync-by-date', [\App\Http\Controllers\PancakeSyncController::class, 'syncOrdersByDateManual'])->name('pancake.orders.sync-by-date');
+    Route::get('/pancake/orders/sync-result', [\App\Http\Controllers\PancakeSyncController::class, 'checkSyncOrdersResult'])->name('pancake.orders.sync-result');
+    Route::get('/pancake/orders/sync-progress', [\App\Http\Controllers\PancakeSyncController::class, 'getSyncProgress'])->name('pancake.orders.sync-progress');
+
+    // Route đồng bộ đơn hàng từ API bên ngoài
+    Route::post('/pancake/orders/sync-from-api', [\App\Http\Controllers\PancakeSyncController::class, 'syncOrdersFromApi'])->name('pancake.orders.sync-from-api');
+
+    // Route đồng bộ tất cả đơn hàng
+    Route::post('/pancake/orders/sync-all', [\App\Http\Controllers\PancakeSyncController::class, 'syncAllOrders'])->name('pancake.orders.sync-all');
+    Route::get('/pancake/orders/sync-all-progress', [\App\Http\Controllers\PancakeSyncController::class, 'getAllOrdersSyncProgress'])->name('pancake.orders.sync-all-progress');
+    Route::post('/pancake/orders/sync-process-next', [\App\Http\Controllers\PancakeSyncController::class, 'processNextPage'])->name('pancake.orders.sync-process-next');
 });
 
 Route::get('/pancake-config', [PancakeConfigController::class, 'index'])->name('pancake.config');

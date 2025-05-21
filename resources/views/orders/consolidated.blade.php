@@ -153,6 +153,9 @@
                                     <td>
                                         @if($order->pancake_order_id)
                                             <span class="badge badge-success">Đã đồng bộ</span>
+                                            <div class="small text-muted mt-1">
+                                                ID: {{ $order->pancake_order_id }}
+                                            </div>
                                         @elseif($order->pancake_push_status == 'failed')
                                             <span class="badge badge-danger" data-toggle="tooltip"
                                                   title="{{ $order->internal_status }}">Lỗi</span>
@@ -204,25 +207,37 @@
 
 <!-- Modal for Sync Progress -->
 <div class="modal fade" id="syncProgressModal" tabindex="-1" role="dialog">
-    <div class="modal-dialog" role="document">
+    <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header bg-info text-white">
                 <h5 class="modal-title">Đang đồng bộ dữ liệu từ Pancake</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
                     <span aria-hidden="true">&times;</span>
                 </button>
             </div>
             <div class="modal-body">
-                <div class="progress">
-                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                <h6 class="font-weight-bold">Tiến trình đồng bộ:</h6>
+                <div class="progress" style="height: 20px">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-success"
                          role="progressbar" style="width: 0%" aria-valuenow="0"
                          aria-valuemin="0" aria-valuemax="100">0%</div>
                 </div>
-                <div id="syncStatus" class="mt-3"></div>
+                <div id="syncStatus" class="mt-4"></div>
+
+                <div class="alert alert-warning mt-3">
+                    <i class="fas fa-clock"></i> <strong>Vui lòng đợi!</strong> Quá trình đồng bộ đang diễn ra và có thể mất vài phút tùy theo số lượng đơn hàng. Xin đừng đóng cửa sổ này.
+                </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
-                <button type="button" class="btn btn-danger" id="cancelSync">Hủy đồng bộ</button>
+            <div class="modal-footer d-flex justify-content-between">
+                <div>
+                    <span class="text-muted small">Vui lòng không đóng cửa sổ cho đến khi quá trình đồng bộ hoàn tất</span>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal" disabled id="closeModalBtn">Đóng</button>
+                    <button type="button" class="btn btn-danger" id="cancelSync">
+                        <i class="fas fa-ban"></i> Hủy đồng bộ
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -275,8 +290,14 @@ $(document).ready(function() {
 
     // Sync from Pancake (existing code)
     $('#syncWithPancake').click(function() {
+        // Track start time for time estimation
+        window.syncStartTime = new Date().getTime();
+
         // Show the progress modal
-        $('#syncProgressModal').modal('show');
+        $('#syncProgressModal').modal({
+            backdrop: 'static',
+            keyboard: false
+        });
         $('#syncStatus').html('<p>Đang chuẩn bị đồng bộ...</p>');
         $('.progress-bar').css('width', '0%').attr('aria-valuenow', 0).text('0%');
         $('.modal-title').text('Đang đồng bộ dữ liệu từ Pancake');
@@ -290,6 +311,19 @@ $(document).ready(function() {
             },
             success: function(response) {
                 if (response.success) {
+                    // Show waiting info if available
+                    if (response.waiting_info) {
+                        let waitingHtml = `
+                            <div class="alert alert-info mb-3">
+                                <h6 class="font-weight-bold"><i class="fas fa-info-circle"></i> ${response.waiting_info.title}</h6>
+                                <p class="mb-1">${response.waiting_info.description}</p>
+                                <p class="mb-0 small"><strong>Thời gian dự kiến:</strong> ${response.waiting_info.estimated_time}</p>
+                            </div>
+                        `;
+                        $('#syncStatus').prepend(waitingHtml);
+                    }
+
+                    // Continue with sync progress check
                     checkSyncProgress();
                 } else {
                     $('#syncStatus').html('<div class="alert alert-danger">' + response.message + '</div>');
@@ -311,11 +345,28 @@ $(document).ready(function() {
             return;
         }
 
+        // Track start time for time estimation
+        window.syncStartTime = new Date().getTime();
+
         // Show the progress modal
-        $('#syncProgressModal').modal('show');
-        $('#syncStatus').html('<p>Đang chuẩn bị đồng bộ đơn hàng lên Pancake...</p>');
+        $('#syncProgressModal').modal({
+            backdrop: 'static',
+            keyboard: false
+        });
         $('.progress-bar').css('width', '0%').attr('aria-valuenow', 0).text('0%');
-        $('.modal-title').text('Đang đồng bộ dữ liệu lên Pancake');
+        $('.modal-title').text('Đang đồng bộ tất cả đơn hàng lên Pancake');
+
+        // Show detailed waiting message
+        $('#syncStatus').html(`
+            <div class="alert alert-info">
+                <h5><i class="fas fa-sync fa-spin"></i> Đang chuẩn bị đồng bộ tất cả đơn hàng...</h5>
+                <p>Quá trình này có thể mất nhiều thời gian (5-10 phút) tùy thuộc vào số lượng đơn hàng.</p>
+                <p><strong>Vui lòng không đóng cửa sổ này cho đến khi hoàn tất!</strong></p>
+            </div>
+            <div class="progress mt-3" style="height: 10px">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width: 100%"></div>
+            </div>
+        `);
 
         // Start the sync process
         $.ajax({
@@ -326,9 +377,19 @@ $(document).ready(function() {
             },
             success: function(response) {
                 if (response.success) {
+                    $('#syncStatus').html(`
+                        <div class="alert alert-warning">
+                            <h5><i class="fas fa-exclamation-triangle"></i> Đang đồng bộ trong nền</h5>
+                            <p>Đã bắt đầu đồng bộ tất cả đơn hàng. Quá trình này diễn ra trong nền và có thể mất từ 5-10 phút.</p>
+                            <p>Bạn có thể đóng cửa sổ này và quay lại sau. Tiến trình sẽ vẫn tiếp tục chạy.</p>
+                        </div>
+                    `);
+                    $('#closeModalBtn').prop('disabled', false);
+                    // Begin checking progress
                     checkSyncProgress();
                 } else {
                     $('#syncStatus').html('<div class="alert alert-danger">' + response.message + '</div>');
+                    $('#closeModalBtn').prop('disabled', false);
                 }
             },
             error: function(xhr) {
@@ -337,6 +398,7 @@ $(document).ready(function() {
                     errorMsg = xhr.responseJSON.message;
                 }
                 $('#syncStatus').html('<div class="alert alert-danger">' + errorMsg + '</div>');
+                $('#closeModalBtn').prop('disabled', false);
             }
         });
     });
@@ -354,12 +416,75 @@ $(document).ready(function() {
                 // Update status message
                 let statusHtml = '<p>' + (response.message || 'Đang đồng bộ...') + '</p>';
 
+                // Add dynamic message based on progress
+                let waitingMessage = '';
+                if (progress < 20) {
+                    waitingMessage = '<p><i class="fas fa-hourglass-start"></i> Đang khởi tạo quá trình đồng bộ, vui lòng đợi...</p>';
+                } else if (progress < 50) {
+                    waitingMessage = '<p><i class="fas fa-hourglass-half"></i> Đang xử lý dữ liệu, quá trình này có thể mất vài phút...</p>';
+                } else if (progress < 90) {
+                    waitingMessage = '<p><i class="fas fa-hourglass-end"></i> Sắp hoàn tất, vui lòng không đóng cửa sổ...</p>';
+                }
+
+                if (waitingMessage && progress < 100) {
+                    statusHtml += `<div class="text-info font-weight-bold">${waitingMessage}</div>`;
+                }
+
                 if (response.stats) {
-                    statusHtml += '<ul>';
-                    statusHtml += '<li>Tổng số: ' + (response.stats.total || 0) + '</li>';
-                    statusHtml += '<li>Đã đồng bộ: ' + (response.stats.synced || 0) + '</li>';
+                    statusHtml += '<div class="card bg-light mt-2">';
+                    statusHtml += '<div class="card-body p-2">';
+                    statusHtml += '<h6 class="font-weight-bold">Thống kê đồng bộ:</h6>';
+                    statusHtml += '<ul class="mb-0">';
+                    statusHtml += '<li>Tổng số đơn hàng: ' + (response.stats.total || 0) + '</li>';
+                    statusHtml += '<li>Đã đồng bộ: ' + (response.stats.synced || 0) + ' (' + Math.round((response.stats.synced / response.stats.total) * 100) + '%)</li>';
+
+                    // For bulk sync, show more detailed stats
+                    if (response.stats.created !== undefined) {
+                        statusHtml += '<li>Thêm mới: ' + (response.stats.created || 0) + '</li>';
+                        statusHtml += '<li>Cập nhật: ' + (response.stats.updated || 0) + '</li>';
+                    }
+
                     statusHtml += '<li>Lỗi: ' + (response.stats.failed || 0) + '</li>';
+
+                    // Estimated remaining time based on progress and total
+                    if (progress > 0 && progress < 100) {
+                        const processed = response.stats.synced || 0;
+                        const total = response.stats.total || 0;
+                        if (processed > 0 && total > 0) {
+                            // Simple time estimation: processed items took X seconds, remaining will take Y seconds
+                            const elapsedTime = (new Date().getTime() - window.syncStartTime) / 1000; // in seconds
+                            const timePerItem = elapsedTime / processed;
+                            const remainingItems = total - processed;
+                            const remainingTime = Math.round(timePerItem * remainingItems);
+
+                            if (remainingTime > 0) {
+                                let timeDisplay = '';
+                                if (remainingTime > 60) {
+                                    timeDisplay = Math.round(remainingTime / 60) + ' phút';
+                                } else {
+                                    timeDisplay = remainingTime + ' giây';
+                                }
+                                statusHtml += '<li><strong>Thời gian còn lại (ước tính):</strong> ' + timeDisplay + '</li>';
+                            }
+                        }
+                    }
+
                     statusHtml += '</ul>';
+                    statusHtml += '</div>';
+                    statusHtml += '</div>';
+                }
+
+                if (response.recent_orders && response.recent_orders.length > 0) {
+                    statusHtml += '<div class="mt-2">';
+                    statusHtml += '<h6 class="font-weight-bold">Đơn hàng gần đây:</h6>';
+                    statusHtml += '<ul class="small text-muted" style="max-height: 150px; overflow-y: auto;">';
+                    response.recent_orders.forEach(function(order) {
+                        let statusClass = order.success ? 'text-success' : 'text-danger';
+                        let icon = order.success ? '✓' : '✗';
+                        statusHtml += `<li class="${statusClass}">${icon} ${order.code}: ${order.message}</li>`;
+                    });
+                    statusHtml += '</ul>';
+                    statusHtml += '</div>';
                 }
 
                 $('#syncStatus').html(statusHtml);
@@ -368,10 +493,14 @@ $(document).ready(function() {
                 if (!response.is_completed) {
                     setTimeout(checkSyncProgress, 2000);
                 } else {
-                    $('#syncStatus').append('<div class="alert alert-success">Đồng bộ hoàn tất! Trang sẽ tải lại sau 3 giây.</div>');
+                    $('#syncStatus').append('<div class="alert alert-success mt-3">Đồng bộ hoàn tất! Trang sẽ tải lại sau 5 giây.</div>');
+                    // Enable close button when sync is complete
+                    $('#closeModalBtn').prop('disabled', false);
+                    // Remove warning message
+                    $('.alert-warning').remove();
                     setTimeout(function() {
                         window.location.reload();
-                    }, 3000);
+                    }, 5000);
                 }
             },
             error: function() {

@@ -49,6 +49,23 @@
                                 @error('customer_email') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
                             <hr>
+                            <h5>Thông tin hóa đơn</h5>
+                            <div class="form-group">
+                                <label for="bill_full_name">Tên trên hóa đơn (Pancake)</label>
+                                <input type="text" name="bill_full_name" id="bill_full_name" class="form-control @error('bill_full_name') is-invalid @enderror" value="{{ old('bill_full_name', $order->bill_full_name) }}">
+                                @error('bill_full_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="form-group">
+                                <label for="bill_phone_number">SĐT trên hóa đơn (Pancake)</label>
+                                <input type="text" name="bill_phone_number" id="bill_phone_number" class="form-control @error('bill_phone_number') is-invalid @enderror" value="{{ old('bill_phone_number', $order->bill_phone_number) }}">
+                                @error('bill_phone_number') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="form-group">
+                                <label for="bill_email">Email trên hóa đơn</label>
+                                <input type="email" name="bill_email" id="bill_email" class="form-control @error('bill_email') is-invalid @enderror" value="{{ old('bill_email', $order->bill_email) }}">
+                                @error('bill_email') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <hr>
                             <h5>Địa chỉ giao hàng</h5>
                             <div class="form-group">
                                 <label for="province_code">Tỉnh/Thành phố</label>
@@ -126,6 +143,35 @@
                                 <label for="pancake_push_status_display">Trạng thái đẩy Pancake</label>
                                 <input type="text" id="pancake_push_status_display" class="form-control" value="{{ $order->pancake_push_status ? ucfirst(str_replace('_', ' ', $order->pancake_push_status)) : 'Chưa đẩy' }}" readonly>
                             </div>
+                            
+                            <div class="form-group">
+                                <label for="pancake_order_id">ID đơn hàng trên Pancake</label>
+                                <input type="text" name="pancake_order_id" id="pancake_order_id" class="form-control" value="{{ $order->pancake_order_id }}" readonly>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="pancake_status">Trạng thái đơn trên Pancake</label>
+                                <select name="pancake_status" id="pancake_status" class="form-control select2 @error('pancake_status') is-invalid @enderror">
+                                    <option value="">-- Chọn trạng thái Pancake --</option>
+                                    @foreach(App\Models\PancakeOrderStatus::orderBy('status_code')->get() as $status)
+                                        <option value="{{ $status->status_code }}" {{ old('pancake_status', $order->pancake_status) == $status->status_code ? 'selected' : '' }}>
+                                            {{ $status->name }} ({{ $status->status_code }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('pancake_status') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+
+                            <hr>
+                            <div class="form-check">
+                                <input type="checkbox" name="is_livestream" id="is_livestream" class="form-check-input" value="1" {{ old('is_livestream', $order->is_livestream) ? 'checked' : '' }}>
+                                <label for="is_livestream" class="form-check-label">Đơn hàng Livestream</label>
+                            </div>
+
+                            <div class="form-check">
+                                <input type="checkbox" name="is_live_shopping" id="is_live_shopping" class="form-check-input" value="1" {{ old('is_live_shopping', $order->is_live_shopping) ? 'checked' : '' }}>
+                                <label for="is_live_shopping" class="form-check-label">Đơn hàng Live Shopping</label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -166,40 +212,106 @@
                             <div id="items_container">
                                 @php
                                     $currentItems = old('items', $order->items->map(function($item) {
-                                        // Use pancake_variation_id if available, otherwise fallback to code
-                                        return ['code' => $item->pancake_variation_id ?? $item->code, 'quantity' => $item->quantity, 'price' => $item->price ?? 0];
+                                        // Chuẩn hóa dữ liệu sản phẩm từ Pancake
+                                        $itemData = [
+                                            'code' => $item->pancake_variant_id ?? $item->code ?? null,
+                                            'product_code' => $item->product_code ?? null,
+                                            'name' => $item->product_name ?? $item->name ?? 'Unknown Product',
+                                            'quantity' => $item->quantity,
+                                            'price' => $item->price ?? 0,
+                                            'pancake_variant_id' => $item->pancake_variant_id ?? null,
+                                        ];
+                                        
+                                        // Extract additional information from product_info if available
+                                        if ($item->product_info) {
+                                            $productInfo = is_string($item->product_info) ? json_decode($item->product_info, true) : $item->product_info;
+                                            
+                                            // Check if product_info contains processed component data
+                                            if (!empty($productInfo['processed_component'])) {
+                                                $component = $productInfo['processed_component'];
+                                                $itemData['code'] = $component['variation_id'] ?? $itemData['code'];
+                                                $itemData['pancake_variant_id'] = $component['variation_id'] ?? $itemData['pancake_variant_id'];
+                                                $itemData['component_id'] = $component['component_id'] ?? null;
+                                                $itemData['quantity'] = $component['quantity'] ?? $itemData['quantity'];
+                                            }
+                                            
+                                            // Check if product_info contains variation_info
+                                            if (!empty($productInfo['processed_variation_info'])) {
+                                                $variationInfo = $productInfo['processed_variation_info'];
+                                                $itemData['name'] = $variationInfo['name'] ?? $itemData['name'];
+                                                $itemData['price'] = $variationInfo['retail_price'] ?? $itemData['price'];
+                                                $itemData['product_id'] = $variationInfo['product_id'] ?? null;
+                                                $itemData['variation_detail'] = $variationInfo['detail'] ?? null;
+                                                
+                                                // Add image if available
+                                                if (!empty($variationInfo['images']) && is_array($variationInfo['images'])) {
+                                                    $itemData['image_url'] = $variationInfo['images'][0] ?? null;
+                                                }
+                                            }
+                                        }
+                                        
+                                        return $itemData;
                                     })->toArray());
                                 @endphp
                                 @foreach($currentItems as $index => $item)
                                 <div class="row item-row mb-2 align-items-center">
-                                    <div class="col-md-4">
-                                        <input type="text" name="items[{{ $index }}][code]" class="form-control @error("items.{$index}.code") is-invalid @enderror"
-                                               placeholder="Mã SP (Pancake Variation ID)" value="{{ $item['code'] ?? '' }}">
+                                    <div class="col-md-3">
+                                        <label for="items{{ $index }}_code" class="small">Pancake Variation ID</label>
+                                        <input type="text" id="items{{ $index }}_code" name="items[{{ $index }}][code]" class="form-control @error("items.{$index}.code") is-invalid @enderror"
+                                               placeholder="Mã sản phẩm" value="{{ $item['pancake_variant_id'] ?? $item['code'] ?? '' }}">
                                         @error("items.{$index}.code") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                     <div class="col-md-3">
-                                        <input type="number" step="any" name="items[{{ $index }}][price]" class="form-control @error("items.{$index}.price") is-invalid @enderror"
+                                        <label for="items{{ $index }}_name" class="small">Tên sản phẩm</label>
+                                        <input type="text" id="items{{ $index }}_name" name="items[{{ $index }}][name]" class="form-control @error("items.{$index}.name") is-invalid @enderror"
+                                               placeholder="Tên sản phẩm" value="{{ $item['name'] ?? '' }}">
+                                        @if(!empty($item['variation_detail']))
+                                        <small class="text-muted">{{ $item['variation_detail'] }}</small>
+                                        @endif
+                                        @error("items.{$index}.name") <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label for="items{{ $index }}_price" class="small">Đơn giá</label>
+                                        <input type="number" id="items{{ $index }}_price" step="any" name="items[{{ $index }}][price]" class="form-control @error("items.{$index}.price") is-invalid @enderror item-price"
                                                placeholder="Đơn giá" value="{{ $item['price'] ?? 0 }}" min="0">
                                         @error("items.{$index}.price") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
-                                    <div class="col-md-3">
-                                        <input type="number" name="items[{{ $index }}][quantity]" class="form-control @error("items.{$index}.quantity") is-invalid @enderror"
+                                    <div class="col-md-2">
+                                        <label for="items{{ $index }}_quantity" class="small">Số lượng</label>
+                                        <input type="number" id="items{{ $index }}_quantity" name="items[{{ $index }}][quantity]" class="form-control @error("items.{$index}.quantity") is-invalid @enderror item-quantity"
                                                placeholder="Số lượng" value="{{ $item['quantity'] ?? 1 }}" min="1">
                                         @error("items.{$index}.quantity") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
-                                    @if($index == 0 && count($currentItems) == 1)
-                                        <div class="col-md-2"></div> {{-- No remove button for the first row if it's the only one --}}
-                                    @else
-                                        <div class="col-md-2">
+                                    <div class="col-md-2 align-self-end">
+                                        <input type="hidden" name="items[{{ $index }}][product_code]" value="{{ $item['product_code'] ?? '' }}">
+                                        <input type="hidden" name="items[{{ $index }}][pancake_variant_id]" value="{{ $item['pancake_variant_id'] ?? $item['code'] ?? '' }}">
+                                        @if(isset($item['variation_detail']))
+                                        <input type="hidden" name="items[{{ $index }}][variation_detail]" value="{{ $item['variation_detail'] }}">
+                                        @endif
+                                        @if($index == 0 && count($currentItems) == 1)
+                                            {{-- No remove button for the first row if it's the only one --}}
+                                        @else
                                             <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i> Xóa</button>
-                                        </div>
+                                        @endif
+                                    </div>
+                                    @if(!empty($item['image_url']))
+                                    <div class="col-12 mt-2">
+                                        <img src="{{ $item['image_url'] }}" alt="{{ $item['name'] }}" class="img-thumbnail" style="max-height: 80px;">
+                                    </div>
                                     @endif
                                 </div>
                                 @endforeach
                             </div>
-                            <button type="button" id="add_item_row" class="btn btn-success btn-sm mb-3">
-                                <i class="fas fa-plus"></i> Thêm sản phẩm
-                            </button>
+                            <div class="row mb-2">
+                                <div class="col">
+                                    <button type="button" id="add_item_row" class="btn btn-success btn-sm mb-3">
+                                        <i class="fas fa-plus"></i> Thêm sản phẩm
+                                    </button>
+                                </div>
+                                <div class="col text-right">
+                                    <div class="font-weight-bold">Tổng giá trị: <span id="total_value_display">{{ number_format($order->total_value) }}</span> đ</div>
+                                </div>
+                            </div>
                              @error('items') <div class="text-danger mb-2">{{ $message }}</div> @enderror
                         </div>
                     </div>
@@ -212,9 +324,31 @@
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-group">
+                                        <label for="shipping_provider_id">Đơn vị vận chuyển</label>
+                                        <select name="shipping_provider_id" id="shipping_provider_id" class="form-control select2 @error('shipping_provider_id') is-invalid @enderror">
+                                            <option value="">-- Chọn đơn vị vận chuyển --</option>
+                                            @if(isset($shippingProviders) && $shippingProviders->count() > 0)
+                                                @foreach($shippingProviders as $id => $name)
+                                                    @php
+                                                        $provider = \App\Models\ShippingProvider::find($id);
+                                                        $pancakeId = $provider ? $provider->pancake_partner_id : null;
+                                                    @endphp
+                                                    <option value="{{ $id }}" {{ old('shipping_provider_id', $order->shipping_provider_id) == $id ? 'selected' : '' }} data-pancake-id="{{ $pancakeId }}">
+                                                        {{ $name }} {{ $pancakeId ? '(Pancake ID: '.$pancakeId.')' : '' }}
+                                                    </option>
+                                                @endforeach
+                                            @endif
+                                        </select>
+                                        @error('shipping_provider_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                    <div class="form-group">
                                         <label for="shipping_fee">Phí vận chuyển</label>
-                                        <input type="number" name="shipping_fee" id="shipping_fee" class="form-control @error('shipping_fee') is-invalid @enderror" value="{{ old('shipping_fee', $order->shipping_fee ?? 0) }}" min="0">
+                                        <input type="number" name="shipping_fee" id="shipping_fee" class="form-control @error('shipping_fee') is-invalid @enderror" value="{{ old('shipping_fee', $order->shipping_fee) }}" min="0">
                                         @error('shipping_fee') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input type="checkbox" name="is_free_shipping" id="is_free_shipping" class="form-check-input" value="1" {{ old('is_free_shipping', $order->is_free_shipping) ? 'checked' : '' }}>
+                                        <label for="is_free_shipping" class="form-check-label">Free shipping</label>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
@@ -237,6 +371,34 @@
                                 </select>
                                 @error('payment_method') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="partner_fee">Phí đối tác</label>
+                                        <input type="number" name="partner_fee" id="partner_fee" class="form-control @error('partner_fee') is-invalid @enderror" value="{{ old('partner_fee', $order->partner_fee) }}" min="0">
+                                        @error('partner_fee') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                    <div class="form-check mb-3">
+                                        <input type="checkbox" name="customer_pay_fee" id="customer_pay_fee" class="form-check-input" value="1" {{ old('customer_pay_fee', $order->customer_pay_fee) ? 'checked' : '' }}>
+                                        <label for="customer_pay_fee" class="form-check-label">Khách hàng trả phí</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="returned_reason">Lý do hoàn/hủy đơn</label>
+                                        <select name="returned_reason" id="returned_reason" class="form-control select2 @error('returned_reason') is-invalid @enderror">
+                                            <option value="">Không áp dụng</option>
+                                            <option value="1" {{ old('returned_reason', $order->returned_reason) == '1' ? 'selected' : '' }}>Đổi ý</option>
+                                            <option value="2" {{ old('returned_reason', $order->returned_reason) == '2' ? 'selected' : '' }}>Lỗi sản phẩm</option>
+                                            <option value="3" {{ old('returned_reason', $order->returned_reason) == '3' ? 'selected' : '' }}>Giao hàng sai</option>
+                                            <option value="4" {{ old('returned_reason', $order->returned_reason) == '4' ? 'selected' : '' }}>Giao hàng chậm</option>
+                                            <option value="5" {{ old('returned_reason', $order->returned_reason) == '5' ? 'selected' : '' }}>Khác</option>
+                                        </select>
+                                        @error('returned_reason') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                </div>
+                            </div>
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-group">
@@ -251,20 +413,7 @@
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label for="shipping_provider_id">Đơn vị vận chuyển</label>
-                                        <select name="shipping_provider_id" id="shipping_provider_id" class="form-control select2 @error('shipping_provider_id') is-invalid @enderror">
-                                            <option value="">-- Chọn đơn vị vận chuyển --</option>
-                                            @if(isset($shippingProviders) && $shippingProviders->count() > 0)
-                                                @foreach($shippingProviders as $id => $name)
-                                                    <option value="{{ $id }}" {{ old('shipping_provider_id', $order->shipping_provider_id) == $id ? 'selected' : '' }}>
-                                                        {{ $name }}
-                                                    </option>
-                                                @endforeach
-                                            @endif
-                                        </select>
-                                        @error('shipping_provider_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
+                                    
                                 </div>
                             </div>
                         </div>
@@ -290,14 +439,24 @@
                                 <textarea name="additional_notes" id="additional_notes" class="form-control @error('additional_notes') is-invalid @enderror" rows="2">{{ old('additional_notes', $order->additional_notes) }}</textarea>
                                 @error('additional_notes') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
+                            <!-- Tags field removed to avoid errors -->
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="mt-4">
+                <div class="form-check mb-3">
+                    <input type="checkbox" name="push_to_pancake" id="push_to_pancake" class="form-check-input" value="1" {{ old('push_to_pancake', true) ? 'checked' : '' }}>
+                    <label for="push_to_pancake" class="form-check-label">Đẩy đơn hàng đến Pancake sau khi cập nhật</label>
+                </div>
                 <button type="submit" class="btn btn-primary">Cập nhật Đơn hàng</button>
                 <a href="{{ route('orders.index') }}" class="btn btn-secondary">Quay lại</a>
+                @can('orders.push_to_pancake')
+                <button type="button" id="push_now_btn" class="btn btn-warning" data-order-id="{{ $order->id }}">
+                    <i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay
+                </button>
+                @endcan
             </div>
         </form>
     </div>
@@ -306,6 +465,7 @@
 
 @push('css')
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.min.css" rel="stylesheet">
     <style>
         .select2-container--bootstrap4 .select2-selection--single { height: calc(2.25rem + 2px) !important; }
         .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered { line-height: calc(2.25rem + 2px) !important; padding-left: 0.75rem !important; padding-right: 1.75rem !important; }
@@ -323,176 +483,300 @@
 
 @push('js')
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.all.min.js"></script>
     <script>
     $(document).ready(function() {
-        $('.select2').select2({ theme: 'bootstrap4', width: '100%' });
+        $('.select2').select2({
+            theme: 'bootstrap4',
+            width: '100%'
+        });
 
-        const initialProvinceCode = '{{ old("province_code", $order->province_code) }}';
-        const initialDistrictCode = '{{ old("district_code", $order->district_code) }}';
-        const initialWardCode = '{{ old("ward_code", $order->ward_code) }}';
-
-        function fetchDistricts(provinceCode, selectedDistrictCode = null, callback = null) {
-            $('#district_code').empty().append('<option value="">-- Đang tải Quận/Huyện --</option>').prop('disabled', true);
-            $('#ward_code').empty().append('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', true);
-            if (provinceCode) {
-                $.ajax({
-                    url: '{{ route("ajax.districts") }}', type: 'GET', data: { province_code: provinceCode },
-                    success: function(data) {
-                        $('#district_code').empty().append('<option value="">-- Chọn Quận/Huyện --</option>').prop('disabled', false);
-                        $.each(data, function(code, name) { $('#district_code').append(new Option(name, code)); });
-                        if (selectedDistrictCode) {
-                            $('#district_code').val(selectedDistrictCode);
-                        }
-                        if (callback) callback();
-                        else $('#district_code').trigger('change');
-                    },
-                    error: function() {
-                        $('#district_code').empty().append('<option value="">-- Lỗi tải Quận/Huyện --</option>').prop('disabled', false);
-                        if (callback) callback(); else $('#district_code').trigger('change');
-                    }
-                });
-            } else {
-                $('#district_code').empty().append('<option value="">-- Chọn Quận/Huyện --</option>').prop('disabled', true);
-                $('#ward_code').empty().append('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', true);
-                if (callback) callback();
-            }
-        }
-
-        function fetchWards(districtCode, selectedWardCode = null) {
-            $('#ward_code').empty().append('<option value="">-- Đang tải Phường/Xã --</option>').prop('disabled', true);
-            if (districtCode) {
-                $.ajax({
-                    url: '{{ route("ajax.wards") }}', type: 'GET', data: { district_code: districtCode },
-                    success: function(data) {
-                        $('#ward_code').empty().append('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', false);
-                        let wardFound = false;
-                        $.each(data, function(code, name) {
-                            var option = new Option(name, code);
-                            if ((selectedWardCode && code == selectedWardCode) || (!selectedWardCode && initialWardCode && code == initialWardCode && districtCode == initialDistrictCode) ) {
-                                option.selected = true;
-                                wardFound = true;
+        // Initialize push to pancake button
+        $('#push_now_btn').on('click', function() {
+            const orderId = $(this).data('order-id');
+            const button = $(this);
+            
+            // Disable button and show loading state
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy đơn hàng...');
+            
+            // Confirm push action
+            Swal.fire({
+                title: 'Xác nhận đẩy đơn hàng',
+                text: 'Bạn có chắc muốn đẩy đơn hàng này lên Pancake?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonText: 'Đẩy lên Pancake',
+                cancelButtonText: 'Hủy'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Send AJAX request to push the order
+                    $.ajax({
+                        url: `/orders/${orderId}/push-to-pancake`,
+                        type: 'POST',
+                        data: {
+                            _token: $('meta[name="csrf-token"]').attr('content')
+                        },
+                        success: function(response) {
+                            if (response.success) {
+                                Swal.fire({
+                                    title: 'Thành công!',
+                                    text: response.message,
+                                    icon: 'success'
+                                }).then(() => {
+                                    // Reload the page to see updated status
+                                    window.location.reload();
+                                });
+                            } else {
+                                Swal.fire({
+                                    title: 'Lỗi!',
+                                    text: response.message,
+                                    icon: 'error'
+                                });
+                                // Reset button state
+                                button.prop('disabled', false).html('<i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay');
                             }
-                            $('#ward_code').append(option);
-                        });
-                        $('#ward_code').trigger('change');
-                    },
-                    error: function() {
-                        $('#ward_code').empty().append('<option value="">-- Lỗi tải Phường/Xã --</option>').prop('disabled', false);
-                        $('#ward_code').trigger('change');
-                    }
-                });
-            } else {
-                $('#ward_code').empty().append('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', true);
-            }
-        }
-
-        $('#province_code').on('change', function() {
-            fetchDistricts($(this).val(), null, function() {
-                $('#district_code').trigger('change');
-            });
-        });
-
-        $('#district_code').on('change', function() {
-            fetchWards($(this).val());
-        });
-
-        // Initial load for edit form
-        if (initialProvinceCode) {
-            fetchDistricts(initialProvinceCode, initialDistrictCode, function() {
-                if (initialDistrictCode && $('#district_code').val() == initialDistrictCode) {
-                    fetchWards(initialDistrictCode, initialWardCode);
+                        },
+                        error: function(xhr) {
+                            let errorMsg = 'Đã xảy ra lỗi khi đẩy đơn hàng';
+                            if (xhr.responseJSON && xhr.responseJSON.message) {
+                                errorMsg = xhr.responseJSON.message;
+                            }
+                            Swal.fire({
+                                title: 'Lỗi!',
+                                text: errorMsg,
+                                icon: 'error'
+                            });
+                            // Reset button state
+                            button.prop('disabled', false).html('<i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay');
+                        }
+                    });
                 } else {
-                    $('#district_code').trigger('change');
+                    // Reset button if user cancels
+                    button.prop('disabled', false).html('<i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay');
                 }
             });
-        }
+        });
 
-        let rowCount = $('.item-row').length > 0 ? $('.item-row').length : {{ count($currentItems) }}; // Start with existing items
-        if(rowCount == 0) { rowCount = 1; } // Ensure at least one row count for new additions if starts empty
+        // Item management
+        let itemCount = {{ count($order->items) > 0 ? count($order->items) : 1 }};
+        
+        // Auto-populate billing information if empty
+        $('#customer_name, #customer_phone, #customer_email').on('change', function() {
+            const fieldMap = {
+                'customer_name': 'bill_full_name',
+                'customer_phone': 'bill_phone_number',
+                'customer_email': 'bill_email'
+            };
+            
+            const targetField = fieldMap[this.id];
+            if (targetField && $('#' + targetField).val() === '') {
+                $('#' + targetField).val($(this).val());
+            }
+        });
 
+        // Add item row
         $('#add_item_row').click(function() {
-            const newRowHtml = `
+            let newRow = `
                 <div class="row item-row mb-2 align-items-center">
-                    <div class="col-md-4">
-                        <input type="text" name="items[${rowCount}][code]" class="form-control" placeholder="Mã SP (Pancake Variation ID)">
+                    <div class="col-md-3">
+                        <label class="small">Pancake Variation ID</label>
+                        <input type="text" name="items[${itemCount}][code]" class="form-control" placeholder="Mã sản phẩm">
                     </div>
                     <div class="col-md-3">
-                        <input type="number" step="any" name="items[${rowCount}][price]" class="form-control" placeholder="Đơn giá" value="0" min="0">
-                    </div>
-                    <div class="col-md-3">
-                        <input type="number" name="items[${rowCount}][quantity]" class="form-control" placeholder="Số lượng" value="1" min="1">
+                        <label class="small">Tên sản phẩm</label>
+                        <input type="text" name="items[${itemCount}][name]" class="form-control" placeholder="Tên sản phẩm">
                     </div>
                     <div class="col-md-2">
+                        <label class="small">Đơn giá</label>
+                        <input type="number" step="any" name="items[${itemCount}][price]" class="form-control item-price" placeholder="Đơn giá" value="0" min="0">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="small">Số lượng</label>
+                        <input type="number" name="items[${itemCount}][quantity]" class="form-control item-quantity" placeholder="Số lượng" value="1" min="1">
+                    </div>
+                    <div class="col-md-2 align-self-end">
+                        <input type="hidden" name="items[${itemCount}][product_code]" value="">
+                        <input type="hidden" name="items[${itemCount}][pancake_variant_id]" value="">
                         <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i> Xóa</button>
                     </div>
-                </div>`;
-            $('#items_container').append(newRowHtml);
-            rowCount++;
+                </div>
+            `;
+            
+            $('#items_container').append(newRow);
+            itemCount++;
+            calculateTotal(); // Recalculate total after adding row
         });
 
+        // Remove item row
         $('#items_container').on('click', '.remove-row', function() {
-            $(this).closest('.row').remove();
+            $(this).closest('.item-row').remove();
+            calculateTotal(); // Recalculate total after removing row
         });
 
-        // Form submission
-        $('#orderEditForm').submit(function(e) {
-            // Ensure at least one item exists
-            if ($('.item-row').length === 0) {
-                e.preventDefault();
-                alert('Vui lòng thêm ít nhất một sản phẩm.');
-                return false;
-            }
-            return true;
+        // Calculate total when price or quantity changes
+        $('#items_container').on('change', '.item-price, .item-quantity', function() {
+            calculateTotal();
         });
 
-        // --- Pancake Shop/Page Dynamics ---
-        const pancakeShopSelect = $('#pancake_shop_id');
-        const pancakePageSelect = $('#pancake_page_id');
-        const pancakePagesForShopUrl = '{{ route("ajax.pancakePagesForShop") }}'; // Make sure this route exists
-
-        function loadPancakePages(shopId, selectedPageId = null) {
-            if (!shopId) {
-                pancakePageSelect.html('<option value="">-- Chọn Pancake Page --</option>').prop('disabled', true).trigger('change');
-                return;
+        // Update shipping fee in totals when changed
+        $('#shipping_fee').on('change', function() {
+            calculateTotal();
+        });
+        
+        // Free shipping checkbox handling
+        $('#is_free_shipping').on('change', function() {
+            if ($(this).is(':checked')) {
+                const currentShippingFee = $('#shipping_fee').val();
+                $('#shipping_fee').data('previous-value', currentShippingFee);
+                $('#shipping_fee').val(0);
+            } else {
+                const previousValue = $('#shipping_fee').data('previous-value') || 0;
+                $('#shipping_fee').val(previousValue);
             }
+            calculateTotal();
+        });
 
-            pancakePageSelect.prop('disabled', true).html('<option value="">Đang tải Pages...</option>');
+        // Initialize total calculation
+        calculateTotal();
 
+        // Function to calculate total
+        function calculateTotal() {
+            let total = 0;
+            
+            // Sum all line items
+            $('.item-row').each(function() {
+                const price = parseFloat($(this).find('.item-price').val()) || 0;
+                const quantity = parseInt($(this).find('.item-quantity').val()) || 0;
+                total += price * quantity;
+            });
+            
+            // Add shipping fee
+            const shippingFee = parseFloat($('#shipping_fee').val()) || 0;
+            
+            // Calculate and display total with shipping
+            const grandTotal = total + shippingFee;
+            $('#total_value').val(grandTotal);
+            $('#total_value_display').text(formatCurrency(grandTotal));
+        }
+
+        // Format currency for display
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('vi-VN').format(amount);
+        }
+
+        // Location dependencies
+        $('#province_code').change(function() {
+            var province_code = $(this).val();
+            if(province_code) {
+                loadDistricts(province_code);
+            } else {
+                $('#district_code').html('<option value="">-- Chọn Quận/Huyện --</option>');
+                $('#district_code').prop('disabled', true);
+                $('#ward_code').html('<option value="">-- Chọn Phường/Xã --</option>');
+                $('#ward_code').prop('disabled', true);
+            }
+        });
+
+        $('#district_code').change(function() {
+            var district_code = $(this).val();
+            if(district_code) {
+                loadWards(district_code);
+            } else {
+                $('#ward_code').html('<option value="">-- Chọn Phường/Xã --</option>');
+                $('#ward_code').prop('disabled', true);
+            }
+        });
+
+        function loadDistricts(province_code) {
             $.ajax({
-                url: pancakePagesForShopUrl,
+                url: '{{ route("ajax.districts") }}',
                 type: 'GET',
-                data: { pancake_shop_id: shopId },
-                success: function(pages) {
-                    pancakePageSelect.html('<option value="">-- Chọn Pancake Page --</option>');
-                    if (pages && pages.length > 0) {
-                        pages.forEach(function(page) {
-                            let option = new Option(page.name + ` (ID: ${page.pancake_page_id})`, page.id, false, false);
-                            pancakePageSelect.append(option);
-                        });
-                    }
-                    if (selectedPageId) {
-                        pancakePageSelect.val(selectedPageId);
-                    }
-                    pancakePageSelect.prop('disabled', false).trigger('change');
-                },
-                error: function(xhr) {
-                    console.error('Error loading Pancake pages:', xhr);
-                    pancakePageSelect.html('<option value="">Lỗi tải Pages</option>').prop('disabled', false).trigger('change');
+                data: {province_code: province_code},
+                success: function(data) {
+                    $('#district_code').html('<option value="">-- Chọn Quận/Huyện --</option>');
+                    $.each(data, function(code, name) {
+                        $('#district_code').append('<option value="'+ code +'">'+ name +'</option>');
+                    });
+                    $('#district_code').prop('disabled', false);
+                    
+                    // If we have a previously selected district, select it again
+                    @if(old('district_code', $order->district_code))
+                    $('#district_code').val('{{ old('district_code', $order->district_code) }}');
+                    loadWards('{{ old('district_code', $order->district_code) }}');
+                    @endif
                 }
             });
         }
 
-        pancakeShopSelect.on('change', function() {
-            const selectedShopId = $(this).val();
-            loadPancakePages(selectedShopId);
+        function loadWards(district_code) {
+            $.ajax({
+                url: '{{ route("ajax.wards") }}',
+                type: 'GET',
+                data: {district_code: district_code},
+                success: function(data) {
+                    $('#ward_code').html('<option value="">-- Chọn Phường/Xã --</option>');
+                    $.each(data, function(code, name) {
+                        $('#ward_code').append('<option value="'+ code +'">'+ name +'</option>');
+                    });
+                    $('#ward_code').prop('disabled', false);
+                    
+                    // If we have a previously selected ward, select it again
+                    @if(old('ward_code', $order->ward_code))
+                    $('#ward_code').val('{{ old('ward_code', $order->ward_code) }}');
+                    @endif
+                }
+            });
+        }
+
+        // Pancake shop and page linkage
+        $('#pancake_shop_id').change(function() {
+            var shop_id = $(this).val();
+            if(shop_id) {
+                loadPancakePages(shop_id);
+            } else {
+                $('#pancake_page_id').html('<option value="">-- Chọn Pancake Page --</option>');
+                $('#pancake_page_id').prop('disabled', true);
+            }
         });
 
-        const initialPancakeShopId = pancakeShopSelect.val();
-        if (initialPancakeShopId) {
-            const initiallySelectedPageId = '{{ old("pancake_page_id", $order->pancake_page_id ?? "") }}';
-            loadPancakePages(initialPancakeShopId, initiallySelectedPageId);
+        function loadPancakePages(shop_id) {
+            $.ajax({
+                url: '{{ route("ajax.pancakePagesForShop") }}',
+                type: 'GET',
+                data: {shop_id: shop_id},
+                success: function(data) {
+                    $('#pancake_page_id').html('<option value="">-- Chọn Pancake Page --</option>');
+                    $.each(data, function(id, name) {
+                        $('#pancake_page_id').append('<option value="'+ id +'">'+ name +'</option>');
+                    });
+                    $('#pancake_page_id').prop('disabled', false);
+                    
+                    // If we have a previously selected page, select it again
+                    @if(old('pancake_page_id', $order->pancake_page_id))
+                    $('#pancake_page_id').val('{{ old('pancake_page_id', $order->pancake_page_id) }}');
+                    @endif
+                }
+            });
         }
-        // --- End of Pancake Shop/Page Dynamics ---
+
+        // Load districts if province is already selected
+        @if(old('province_code', $order->province_code))
+            loadDistricts('{{ old('province_code', $order->province_code) }}');
+        @endif
+
+        // Load pages if shop is already selected
+        @if(old('pancake_shop_id', $order->pancake_shop_id))
+            loadPancakePages('{{ old('pancake_shop_id', $order->pancake_shop_id) }}');
+        @endif
+
+        // Hiển thị thông tin Pancake ID khi chọn đơn vị vận chuyển
+        $('#shipping_provider_id').on('change', function() {
+            const selectedOption = $(this).find('option:selected');
+            const pancakeId = selectedOption.data('pancake-id');
+            if (pancakeId) {
+                console.log('Đã chọn đơn vị vận chuyển với Pancake ID:', pancakeId);
+            }
+        });
     });
     </script>
 @endpush

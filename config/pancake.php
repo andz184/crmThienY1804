@@ -22,6 +22,9 @@ return [
     'default_received_at_shop' => env('PANCAKE_DEFAULT_RECEIVED_AT_SHOP', false),
     'default_returned_reason' => env('PANCAKE_DEFAULT_RETURNED_REASON', 1), // Example from your JSON
 
+    // Cấu hình tự động đồng bộ
+    'auto_sync_enabled' => env('PANCAKE_AUTO_SYNC_ENABLED', true),
+
     // You might also want to configure mapping for specific IDs if they are static
     // e.g. 'pancake_country_code' => env('PANCAKE_COUNTRY_CODE', 'VN'),
 ];

@@ -3,8 +3,8 @@
         <td>
             {{ $order->order_code }}
             @if($order->pancake_order_id)
-                <span class="badge badge-primary ml-1" title="Đơn hàng tạo từ Pancake">
-                    <i class="fas fa-arrow-down"></i> P
+                <span class="badge badge-primary ml-1" title="ID Pancake: {{ $order->pancake_order_id }}">
+                    <i class="fas fa-arrow-down"></i> P{{ $order->pancake_order_id }}
                 </span>
             @elseif($order->pancake_push_status === 'success' || $order->internal_status === 'Pushed to Pancake successfully.')
                 <span class="badge badge-success ml-1" title="Đơn hàng đã đẩy lên Pancake">
@@ -12,12 +12,25 @@
                 </span>
             @endif
         </td>
-        <td>{{ $order->customer_name }}</td>
+        <td>
+            <div>{{ $order->customer_name }}</div>
+            @if($order->bill_full_name && $order->bill_full_name != $order->customer_name)
+                <small class="text-muted">Hóa đơn: {{ $order->bill_full_name }}</small>
+            @endif
+            @if($order->customer_email)
+                <small class="d-block text-truncate" style="max-width: 150px;" title="{{ $order->customer_email }}">
+                    {{ $order->customer_email }}
+                </small>
+            @endif
+        </td>
         <td>
             @if(auth()->user()->hasRole('staff'))
                 {{ substr($order->customer_phone, 0, 3) . str_repeat('*', strlen($order->customer_phone) - 3) }}
             @else
-                {{ $order->customer_phone }}
+                <div>{{ $order->customer_phone }}</div>
+                @if($order->bill_phone_number && $order->bill_phone_number != $order->customer_phone)
+                    <small class="text-muted">Hóa đơn: {{ $order->bill_phone_number }}</small>
+                @endif
             @endif
         </td>
         {{-- Assuming product_info was a temporary column from older structure, if OrderItems are primary, this might need change or removal --}}
@@ -41,6 +54,66 @@
             @else
                 <span class="badge badge-light">Chưa đẩy</span>
             @endif
+        </td>
+        <td> {{-- Pancake Info --}}
+            <div class="pancake-info small">
+                @if($order->pancake_order_id)
+                    <div class="mb-1">
+                        <span class="badge badge-info">ID: {{ $order->pancake_order_id }}</span>
+                    </div>
+                @endif
+                
+                @if($order->pancake_status)
+                    <div class="mb-1">
+                        @if(is_numeric($order->pancake_status) && App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->exists())
+                            @php $pancakeStatus = App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->first(); @endphp
+                            <span class="badge badge-{{ $pancakeStatus->color }}" title="Trạng thái trên Pancake">
+                                {{ $pancakeStatus->name }}
+                            </span>
+                        @else
+                            <span class="badge {{ $order->getPancakeStatusClass() }}" title="Trạng thái trên Pancake">{{ $order->getPancakeStatusText() }}</span>
+                        @endif
+                    </div>
+                @endif
+                
+                <div>
+                    @if($order->is_livestream)
+                        <span class="badge badge-info">Livestream</span>
+                    @endif
+                    @if($order->is_live_shopping)
+                        <span class="badge badge-primary">Live Shopping</span>
+                    @endif
+                </div>
+                
+                <div class="mt-1">
+                    @if($order->is_free_shipping)
+                        <span class="badge badge-success">Free Ship</span>
+                    @endif
+                    @if($order->customer_pay_fee)
+                        <span class="badge badge-warning">KH trả phí</span>
+                    @endif
+                </div>
+                
+                @if($order->partner_fee > 0)
+                    <div class="mt-1">
+                        <span class="badge badge-secondary">Phí ĐT: {{ number_format($order->partner_fee, 0, ',', '.') }}đ</span>
+                    </div>
+                @endif
+                
+                @if($order->returned_reason)
+                    <div class="mt-1">
+                        <span class="badge badge-danger" title="Lý do hoàn/hủy đơn">
+                            Lý do: {{ $order->returned_reason }}
+                        </span>
+                    </div>
+                @endif
+                
+                @if($order->tracking_code)
+                    <div class="mt-1 text-truncate" style="max-width: 120px;" title="Mã vận đơn: {{ $order->tracking_code }}">
+                        <i class="fas fa-truck fa-fw"></i> {{ $order->tracking_code }}
+                    </div>
+                @endif
+            </div>
         </td>
         <td>{{ $order->created_at->format('d/m/Y H:i') }}</td>
         <td>
@@ -74,9 +147,9 @@
 @empty
     <tr>
         @php
-            $colspan = 6; // Base columns: Mã đơn, KH, SĐT, Trạng thái CRM, Trạng thái Pancake, Ngày tạo, Hành động = 7
+            $colspan = 7; // Base columns: Mã đơn, KH, SĐT, Trạng thái CRM, Trạng thái Pancake, Pancake Info, Ngày tạo, Hành động = 8
             if (auth()->user()->canany(['view orders', 'view team orders'])) {
-                $colspan = 7; // Add Sale column
+                $colspan = 8; // Add Sale column
             }
         @endphp
         <td colspan="{{ $colspan }}" class="text-center">Không tìm thấy đơn hàng nào.</td>
@@ -88,9 +161,9 @@
 @if(isset($orders) && $orders instanceof \Illuminate\Pagination\LengthAwarePaginator && $orders->hasPages())
 <tr id="pagination-row" class="d-none">
      @php
-        $colspan = 6;
+        $colspan = 7;
         if (auth()->user()->canany(['view orders', 'view team orders'])) {
-            $colspan = 7;
+            $colspan = 8;
         }
     @endphp
     <td colspan="{{ $colspan }}">

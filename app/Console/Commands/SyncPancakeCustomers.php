@@ -15,6 +15,51 @@ class SyncPancakeCustomers extends Command
     protected $signature = 'pancake:sync-customers {--chunk=100} {--force}';
     protected $description = 'Synchronize customers with Pancake API';
 
+    /**
+     * Parse address string into components
+     *
+     * @param string|null $address
+     * @return array
+     */
+    private function parseAddress(?string $address): array
+    {
+        if (!$address) {
+            return [
+                'full_address' => null,
+                'province' => null,
+                'district' => null,
+                'ward' => null,
+                'street_address' => null
+            ];
+        }
+
+        $result = [
+            'full_address' => $address,
+            'province' => null,
+            'district' => null,
+            'ward' => null,
+            'street_address' => $address // Default to full address
+        ];
+
+        // Try to extract province, district, ward from address
+        // Basic pattern: street details, ward, district, province
+        $parts = array_map('trim', explode(',', $address));
+        $partsCount = count($parts);
+
+        if ($partsCount >= 3) {
+            $result['province'] = $parts[$partsCount - 1];
+            $result['district'] = $parts[$partsCount - 2];
+            $result['ward'] = $parts[$partsCount - 3];
+
+            // Everything else is considered street address
+            if ($partsCount > 3) {
+                $result['street_address'] = implode(', ', array_slice($parts, 0, $partsCount - 3));
+            }
+        }
+
+        return $result;
+    }
+
     public function handle()
     {
         $this->info('Starting Pancake customer synchronization...');
@@ -59,19 +104,29 @@ class SyncPancakeCustomers extends Command
                             continue;
                         }
 
+                        // Parse address components
+                        $addressInfo = $this->parseAddress($customerData['address'] ?? null);
+
                         // Prepare customer data
                         $customerAttributes = [
                             'pancake_id' => $customerData['id'],
                             'name' => $customerData['name'] ?? null,
                             'phone' => $customerData['phone'] ?? null,
-                            'email' => $customerData['email'] ?? null,
-                            'address' => $customerData['address'] ?? null,
-                            'facebook' => $customerData['facebook'] ?? null,
-                            'zalo' => $customerData['zalo'] ?? null,
-                            'telegram' => $customerData['telegram'] ?? null,
+                            'full_address' => $addressInfo['full_address'],
+                            'province' => $addressInfo['province'],
+                            'district' => $addressInfo['district'],
+                            'ward' => $addressInfo['ward'],
+                            'street_address' => $addressInfo['street_address'],
+                            'facebook_id' => $customerData['facebook'] ?? null,
+                            'zalo_id' => $customerData['zalo'] ?? null,
+                            'telegram_id' => $customerData['telegram'] ?? null,
                             'status' => $customerData['status'] ?? 'active',
-                            'raw_data' => $customerData,
                         ];
+
+                        // Only add email if not empty
+                        if (!empty($customerData['email'])) {
+                            $customerAttributes['email'] = $customerData['email'];
+                        }
 
                         // Create or update customer
                         if ($customer) {

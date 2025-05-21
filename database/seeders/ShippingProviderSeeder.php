@@ -20,14 +20,40 @@ class ShippingProviderSeeder extends Seeder
 
         ShippingProvider::create([
             'pancake_id' => '3',
-            'name' => 'viettelpos'
+            'pancake_partner_id' => '3',
+            'name' => 'Viettel Post',
+            'code' => 'viettelpost',
+            'description' => 'Dịch vụ chuyển phát Viettel Post',
+            'is_active' => true
         ]);
 
         ShippingProvider::create([
             'pancake_id' => 'ddc4a56b-9a87-43bf-ad48-4c205879273e',
-            'name' => 'Nội thành'
+            'pancake_partner_id' => 'ddc4a56b-9a87-43bf-ad48-4c205879273e',
+            'name' => 'Nội thành',
+            'code' => 'noi_thanh',
+            'description' => 'Giao hàng nội thành',
+            'is_active' => true
         ]);
 
-        // Add any other default shipping providers here
+        // Add GHTK shipping provider
+        ShippingProvider::create([
+            'pancake_id' => '5',
+            'pancake_partner_id' => '5',
+            'name' => 'Giao Hàng Tiết Kiệm',
+            'code' => 'ghtk',
+            'description' => 'Dịch vụ Giao Hàng Tiết Kiệm',
+            'is_active' => true
+        ]);
+
+        // Add GHN shipping provider
+        ShippingProvider::create([
+            'pancake_id' => '1',
+            'pancake_partner_id' => '1',
+            'name' => 'Giao Hàng Nhanh',
+            'code' => 'ghn',
+            'description' => 'Dịch vụ Giao Hàng Nhanh',
+            'is_active' => true
+        ]);
     }
 }

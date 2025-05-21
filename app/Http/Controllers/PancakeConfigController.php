@@ -23,6 +23,7 @@ class PancakeConfigController extends Controller
             'shop_id' => WebsiteSetting::where('key', 'pancake_default_shop_id')->first()->value ?? '',
             'page_id' => WebsiteSetting::where('key', 'pancake_default_page_id')->first()->value ?? '',
             'webhook_secret' => WebsiteSetting::where('key', 'pancake_webhook_secret')->first()->value ?? '',
+            'auto_sync' => WebsiteSetting::where('key', 'pancake_auto_sync')->first()->value ?? '1',
         ];
 
         return view('pancake.config', compact('settings'));
@@ -43,6 +44,7 @@ class PancakeConfigController extends Controller
             'shop_id' => 'nullable|string',
             'page_id' => 'nullable|string',
             'webhook_secret' => 'nullable|string',
+            'auto_sync' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -72,11 +74,17 @@ class PancakeConfigController extends Controller
                 ['value' => $request->webhook_secret]
             );
 
+            WebsiteSetting::updateOrCreate(
+                ['key' => 'pancake_auto_sync'],
+                ['value' => $request->has('auto_sync') ? '1' : '0']
+            );
+
             // Set config values for current request
             config(['pancake.api_key' => $request->api_key]);
             config(['pancake.default_shop_id' => $request->shop_id]);
             config(['pancake.default_page_id' => $request->page_id]);
             config(['pancake.webhook_secret' => $request->webhook_secret]);
+            config(['pancake.auto_sync_enabled' => $request->has('auto_sync')]);
 
             // Test API connection
             if ($request->filled('test_connection')) {

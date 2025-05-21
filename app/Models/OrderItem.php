@@ -12,14 +12,26 @@ class OrderItem extends Model
 
     protected $fillable = [
         'order_id',
+        'product_name',
         'product_code',
         'code',
         'quantity',
         'pancake_product_id',
         'pancake_variation_id',
+        'pancake_variant_id',
         'name',
         'price',
-        'weight'
+        'weight',
+        'product_info',
+    ];
+
+    /**
+     * The attributes that should be cast.
+     *
+     * @var array
+     */
+    protected $casts = [
+        'product_info' => 'array',
     ];
 
     /**

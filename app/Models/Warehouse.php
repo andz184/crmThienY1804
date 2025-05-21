@@ -39,7 +39,8 @@ class Warehouse extends Model
         'name',
         'code',
         'description',
-        'status'
+        'status',
+        'pancake_id'
     ];
 
     /**

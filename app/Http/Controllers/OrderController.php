@@ -383,20 +383,20 @@ class OrderController extends Controller
 
         $validatedData = $request->validate([
             'customer_name' => 'required|string|max:255',
-            'customer_phone' => 'required|string|max:50',
-            'warehouse_id' => 'required|exists:warehouses,id',
+            'customer_phone' => 'required|string|max:20',
+            'customer_email' => 'nullable|email|max:255',
             'shipping_fee' => 'nullable|numeric|min:0',
             'payment_method' => 'nullable|string',
             'shipping_provider_id' => 'nullable|exists:shipping_providers,id',
             'internal_status' => 'nullable|string',
             'notes' => 'nullable|string',
             'additional_notes' => 'nullable|string',
-            'total_value' => 'nullable|numeric|min:0',
-            'status' => ['required', Rule::in($this->validStatuses)],
-            'user_id' => 'nullable|exists:users,id',
-            'province_code' => 'nullable|exists:provinces,code',
-            'district_code' => 'nullable|exists:districts,code',
-            'ward_code' => 'nullable|exists:wards,code',
+            'user_id' => 'required|exists:users,id',
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'status' => ['required', 'string', Rule::in($this->validStatuses)],
+            'province_code' => 'nullable|string',
+            'district_code' => 'nullable|string',
+            'ward_code' => 'nullable|string',
             'street_address' => 'nullable|string',
             'full_address' => 'nullable|string',
             'pancake_shop_id' => 'nullable|exists:pancake_shops,id',
@@ -404,44 +404,96 @@ class OrderController extends Controller
             'transfer_money' => 'nullable|numeric|min:0',
             'items' => 'required|array|min:1',
             'items.*.code' => 'required|string',
+            'items.*.name' => 'required|string',
+            'items.*.price' => 'required|numeric|min:0',
             'items.*.quantity' => 'required|integer|min:1'
         ]);
 
-        // Get warehouse code
+        // Get warehouse code and pancake_id
         $warehouse = Warehouse::findOrFail($validatedData['warehouse_id']);
 
+        // Get shipping provider pancake_id if available
+        $pancakeShippingProviderId = null;
+        if (!empty($validatedData['shipping_provider_id'])) {
+            $shippingProvider = ShippingProvider::find($validatedData['shipping_provider_id']);
+            if ($shippingProvider && $shippingProvider->pancake_partner_id) {
+                $pancakeShippingProviderId = $shippingProvider->pancake_partner_id;
+            } elseif ($shippingProvider && $shippingProvider->pancake_id) {
+                $pancakeShippingProviderId = $shippingProvider->pancake_id;
+            }
+        }
+
+        // Nếu đơn hàng từ Pancake đã có pancake_shipping_provider_id nhưng không có shipping_provider_id
+        // thì tìm đơn vị vận chuyển thích hợp
+        if (empty($validatedData['shipping_provider_id']) && !empty($validatedData['pancake_shipping_provider_id'])) {
+            $matchingProvider = ShippingProvider::where('pancake_partner_id', $validatedData['pancake_shipping_provider_id'])
+                ->orWhere('pancake_id', $validatedData['pancake_shipping_provider_id'])
+                ->first();
+            
+            if ($matchingProvider) {
+                $validatedData['shipping_provider_id'] = $matchingProvider->id;
+                $pancakeShippingProviderId = $validatedData['pancake_shipping_provider_id'];
+            }
+        }
+
+        // Calculate total value from items
+        $totalValue = 0;
+        foreach ($validatedData['items'] as $item) {
+            $totalValue += $item['price'] * $item['quantity'];
+        }
+
+        // Add shipping fee to total value
+        $totalValue += $validatedData['shipping_fee'] ?? 0;
+
         $order = Order::create([
-            'order_code' => 'ORD-' . time() . rand(1000, 9999),
+            'order_code' => $request->input('order_code', 'ORD-' . time() . rand(1000, 9999)),
             'customer_name' => $validatedData['customer_name'],
             'customer_phone' => $validatedData['customer_phone'],
+            'customer_email' => $validatedData['customer_email'] ?? null,
             'shipping_fee' => $validatedData['shipping_fee'] ?? 0,
             'payment_method' => $validatedData['payment_method'] ?? null,
             'shipping_provider_id' => $validatedData['shipping_provider_id'] ?? null,
+            'pancake_shipping_provider_id' => $pancakeShippingProviderId,
             'internal_status' => $validatedData['internal_status'] ?? null,
             'notes' => $validatedData['notes'] ?? null,
             'additional_notes' => $validatedData['additional_notes'] ?? null,
-            'total_value' => $validatedData['total_value'] ?? 0,
+            'total_value' => $totalValue, // Set the calculated total
             'status' => $validatedData['status'],
-            'user_id' => $validatedData['user_id'] ?? null,
-            'created_by' => auth()->id(),
+            'user_id' => $validatedData['user_id'],
+            'created_by' => Auth::id(),
             'province_code' => $validatedData['province_code'] ?? null,
             'district_code' => $validatedData['district_code'] ?? null,
             'ward_code' => $validatedData['ward_code'] ?? null,
             'street_address' => $validatedData['street_address'] ?? null,
             'full_address' => $validatedData['full_address'] ?? null,
             'warehouse_id' => $validatedData['warehouse_id'],
-            'warehouse_code' => $warehouse->code,
+            'warehouse_code' => $warehouse->code ?? null,
+            'pancake_warehouse_id' => $warehouse->pancake_id ?? null,
             'pancake_shop_id' => $validatedData['pancake_shop_id'] ?? null,
             'pancake_page_id' => $validatedData['pancake_page_id'] ?? null,
             'transfer_money' => $validatedData['transfer_money'] ?? 0,
+            'is_free_shipping' => $request->has('is_free_shipping'),
+            'is_livestream' => $request->has('is_livestream'),
+            'is_live_shopping' => $request->has('is_live_shopping'),
+            'partner_fee' => $request->input('partner_fee', 0),
+            'customer_pay_fee' => $request->has('customer_pay_fee'),
+            'returned_reason' => $request->input('returned_reason'),
         ]);
 
-        // Create order items
+        // Create order items with all details
         foreach ($validatedData['items'] as $item) {
             $order->items()->create([
-                'pancake_variation_id' => $item['code'],
-                'code' => $item['code'],
-                'quantity' => $item['quantity']
+                'name' => $item['name'] ?? null,
+                'product_name' => $item['product_name'] ?? $item['name'] ?? null,
+                'code' => $item['code'] ?? null,
+                'product_code' => $item['product_code'] ?? null,
+                'quantity' => $item['quantity'] ?? 1,
+                'price' => $item['price'] ?? 0,
+                'weight' => $item['weight'] ?? 0,
+                'pancake_product_id' => $item['pancake_product_id'] ?? null,
+                'pancake_variation_id' => $item['pancake_variation_id'] ?? $item['code'] ?? null,
+                'pancake_variant_id' => $item['pancake_variant_id'] ?? $item['code'] ?? null,
+                'product_info' => $item, // Store the complete item data as JSON
             ]);
         }
 
@@ -472,6 +524,17 @@ class OrderController extends Controller
         $order->load('items');
         $warehouses = Warehouse::orderBy('name')->pluck('name', 'id');
         $shippingProviders = ShippingProvider::orderBy('name')->pluck('name', 'id');
+
+        // Tự động tìm đơn vị vận chuyển dựa trên pancake_shipping_provider_id nếu có
+        if (!$order->shipping_provider_id && $order->pancake_shipping_provider_id) {
+            $matchingProvider = ShippingProvider::where('pancake_partner_id', $order->pancake_shipping_provider_id)
+                ->orWhere('pancake_id', $order->pancake_shipping_provider_id)
+                ->first();
+            
+            if ($matchingProvider) {
+                $order->shipping_provider_id = $matchingProvider->id;
+            }
+        }
 
         $pancakeShops = PancakeShop::orderBy('name')->pluck('name', 'id');
         $pancakePages = collect();
@@ -533,6 +596,8 @@ class OrderController extends Controller
             'status' => ['required', 'string', Rule::in($this->validStatuses)],
             'items' => 'required|array|min:1',
             'items.*.code' => 'required|string',
+            'items.*.name' => 'required|string',
+            'items.*.price' => 'required|numeric|min:0',
             'items.*.quantity' => 'required|integer|min:1',
             'warehouse_id' => 'required|exists:warehouses,id',
             'shipping_fee' => 'nullable|numeric|min:0',
@@ -551,20 +616,63 @@ class OrderController extends Controller
             $orderData = $validatedData;
             unset($orderData['items']);
 
+            // Calculate total value from items
+            $totalValue = 0;
+            foreach ($validatedData['items'] as $item) {
+                $totalValue += $item['price'] * $item['quantity'];
+            }
+
+            // Add shipping fee to total value
+            $totalValue += $validatedData['shipping_fee'] ?? 0;
+
+            // Add total value to order data
+            $orderData['total_value'] = $totalValue;
+
             if ($request->has('warehouse_id')) {
                 $warehouse = Warehouse::findOrFail($request->warehouse_id);
                 $orderData['warehouse_id'] = $request->warehouse_id;
                 $orderData['warehouse_code'] = $warehouse->code;
+                $orderData['pancake_warehouse_id'] = $warehouse->pancake_id ?? null;
             }
+
+            // Handle shipping provider pancake IDs
+            if ($request->has('shipping_provider_id')) {
+                if (!empty($request->shipping_provider_id)) {
+                    $shippingProvider = ShippingProvider::find($request->shipping_provider_id);
+                    if ($shippingProvider && $shippingProvider->pancake_partner_id) {
+                        $orderData['pancake_shipping_provider_id'] = $shippingProvider->pancake_partner_id;
+                    } elseif ($shippingProvider && $shippingProvider->pancake_id) {
+                        $orderData['pancake_shipping_provider_id'] = $shippingProvider->pancake_id;
+                    }
+                } else {
+                    $orderData['pancake_shipping_provider_id'] = null;
+                }
+            }
+
+            // Add checkbox values
+            $orderData['is_free_shipping'] = $request->has('is_free_shipping');
+            $orderData['is_livestream'] = $request->has('is_livestream');
+            $orderData['is_live_shopping'] = $request->has('is_live_shopping');
+            $orderData['customer_pay_fee'] = $request->has('customer_pay_fee');
+            $orderData['partner_fee'] = $request->input('partner_fee', 0);
+            $orderData['returned_reason'] = $request->input('returned_reason');
 
             $order->update($orderData);
 
             $order->items()->delete();
             foreach ($validatedData['items'] as $item) {
                 $order->items()->create([
-                    'pancake_variation_id' => $item['code'],
-                    'code' => $item['code'],
-                    'quantity' => $item['quantity']
+                    'name' => $item['name'] ?? null,
+                    'product_name' => $item['product_name'] ?? $item['name'] ?? null,
+                    'code' => $item['code'] ?? null,
+                    'product_code' => $item['product_code'] ?? null,
+                    'quantity' => $item['quantity'] ?? 1,
+                    'price' => $item['price'] ?? 0,
+                    'weight' => $item['weight'] ?? 0,
+                    'pancake_product_id' => $item['pancake_product_id'] ?? null,
+                    'pancake_variation_id' => $item['pancake_variation_id'] ?? $item['code'] ?? null,
+                    'pancake_variant_id' => $item['pancake_variant_id'] ?? $item['code'] ?? null,
+                    'product_info' => $item, // Store the complete item data as JSON
                 ]);
             }
 

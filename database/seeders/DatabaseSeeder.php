@@ -57,6 +57,8 @@ class DatabaseSeeder extends Seeder
             ShippingProviderSeeder::class,  // Prerequisite for Orders
             OrderSeeder::class,             // Now runs after its dependencies
             DailyRevenueAggregateSeeder::class,
+            PancakePermissionSeeder::class, // Thêm quyền đồng bộ dữ liệu từ Pancake
+            PancakeOrderStatusSeeder::class, // Thêm bảng mapping trạng thái từ Pancake
         ]);
 
         // Ensure super-admin has all permissions (including any added by other seeders)

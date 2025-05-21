@@ -91,20 +91,68 @@
                                     <table class="table table-bordered">
                                         <thead>
                                             <tr>
-                                                <th>Mã sản phẩm</th>
+                                                <th>Mã SP (Pancake)</th>
+                                                <th>Tên sản phẩm</th>
+                                                <th>Đơn giá</th>
                                                 <th>Số lượng</th>
-                                                <th>Giá</th>
+                                                <th>Thành tiền</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             @foreach($order->items as $item)
                                             <tr>
-                                                <td>{{ $item->code }}</td>
-                                                <td>{{ $item->quantity }}</td>
+                                                <td>{{ $item->pancake_variant_id ?? $item->code }}</td>
+                                                <td>
+                                                    {{ $item->product_name ?? $item->name }}
+                                                    @php
+                                                        $variationDetail = null;
+                                                        $imageUrl = null;
+                                                        
+                                                        // Extract variation details and image from product_info if available
+                                                        if ($item->product_info) {
+                                                            $productInfo = is_string($item->product_info) ? json_decode($item->product_info, true) : $item->product_info;
+                                                            
+                                                            if (!empty($productInfo['processed_variation_info'])) {
+                                                                $variationInfo = $productInfo['processed_variation_info'];
+                                                                $variationDetail = $variationInfo['detail'] ?? null;
+                                                                
+                                                                if (!empty($variationInfo['images']) && is_array($variationInfo['images'])) {
+                                                                    $imageUrl = $variationInfo['images'][0] ?? null;
+                                                                }
+                                                            }
+                                                        }
+                                                    @endphp
+                                                    
+                                                    @if($variationDetail)
+                                                        <div><small class="text-muted">{{ $variationDetail }}</small></div>
+                                                    @endif
+                                                    
+                                                    @if($imageUrl)
+                                                        <div class="mt-2">
+                                                            <img src="{{ $imageUrl }}" alt="{{ $item->product_name }}" class="img-thumbnail" style="max-height: 80px;">
+                                                        </div>
+                                                    @endif
+                                                </td>
                                                 <td>{{ number_format($item->price ?? 0) }} VNĐ</td>
+                                                <td>{{ $item->quantity }}</td>
+                                                <td>{{ number_format(($item->price ?? 0) * $item->quantity) }} VNĐ</td>
                                             </tr>
                                             @endforeach
                                         </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <th colspan="4" class="text-right">Tổng giá trị sản phẩm:</th>
+                                                <td>{{ number_format($order->items->sum(function($item) { return ($item->price ?? 0) * $item->quantity; })) }} VNĐ</td>
+                                            </tr>
+                                            <tr>
+                                                <th colspan="4" class="text-right">Phí vận chuyển:</th>
+                                                <td>{{ number_format($order->shipping_fee ?? 0) }} VNĐ</td>
+                                            </tr>
+                                            <tr>
+                                                <th colspan="4" class="text-right">Tổng cộng:</th>
+                                                <td class="font-weight-bold">{{ number_format(($order->items->sum(function($item) { return ($item->price ?? 0) * $item->quantity; }) + ($order->shipping_fee ?? 0))) }} VNĐ</td>
+                                            </tr>
+                                        </tfoot>
                                     </table>
                                 </div>
 
@@ -161,6 +209,76 @@
                                             </div>
                                         </div>
 
+                                        <div class="row mt-3">
+                                            <div class="col-md-6">
+                                                <dl class="row">
+                                                    <dt class="col-sm-5">Tên ghi hóa đơn</dt>
+                                                    <dd class="col-sm-7">{{ $order->bill_full_name ?? 'N/A' }}</dd>
+
+                                                    <dt class="col-sm-5">SĐT ghi hóa đơn</dt>
+                                                    <dd class="col-sm-7">{{ $order->bill_phone_number ?? 'N/A' }}</dd>
+
+                                                    <dt class="col-sm-5">Email ghi hóa đơn</dt>
+                                                    <dd class="col-sm-7">{{ $order->bill_email ?? 'N/A' }}</dd>
+                                                </dl>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <dl class="row">
+                                                    <dt class="col-sm-5">Loại đơn hàng</dt>
+                                                    <dd class="col-sm-7">
+                                                        @if($order->is_livestream)
+                                                            <span class="badge badge-info">Livestream</span>
+                                                        @endif
+                                                        @if($order->is_live_shopping)
+                                                            <span class="badge badge-primary">Live Shopping</span>
+                                                        @endif
+                                                    </dd>
+
+                                                    <dt class="col-sm-5">Phí vận chuyển</dt>
+                                                    <dd class="col-sm-7">
+                                                        {{ number_format($order->shipping_fee ?? 0) }} VNĐ
+                                                        @if($order->is_free_shipping)
+                                                            <span class="badge badge-success">Free Ship</span>
+                                                        @endif
+                                                    </dd>
+
+                                                    <dt class="col-sm-5">Phí đối tác</dt>
+                                                    <dd class="col-sm-7">
+                                                        {{ number_format($order->partner_fee ?? 0) }} VNĐ
+                                                        @if($order->customer_pay_fee)
+                                                            <span class="badge badge-warning">KH trả phí</span>
+                                                        @endif
+                                                    </dd>
+
+                                                    <dt class="col-sm-5">Lý do hoàn/hủy</dt>
+                                                    <dd class="col-sm-7">
+                                                        @if($order->returned_reason)
+                                                            <span class="badge badge-danger">
+                                                                @switch($order->returned_reason)
+                                                                    @case(1)
+                                                                        Đổi ý
+                                                                        @break
+                                                                    @case(2)
+                                                                        Lỗi sản phẩm
+                                                                        @break
+                                                                    @case(3)
+                                                                        Giao hàng sai
+                                                                        @break
+                                                                    @case(4)
+                                                                        Giao hàng chậm
+                                                                        @break
+                                                                    @default
+                                                                        Lý do khác ({{ $order->returned_reason }})
+                                                                @endswitch
+                                                            </span>
+                                                        @else
+                                                            N/A
+                                                        @endif
+                                                    </dd>
+                                                </dl>
+                                            </div>
+                                        </div>
+
                                         @if(!$order->pancake_order_id && (!$order->pancake_push_status || $order->pancake_push_status !== 'success') && $order->internal_status !== 'Pushed to Pancake successfully.')
                                             <div class="text-center mt-2">
                                                 @can('orders.push_to_pancake')
@@ -171,6 +289,20 @@
                                                     </button>
                                                 @endcan
                                             </div>
+                                        @endif
+
+                                        @if($order->pancake_status)
+                                        <tr>
+                                            <th>Trạng thái Pancake:</th>
+                                            <td>
+                                                @if(is_numeric($order->pancake_status) && App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->exists())
+                                                    @php $pancakeStatus = App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->first(); @endphp
+                                                    <span class="badge badge-{{ $pancakeStatus->color }}">{{ $pancakeStatus->name }}</span>
+                                                @else
+                                                    <span class="badge {{ $order->getPancakeStatusClass() }}">{{ $order->getPancakeStatusText() }}</span>
+                                                @endif
+                                            </td>
+                                        </tr>
                                         @endif
                                     </div>
                                 </div>

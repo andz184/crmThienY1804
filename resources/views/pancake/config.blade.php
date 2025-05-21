@@ -60,6 +60,14 @@
                         </div>
 
                         <div class="form-group">
+                            <div class="custom-control custom-switch">
+                                <input type="checkbox" class="custom-control-input" id="auto_sync" name="auto_sync" value="1" {{ old('auto_sync', $settings['auto_sync'] ?? true) ? 'checked' : '' }}>
+                                <label class="custom-control-label" for="auto_sync">Tự động đồng bộ đơn hàng với Pancake</label>
+                            </div>
+                            <small class="form-text text-muted">Nếu bật, đơn hàng sẽ tự động đồng bộ với Pancake khi tạo mới hoặc cập nhật mà không cần phải nhấn nút.</small>
+                        </div>
+
+                        <div class="form-group">
                             <button type="submit" class="btn btn-primary">Lưu cấu hình</button>
                             <button type="submit" name="test_connection" value="1" class="btn btn-info">Kiểm tra kết nối</button>
                         </div>

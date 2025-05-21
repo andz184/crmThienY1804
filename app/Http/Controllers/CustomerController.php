@@ -383,6 +383,7 @@ class CustomerController extends Controller
 
     public function syncFromOrders(Request $request)
     {
+        dd(1);
         $this->authorize('customers.sync');
         $user = Auth::user();
         $isAjax = $request->ajax();
