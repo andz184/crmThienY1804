@@ -153,33 +153,33 @@ class RolesAndPermissionsSeeder extends Seeder
             'password' => Hash::make('password'),
         ])->assignRole($superAdminRole);
 
-        // --- Create Sample Managers ---
-        $managers = collect();
-        $numberOfManagers = 3; // Reduced for simplicity, adjust as needed
-        for ($i = 1; $i <= $numberOfManagers; $i++) {
-            $managerUser = User::create([
-                'name' => 'Manager ' . Str::ucfirst($faker->word),
-                'email' => $faker->unique()->safeEmail(),
-                'password' => Hash::make('password'),
-                'manages_team_id' => $i + 100,
-            ]);
-            $managerUser->assignRole($managerRole);
-            $managers->push($managerUser);
-        }
-        $managerTeamIds = $managers->pluck('manages_team_id')->toArray();
+        // // --- Create Sample Managers ---
+        // $managers = collect();
+        // $numberOfManagers = 3; // Reduced for simplicity, adjust as needed
+        // for ($i = 1; $i <= $numberOfManagers; $i++) {
+        //     $managerUser = User::create([
+        //         'name' => 'Manager ' . Str::ucfirst($faker->word),
+        //         'email' => $faker->unique()->safeEmail(),
+        //         'password' => Hash::make('password'),
+        //         'manages_team_id' => $i + 100,
+        //     ]);
+        //     $managerUser->assignRole($managerRole);
+        //     $managers->push($managerUser);
+        // }
+        // $managerTeamIds = $managers->pluck('manages_team_id')->toArray();
 
-        // --- Create Sample Staff Users ---
-        $numberOfStaff = 10; // Reduced for simplicity, adjust as needed
-        if (!empty($managerTeamIds)) { // Ensure there are managers to assign staff to
-            for ($i = 1; $i <= $numberOfStaff; $i++) {
-                User::create([
-                    'name' => $faker->name(),
-                    'email' => $faker->unique()->safeEmail(),
-                    'password' => Hash::make('password'),
-                    'team_id' => $managerTeamIds[array_rand($managerTeamIds)],
-                ])->assignRole($staffRole);
-            }
-        }
+        // // --- Create Sample Staff Users ---
+        // $numberOfStaff = 10; // Reduced for simplicity, adjust as needed
+        // if (!empty($managerTeamIds)) { // Ensure there are managers to assign staff to
+        //     for ($i = 1; $i <= $numberOfStaff; $i++) {
+        //         User::create([
+        //             'name' => $faker->name(),
+        //             'email' => $faker->unique()->safeEmail(),
+        //             'password' => Hash::make('password'),
+        //             'team_id' => $managerTeamIds[array_rand($managerTeamIds)],
+        //         ])->assignRole($staffRole);
+        //     }
+        // }
 
         echo "Seed: Roles (super-admin, manager, staff), Permissions, and sample Users created successfully.\n";
     }

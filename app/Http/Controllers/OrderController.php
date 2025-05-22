@@ -416,23 +416,8 @@ class OrderController extends Controller
         $pancakeShippingProviderId = null;
         if (!empty($validatedData['shipping_provider_id'])) {
             $shippingProvider = ShippingProvider::find($validatedData['shipping_provider_id']);
-            if ($shippingProvider && $shippingProvider->pancake_partner_id) {
-                $pancakeShippingProviderId = $shippingProvider->pancake_partner_id;
-            } elseif ($shippingProvider && $shippingProvider->pancake_id) {
-                $pancakeShippingProviderId = $shippingProvider->pancake_id;
-            }
-        }
-
-        // Nếu đơn hàng từ Pancake đã có pancake_shipping_provider_id nhưng không có shipping_provider_id
-        // thì tìm đơn vị vận chuyển thích hợp
-        if (empty($validatedData['shipping_provider_id']) && !empty($validatedData['pancake_shipping_provider_id'])) {
-            $matchingProvider = ShippingProvider::where('pancake_partner_id', $validatedData['pancake_shipping_provider_id'])
-                ->orWhere('pancake_id', $validatedData['pancake_shipping_provider_id'])
-                ->first();
-            
-            if ($matchingProvider) {
-                $validatedData['shipping_provider_id'] = $matchingProvider->id;
-                $pancakeShippingProviderId = $validatedData['pancake_shipping_provider_id'];
+            if ($shippingProvider && ($shippingProvider->pancake_id || $shippingProvider->pancake_partner_id)) {
+                $pancakeShippingProviderId = $shippingProvider->pancake_partner_id ?? $shippingProvider->pancake_id;
             }
         }
 
@@ -525,17 +510,6 @@ class OrderController extends Controller
         $warehouses = Warehouse::orderBy('name')->pluck('name', 'id');
         $shippingProviders = ShippingProvider::orderBy('name')->pluck('name', 'id');
 
-        // Tự động tìm đơn vị vận chuyển dựa trên pancake_shipping_provider_id nếu có
-        if (!$order->shipping_provider_id && $order->pancake_shipping_provider_id) {
-            $matchingProvider = ShippingProvider::where('pancake_partner_id', $order->pancake_shipping_provider_id)
-                ->orWhere('pancake_id', $order->pancake_shipping_provider_id)
-                ->first();
-            
-            if ($matchingProvider) {
-                $order->shipping_provider_id = $matchingProvider->id;
-            }
-        }
-
         $pancakeShops = PancakeShop::orderBy('name')->pluck('name', 'id');
         $pancakePages = collect();
         if ($order->pancake_shop_id) {
@@ -596,8 +570,6 @@ class OrderController extends Controller
             'status' => ['required', 'string', Rule::in($this->validStatuses)],
             'items' => 'required|array|min:1',
             'items.*.code' => 'required|string',
-            'items.*.name' => 'required|string',
-            'items.*.price' => 'required|numeric|min:0',
             'items.*.quantity' => 'required|integer|min:1',
             'warehouse_id' => 'required|exists:warehouses,id',
             'shipping_fee' => 'nullable|numeric|min:0',
@@ -616,18 +588,6 @@ class OrderController extends Controller
             $orderData = $validatedData;
             unset($orderData['items']);
 
-            // Calculate total value from items
-            $totalValue = 0;
-            foreach ($validatedData['items'] as $item) {
-                $totalValue += $item['price'] * $item['quantity'];
-            }
-
-            // Add shipping fee to total value
-            $totalValue += $validatedData['shipping_fee'] ?? 0;
-
-            // Add total value to order data
-            $orderData['total_value'] = $totalValue;
-
             if ($request->has('warehouse_id')) {
                 $warehouse = Warehouse::findOrFail($request->warehouse_id);
                 $orderData['warehouse_id'] = $request->warehouse_id;
@@ -639,40 +599,22 @@ class OrderController extends Controller
             if ($request->has('shipping_provider_id')) {
                 if (!empty($request->shipping_provider_id)) {
                     $shippingProvider = ShippingProvider::find($request->shipping_provider_id);
-                    if ($shippingProvider && $shippingProvider->pancake_partner_id) {
-                        $orderData['pancake_shipping_provider_id'] = $shippingProvider->pancake_partner_id;
-                    } elseif ($shippingProvider && $shippingProvider->pancake_id) {
-                        $orderData['pancake_shipping_provider_id'] = $shippingProvider->pancake_id;
+                    if ($shippingProvider && ($shippingProvider->pancake_id || $shippingProvider->pancake_partner_id)) {
+                        $orderData['pancake_shipping_provider_id'] = $shippingProvider->pancake_partner_id ?? $shippingProvider->pancake_id;
                     }
                 } else {
                     $orderData['pancake_shipping_provider_id'] = null;
                 }
             }
 
-            // Add checkbox values
-            $orderData['is_free_shipping'] = $request->has('is_free_shipping');
-            $orderData['is_livestream'] = $request->has('is_livestream');
-            $orderData['is_live_shopping'] = $request->has('is_live_shopping');
-            $orderData['customer_pay_fee'] = $request->has('customer_pay_fee');
-            $orderData['partner_fee'] = $request->input('partner_fee', 0);
-            $orderData['returned_reason'] = $request->input('returned_reason');
-
             $order->update($orderData);
 
             $order->items()->delete();
             foreach ($validatedData['items'] as $item) {
                 $order->items()->create([
-                    'name' => $item['name'] ?? null,
-                    'product_name' => $item['product_name'] ?? $item['name'] ?? null,
-                    'code' => $item['code'] ?? null,
-                    'product_code' => $item['product_code'] ?? null,
-                    'quantity' => $item['quantity'] ?? 1,
-                    'price' => $item['price'] ?? 0,
-                    'weight' => $item['weight'] ?? 0,
-                    'pancake_product_id' => $item['pancake_product_id'] ?? null,
-                    'pancake_variation_id' => $item['pancake_variation_id'] ?? $item['code'] ?? null,
-                    'pancake_variant_id' => $item['pancake_variant_id'] ?? $item['code'] ?? null,
-                    'product_info' => $item, // Store the complete item data as JSON
+                    'pancake_variation_id' => $item['code'],
+                    'code' => $item['code'],
+                    'quantity' => $item['quantity']
                 ]);
             }
 

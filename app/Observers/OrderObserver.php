@@ -22,6 +22,9 @@ class OrderObserver
     public function created(Order $order): void
     {
         $this->updateCustomerFromOrder($order);
+        
+        // Dispatch the OrderCreated event for order assignment
+        event(new \App\Events\OrderCreated($order));
     }
 
     /**

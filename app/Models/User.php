@@ -47,6 +47,7 @@ class User extends Authenticatable implements JWTSubject
         'manages_team_id',
         'pancake_uuid',
         'pancake_care_uuid',
+        'is_active',
     ];
 
     /**
@@ -86,6 +87,14 @@ class User extends Authenticatable implements JWTSubject
     public function callLogs()
     {
         return $this->hasMany(CallLog::class);
+    }
+
+    /**
+     * Get the Pancake staff record for this user.
+     */
+    public function pancakeStaff()
+    {
+        return $this->hasOne(PancakeStaff::class);
     }
 
     /**

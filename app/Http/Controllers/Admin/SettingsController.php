@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\Rules\File;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -47,32 +48,21 @@ class SettingsController extends Controller
      */
     public function update(Request $request)
     {
-        // Determine which settings the user is allowed to update based on permissions
-        $allowedUpdates = [];
-        if (auth()->user()->can('settings.manage_favicon')) {
-            $allowedUpdates['favicon'] = ['nullable', File::image()->max(1024)]; // 1MB Max, Image only
-            $allowedUpdates['app_name'] = ['required', 'string', 'max:255']; // Example: Site Name
-        }
-        if (auth()->user()->can('settings.manage_seo')) {
-            $allowedUpdates['seo_meta_title'] = ['nullable', 'string', 'max:255'];
-            $allowedUpdates['seo_meta_description'] = ['nullable', 'string', 'max:1000'];
-        }
-
-        // Authorize the general update action - requires 'settings.update' permission
+        // Ensure user is authorized for the basic update operation
         $this->authorize('settings.update');
+        
+        // Define basic allowed updates
+        $allowedUpdates = [
+            'app_name' => ['required', 'string', 'max:255'],
+            'favicon' => ['nullable', File::image()->max(1024)], // 1MB Max, Image only
+            'seo_meta_title' => ['nullable', 'string', 'max:255'],
+            'seo_meta_description' => ['nullable', 'string', 'max:1000'],
+        ];
 
         $validated = $request->validate($allowedUpdates);
 
         try {
             foreach ($validated as $key => $value) {
-                // Double-check specific permission for the key being updated
-                if (($key === 'favicon' || $key === 'app_name') && !auth()->user()->can('settings.manage_favicon')) {
-                    continue; // Skip if no permission for favicon/app_name
-                }
-                if (($key === 'seo_meta_title' || $key === 'seo_meta_description') && !auth()->user()->can('settings.manage_seo')) {
-                    continue; // Skip if no permission for seo
-                }
-
                 // Handle File Upload (Favicon)
                 if ($key === 'favicon' && $request->hasFile($key) && $request->file($key)->isValid()) {
                     $currentPath = Setting::getValue('favicon_path');
@@ -81,7 +71,7 @@ class SettingsController extends Controller
                     }
                     $path = $request->file('favicon')->store('logos', 'public');
                     Setting::setValue('favicon_path', $path); // Store path separately
-                    Setting::setValue('favicon_url', Storage::disk('public')->url($path)); // Store URL for easy access
+                    Setting::setValue('favicon_url', asset('storage/' . $path)); // Store URL for easy access
                 }
                 // Handle Text-based settings (excluding the file input itself)
                 elseif ($key !== 'favicon') {
@@ -134,23 +124,30 @@ class SettingsController extends Controller
     {
         $this->authorize('settings.manage');
 
-        // Get staff statistics
+        // Get staff statistics - now using pancake_uuid to connect with assigning_seller_id
         $staffStats = User::role('staff')
-            ->select('users.id', 'users.name')
-            ->selectRaw('COUNT(CASE WHEN orders.status IN (?, ?, ?) THEN 1 END) as processing_orders_count',
-                [Order::STATUS_MOI, Order::STATUS_CAN_XU_LY, Order::STATUS_CHO_HANG])
+            ->select('users.id', 'users.name', 'users.pancake_uuid')
             ->selectRaw('COUNT(orders.id) as total_orders_count')
-            ->leftJoin('orders', 'users.id', '=', 'orders.user_id')
-            ->groupBy('users.id', 'users.name')
+            ->selectRaw('COUNT(CASE WHEN orders.status IN (?, ?, ?) THEN 1 END) as processing_orders_count', 
+                [\App\Models\Order::STATUS_MOI, \App\Models\Order::STATUS_CAN_XU_LY, \App\Models\Order::STATUS_CHO_HANG])
+            ->leftJoin('orders', 'users.pancake_uuid', '=', 'orders.assigning_seller_id')
+            ->groupBy('users.id', 'users.name', 'users.pancake_uuid')
             ->get();
-
+            
+        // Get latest skipped staff sync reasons from cache
+        $skippedStaffReasons = \Illuminate\Support\Facades\Cache::get('pancake_sync_skipped_staff', []);
+        
         // Get order distribution settings
         $settings = [
-            'order_distribution_type' => WebsiteSetting::get('order_distribution_type', 'sequential'),
-            'order_distribution_pattern' => WebsiteSetting::get('order_distribution_pattern', '1,1,1')
+            'order_distribution_type' => \App\Models\WebsiteSetting::get('order_distribution_type', 'sequential'),
+            'order_distribution_pattern' => \App\Models\WebsiteSetting::get('order_distribution_pattern', '1,1,1')
         ];
 
-        return view('admin.settings.order_distribution', compact('settings', 'staffStats'));
+        return view('admin.settings.order_distribution', compact(
+            'settings', 
+            'staffStats',
+            'skippedStaffReasons'
+        ));
     }
 
     /**

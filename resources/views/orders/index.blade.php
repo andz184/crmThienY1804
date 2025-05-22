@@ -288,7 +288,6 @@
                         @endcanany
                         <th style="min-width: 150px;">Trạng thái CRM</th>
                         <th style="min-width: 150px;">Trạng thái Pancake</th>
-                        <th style="min-width: 120px;">Pancake Info</th>
                         <th style="min-width: 120px;">Ngày tạo</th>
                         <th style="min-width: 160px;">Hành động</th>
                     </tr>
@@ -703,8 +702,6 @@ document.addEventListener('DOMContentLoaded', () => {
         totalPages: 0,
         startDate: null,
         endDate: null,
-        startDateTime: null,
-        endDateTime: null,
         stats: {
             created: 0,
             updated: 0,
@@ -713,7 +710,8 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         progressInterval: null,
         startTime: null,
-        syncInfo: null
+        syncInfo: null,
+        retryAttempts: 0
     };
 
     // Event listeners for sync buttons
@@ -864,11 +862,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Function to start sync process
     function startSync(syncType, options = {}) {
-        // Show loading dialog
+        // Show loading dialog with immediate feedback
         Swal.fire({
-            title: 'Đang khởi tạo đồng bộ...',
-            text: 'Vui lòng chờ trong giây lát',
+            title: 'Đang khởi tạo...',
+            html: `
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-2" role="status">
+                        <span class="sr-only">Đang tải...</span>
+                    </div>
+                    <p class="mb-0">Hệ thống đang kết nối đến Pancake...</p>
+                </div>
+            `,
             allowOutsideClick: false,
+            showConfirmButton: false,
             didOpen: () => {
                 Swal.showLoading();
             }
@@ -896,15 +902,20 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Convert date to start and end timestamps
             const selectedDate = new Date(options.date);
-            const startDateTime = new Date(selectedDate.setHours(0, 0, 0, 0)).getTime() / 1000;
-            const endDateTime = new Date(selectedDate.setHours(23, 59, 59, 999)).getTime() / 1000;
+            const startDateTime = Math.floor(new Date(selectedDate.setHours(0, 0, 0, 0)).getTime() / 1000);
+            const endDateTime = Math.floor(new Date(selectedDate.setHours(23, 59, 59, 999)).getTime() / 1000);
             
             data = {
                 date: options.date,
                 startDateTime: startDateTime,
-                endDateTime: endDateTime,
-                sync_type: 'date' // Explicitly indicate this is a date sync
+                endDateTime: endDateTime
             };
+
+            console.log("Đồng bộ theo ngày:", {
+                date: options.date,
+                startDateTime: startDateTime,
+                endDateTime: endDateTime
+            });
 
             // For older dates, show additional warning
             const today = new Date();
@@ -943,13 +954,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data.sync_date) {
             data.date = data.sync_date;
             delete data.sync_date;
-        }
-        
-        // Make sure startDateTime and endDateTime are preserved in every request
-        if (data.startDateTime && data.endDateTime) {
-            // Store these in syncState for potential use in subsequent requests
-            syncState.startDateTime = data.startDateTime;
-            syncState.endDateTime = data.endDateTime;
         }
         
         $.ajax({
@@ -1027,12 +1031,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (syncState.date) {
             data.date = syncState.date;
         }
-        
-        // Include startDateTime and endDateTime if they exist in syncState
-        if (syncState.startDateTime && syncState.endDateTime) {
-            data.startDateTime = syncState.startDateTime;
-            data.endDateTime = syncState.endDateTime;
-        }
 
         console.log(`Processing page ${pageNumber}/${syncState.totalPages || '?'}`);
 
@@ -1090,16 +1088,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="text-left">
                     <p class="mb-2">Tiến trình đồng bộ đang được thực hiện. Vui lòng không đóng trang này.</p>
                     <div class="progress mb-3">
-                        <div id="sync-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                        <div id="sync-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success"
                              role="progressbar" style="width: 0%"
                              aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                     </div>
-                    <div id="sync-stats">
-                        <p class="mb-1">Đơn hàng mới: <span id="sync-created" class="badge badge-success">0</span></p>
-                        <p class="mb-1">Đơn hàng cập nhật: <span id="sync-updated" class="badge badge-info">0</span></p>
-                        <p class="mb-1">Lỗi: <span id="sync-errors" class="badge badge-danger">0</span></p>
-                        <p class="mb-1" id="sync-current-operation">Đang chuẩn bị dữ liệu...</p>
-                        <p class="mb-1 text-muted" id="sync-time-elapsed">Thời gian: 0 giây</p>
+                    <div id="sync-stats" class="p-2 border rounded bg-light">
+                        <div class="row">
+                            <div class="col-6">
+                                <p class="mb-1"><strong>Tiến trình:</strong> <span id="sync-page-progress">0/0</span> trang</p>
+                                <p class="mb-1">Đơn hàng mới: <span id="sync-created" class="badge badge-success">0</span></p>
+                                <p class="mb-1">Đơn cập nhật: <span id="sync-updated" class="badge badge-info">0</span></p>
+                            </div>
+                            <div class="col-6">
+                                <p class="mb-1">Tiến độ: <span id="sync-progress-percentage">0%</span></p>
+                                <p class="mb-1">Lỗi: <span id="sync-errors" class="badge badge-danger">0</span></p>
+                                <p class="mb-1">Tổng: <span id="sync-total-processed">0</span>/<span id="sync-total-expected">?</span></p>
+                            </div>
+                        </div>
+                        <p class="mb-1" id="sync-current-operation">Đang khởi tạo dữ liệu...</p>
+                        <p class="mb-0" id="sync-processing-details"></p>
+                        <p class="mb-0 text-muted" id="sync-time-elapsed">Thời gian: 0 giây</p>
+                    </div>
+                    <div id="sync-error-details" class="mt-2 text-danger d-none">
+                        <p class="mb-1"><i class="fas fa-exclamation-triangle"></i> Lỗi gần đây:</p>
+                        <ul id="sync-error-list" class="pl-3 mb-0 small"></ul>
                     </div>
                 </div>
             `,
@@ -1115,6 +1127,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Start checking progress periodically
         startProgressTracking();
+        
+        // Hiển thị ngay phản hồi ban đầu
+        updateElapsedTime();
+        $('#sync-current-operation').text('Đang kết nối đến máy chủ Pancake...');
     }
 
     // Update progress dialog with current stats
@@ -1138,46 +1154,136 @@ document.addEventListener('DOMContentLoaded', () => {
             clearInterval(syncState.progressInterval);
         }
 
-        // Check progress every 1.5 seconds
-        syncState.progressInterval = setInterval(() => {
+        // Variable for tracking timing
+        let checkCount = 0;
+        let interval = 500; // Start with more frequent checks (500ms)
+        
+        // Initial immediate check
+        setTimeout(() => checkSyncProgress(), 100);
+
+        // Check progress with adaptive timing
+        function setNextCheck() {
+            checkCount++;
+            
+            // Adjust interval based on check count
+            if (checkCount > 3 && checkCount < 10) {
+                interval = 1000; // 1 second after first few checks
+            } else if (checkCount >= 10) {
+                interval = 2000; // 2 seconds after more checks
+            }
+            
+            syncState.progressInterval = setTimeout(() => {
+                checkSyncProgress();
+                setNextCheck();
+            }, interval);
+        }
+        
+        // Start the first timer
+        setNextCheck();
+        
+        // Function to check sync progress
+        function checkSyncProgress() {
             $.ajax({
                 url: '{{ route("pancake.orders.sync-all-progress") }}',
                 method: 'GET',
                 success: function(response) {
                     if (response.success) {
+                        // Store the sync info for cancel operations
+                        if (response.sync_info) {
+                            syncState.syncInfo = response.sync_info;
+                        }
+                        
                         // Update progress bar
                         const progress = response.progress || 0;
                         $('#sync-progress-bar').css('width', progress + '%').attr('aria-valuenow', progress).text(progress + '%');
+                        $('#sync-progress-percentage').text(progress + '%');
 
-                        // Update stats
-                        $('#sync-created').text(response.stats?.created || 0);
-                        $('#sync-updated').text(response.stats?.updated || 0);
-                        $('#sync-errors').text(response.stats?.errors?.length || 0);
+                        // Update page progress
+                        const currentPage = response.current_page || syncState.currentPage || 0;
+                        const totalPages = response.total_pages || syncState.totalPages || 1;
+                        $('#sync-page-progress').text(`${currentPage}/${totalPages}`);
+                        
+                        // Update order counts
+                        const created = response.stats?.created || 0;
+                        const updated = response.stats?.updated || 0;
+                        const errors = response.stats?.errors_count || 0;
+                        $('#sync-created').text(created);
+                        $('#sync-updated').text(updated);
+                        $('#sync-errors').text(errors);
+                        
+                        // Update total processed/expected
+                        const totalProcessed = response.order_stats?.total_processed || (created + updated);
+                        const totalExpected = response.order_stats?.total_expected || totalProcessed;
+                        $('#sync-total-processed').text(totalProcessed);
+                        $('#sync-total-expected').text(totalExpected > 0 ? totalExpected : '?');
 
-                        // Update current operation text
+                        // Update detailed progress information
                         const statusElement = $('#sync-current-operation');
                         if (statusElement.length) {
-                            const currentPage = response.current_page || syncState.currentPage || 0;
-                            const totalPages = response.total_pages || syncState.totalPages || 1;
-                            const totalProcessed = (response.order_stats?.total_processed || 0);
-                            const totalExpected = (response.order_stats?.total_expected || 0);
-                            
-                            let statusMsg = `Đang xử lý trang ${currentPage}/${totalPages}`;
-                            if(totalExpected > 0) {
-                                statusMsg += ` - ${totalProcessed}/${totalExpected} đơn hàng`;
+                            // Use server message if available, or create default message
+                            if (response.message) {
+                                statusElement.text(response.message);
+                            } else {
+                                let statusMsg = `Đang xử lý trang ${currentPage}/${totalPages}`;
+                                if(totalExpected > 0) {
+                                    statusMsg += ` - ${totalProcessed}/${totalExpected} đơn hàng`;
+                                }
+                                statusElement.text(statusMsg);
                             }
-                            statusElement.text(response.message || statusMsg);
+                        }
+                        
+                        // Show elapsed time from server if available, otherwise calculate locally
+                        const timeElement = $('#sync-time-elapsed');
+                        if (timeElement.length) {
+                            if (response.detailed_progress?.elapsed_time) {
+                                timeElement.text(`Thời gian: ${response.detailed_progress.elapsed_time}`);
+                            } else {
+                                updateElapsedTime();
+                            }
+                        }
+                        
+                        // Add estimated time remaining if available
+                        const processingDetails = $('#sync-processing-details');
+                        if (processingDetails.length) {
+                            let detailsHtml = '';
+                            
+                            // Add processing rate if available
+                            if (response.detailed_progress?.processing_rate) {
+                                detailsHtml += `<span class="badge badge-info">Tốc độ: ${response.detailed_progress.processing_rate} đơn/phút</span> `;
+                            }
+                            
+                            // Add estimated time remaining if available
+                            if (response.detailed_progress?.estimated_time_remaining) {
+                                detailsHtml += `<span class="badge badge-warning">Còn lại: ${response.detailed_progress.estimated_time_remaining}</span>`;
+                            }
+                            
+                            processingDetails.html(detailsHtml);
+                        }
+                        
+                        // Display recent errors if available
+                        if (response.stats?.failed_orders && response.stats.failed_orders.length > 0) {
+                            const errorDetails = $('#sync-error-details');
+                            const errorList = $('#sync-error-list');
+                            
+                            errorDetails.removeClass('d-none');
+                            errorList.empty();
+                            
+                            // Display up to 3 most recent errors
+                            response.stats.failed_orders.slice(-3).forEach(error => {
+                                const errorText = error.order_id ? 
+                                    `Đơn #${error.order_id}: ${error.error}` : 
+                                    error.error;
+                                errorList.append(`<li>${errorText}</li>`);
+                            });
                         }
 
-                        // Update elapsed time
-                        updateElapsedTime();
-
-                        // Check if sync is completed
-                        const isCompleted = progress >= 100 || !response.in_progress;
-                        
                         // Update sync state from server
                         if (response.current_page) syncState.currentPage = response.current_page;
                         if (response.total_pages) syncState.totalPages = response.total_pages;
+                        syncState.inProgress = response.in_progress;
+                        
+                        // Check if sync is completed
+                        const isCompleted = progress >= 100 || !response.in_progress;
                         
                         // If sync is paused but not completed
                         if (!response.in_progress && response.current_page < response.total_pages) {
@@ -1208,11 +1314,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 },
-                error: function() {
+                error: function(xhr) {
+                    console.error('Error checking sync progress:', xhr);
                     $('#sync-current-operation').text('Không thể kết nối đến máy chủ. Đang thử lại...');
                 }
             });
-        }, 1500);
+        }
     }
 
     // Update elapsed time display
@@ -1257,6 +1364,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Calculate stats
         const totalOrders = syncState.stats.created + syncState.stats.updated;
         const elapsedSeconds = Math.floor((new Date().getTime() - syncState.startTime) / 1000);
+        const processingRate = elapsedSeconds > 0 ? Math.round((totalOrders / elapsedSeconds) * 60) : 0;
 
         // Show results dialog
         let resultTitle = isPartialSync ? 'Đồng bộ tạm dừng!' : 'Đồng bộ hoàn tất!';
@@ -1288,6 +1396,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             <li><span class="fa-li"><i class="fas fa-calculator"></i></span>
                                 <strong>Tổng đơn hàng đã xử lý: ${totalOrders}</strong></li>
                         </ul>
+                    </div>
+                    <div class="alert alert-light border mt-3">
+                        <h6 class="mb-2">Thống kê hiệu suất:</h6>
+                        <div class="row">
+                            <div class="col-6">
+                                <p class="mb-1"><i class="fas fa-clock text-info"></i> Thời gian: ${formatTime(elapsedSeconds)}</p>
+                            </div>
+                            <div class="col-6">
+                                <p class="mb-1"><i class="fas fa-tachometer-alt text-success"></i> Tốc độ: ${processingRate} đơn/phút</p>
+                            </div>
+                        </div>
                     </div>
                     ${syncState.stats.errors.length > 0 ?
                       '<div class="alert alert-warning mt-3"><strong>Chi tiết lỗi:</strong><ul class="mb-0">' +
@@ -1327,12 +1446,81 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update state
         syncState.inProgress = false;
 
+        // Track retry attempts
+        if (!syncState.retryAttempts) {
+            syncState.retryAttempts = 0;
+        }
+
+        // Allow retrying a few times for connection issues
+        if (syncState.retryAttempts < 2 && 
+           (errorMessage.includes('timeout') || 
+            errorMessage.includes('connection') || 
+            errorMessage.includes('network') ||
+            errorMessage.includes('không kết nối'))) {
+            
+            syncState.retryAttempts++;
+            
+            Swal.fire({
+                title: 'Đang thử lại...',
+                html: `
+                    <div class="text-center">
+                        <div class="spinner-border text-warning" role="status">
+                            <span class="sr-only">Đang tải...</span>
+                        </div>
+                        <p class="mt-2">Gặp sự cố kết nối. Đang thử lại lần ${syncState.retryAttempts}/2...</p>
+                        <p class="text-danger small">${errorMessage}</p>
+                    </div>
+                `,
+                showConfirmButton: false,
+                timer: 2000,
+                timerProgressBar: true,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            }).then(() => {
+                // Try to resume from where we left off
+                if (syncState.currentPage > 0) {
+                    syncState.inProgress = true;
+                    processNextPage(syncState.currentPage);
+                } else {
+                    // Restart completely if we didn't even get to the first page
+                    startSync(syncState.date ? 'date' : 'all', syncState.date ? { date: syncState.date } : {});
+                }
+            });
+            
+            return;
+        }
+        
+        // Reset retry counter
+        syncState.retryAttempts = 0;
+
         // Show error message
         Swal.fire({
             title: 'Lỗi đồng bộ!',
-            text: errorMessage,
+            html: `
+                <div class="text-left">
+                    <p class="text-danger font-weight-bold">${errorMessage}</p>
+                    <p class="mt-2">Bạn có thể:</p>
+                    <ul>
+                        <li>Thử lại quá trình đồng bộ</li>
+                        <li>Kiểm tra kết nối mạng</li>
+                        <li>Kiểm tra cài đặt Pancake của bạn</li>
+                    </ul>
+                </div>
+            `,
             icon: 'error',
-            confirmButtonText: 'OK'
+            confirmButtonText: 'Thử lại',
+            showCancelButton: true,
+            cancelButtonText: 'Đóng'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Try again with the same settings
+                if (syncState.date) {
+                    startSync('date', { date: syncState.date });
+                } else {
+                    startSync('all');
+                }
+            }
         });
     }
 
@@ -1353,8 +1541,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!silent) {
                 Swal.fire({
                     title: 'Đang hủy...',
-                    text: 'Vui lòng đợi trong giây lát.',
+                    html: `
+                        <div class="text-center">
+                            <div class="spinner-grow text-warning mb-2" role="status">
+                                <span class="sr-only">Đang hủy...</span>
+                            </div>
+                            <p class="mb-0">Đang dừng quá trình đồng bộ...</p>
+                        </div>
+                    `,
                     allowOutsideClick: false,
+                    showConfirmButton: false,
                     didOpen: () => {
                         Swal.showLoading();
                     }

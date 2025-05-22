@@ -9,12 +9,9 @@
             @can('customers.view_trashed')
                 <a href="{{ route('customers.archive') }}" class="btn btn-warning btn-sm mr-1" title="Thùng rác"><i class="fas fa-trash-alt mr-1"></i>Thùng rác</a>
             @endcan
-            {{-- @can('customers.sync')
-                <button id="sync-customers-btn" class="btn btn-info btn-sm mr-1">Đồng bộ từ Đơn hàng</button>
-            @endcan
             @can('customers.create')
                 <a href="{{ route('customers.create') }}" class="btn btn-primary btn-sm">Thêm khách hàng</a>
-            @endcan --}}
+            @endcan
         </div>
     </div>
 @stop
@@ -24,61 +21,124 @@
     {{-- Thông báo --}}
     @include('partials._alerts')
 
+    {{-- Quick Filter Buttons --}}
+    <div class="mb-3">
+        <div class="btn-group">
+            <a href="{{ route('customers.index') }}" class="btn {{ !request()->has('quick_filter') ? 'btn-primary' : 'btn-outline-primary' }}">
+                <i class="fas fa-users"></i> Tất cả khách hàng
+            </a>
+            <a href="{{ route('customers.index', ['quick_filter' => 'new']) }}" class="btn {{ request('quick_filter') == 'new' ? 'btn-primary' : 'btn-outline-primary' }}">
+                <i class="fas fa-user-plus"></i> Khách hàng mới
+            </a>
+            <a href="{{ route('customers.index', ['quick_filter' => 'repeat']) }}" class="btn {{ request('quick_filter') == 'repeat' ? 'btn-primary' : 'btn-outline-primary' }}">
+                <i class="fas fa-redo"></i> Khách hàng mua lại
+            </a>
+            <a href="{{ route('customers.index', ['quick_filter' => 'vip']) }}" class="btn {{ request('quick_filter') == 'vip' ? 'btn-primary' : 'btn-outline-primary' }}">
+                <i class="fas fa-crown"></i> Khách hàng VIP
+            </a>
+            <a href="{{ route('customers.index', ['quick_filter' => 'inactive']) }}" class="btn {{ request('quick_filter') == 'inactive' ? 'btn-primary' : 'btn-outline-primary' }}">
+                <i class="fas fa-user-clock"></i> Không hoạt động
+            </a>
+        </div>
+    </div>
+
     {{-- Bộ lọc và Tìm kiếm --}}
-    <div class="card card-outline card-primary collapsed-card mb-3" id="filter-card">
+    <div class="card card-outline card-primary mb-3" id="filter-card">
         <div class="card-header">
             <h3 class="card-title">Bộ lọc & Tìm kiếm</h3>
             <div class="card-tools">
                 <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                    <i class="fas fa-plus"></i>
+                    <i class="fas fa-minus"></i>
                 </button>
             </div>
         </div>
-        <div class="card-body" style="display: none;">
-            <form id="filter-form" method="GET" action="{{ route('customers.index') }}" class="form-inline">
-                <div class="form-group mr-2 mb-2">
-                    <label for="search" class="mr-1">Tìm kiếm:</label>
-                    <input type="text" name="search" id="search" class="form-control form-control-sm" placeholder="Tên, SĐT, email..." value="{{ $filters['search'] ?? '' }}">
+        <div class="card-body">
+            <form id="filter-form" method="GET" action="{{ route('customers.index') }}" class="mb-0">
+                {{-- Keep the quick filter if applied --}}
+                @if(request()->has('quick_filter'))
+                    <input type="hidden" name="quick_filter" value="{{ request('quick_filter') }}">
+                @endif
+                
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="search">Tìm kiếm:</label>
+                            <input type="text" name="search" id="search" class="form-control" 
+                                placeholder="Tên, SĐT, email..." value="{{ $filters['search'] ?? '' }}">
+                        </div>
+                        <div class="form-group">
+                            <label>Khoảng thời gian tạo:</label>
+                            <div class="input-group">
+                                <input type="date" name="date_from" id="date_from" class="form-control" 
+                                    value="{{ $filters['date_from'] ?? '' }}">
+                                <div class="input-group-append input-group-prepend">
+                                    <span class="input-group-text">đến</span>
+                                </div>
+                                <input type="date" name="date_to" id="date_to" class="form-control" 
+                                    value="{{ $filters['date_to'] ?? '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>Số lượng đơn hàng:</label>
+                            <div class="input-group">
+                                <input type="number" name="min_orders" id="min_orders" class="form-control" 
+                                    placeholder="Tối thiểu" value="{{ $filters['min_orders'] ?? '' }}">
+                                <div class="input-group-append input-group-prepend">
+                                    <span class="input-group-text">đến</span>
+                                </div>
+                                <input type="number" name="max_orders" id="max_orders" class="form-control" 
+                                    placeholder="Tối đa" value="{{ $filters['max_orders'] ?? '' }}">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Tổng chi tiêu:</label>
+                            <div class="input-group">
+                                <input type="number" name="min_spent" id="min_spent" class="form-control" 
+                                    placeholder="Tối thiểu" value="{{ $filters['min_spent'] ?? '' }}">
+                                <div class="input-group-append input-group-prepend">
+                                    <span class="input-group-text">đến</span>
+                                </div>
+                                <input type="number" name="max_spent" id="max_spent" class="form-control" 
+                                    placeholder="Tối đa" value="{{ $filters['max_spent'] ?? '' }}">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="last_order_status">Trạng thái đơn cuối:</label>
+                            <select name="last_order_status" id="last_order_status" class="form-control select2">
+                                <option value="">-- Tất cả --</option>
+                                <option value="completed" {{ ($filters['last_order_status'] ?? '') == 'completed' ? 'selected' : '' }}>Hoàn thành</option>
+                                <option value="pending" {{ ($filters['last_order_status'] ?? '') == 'pending' ? 'selected' : '' }}>Chờ xử lý</option>
+                                <option value="assigned" {{ ($filters['last_order_status'] ?? '') == 'assigned' ? 'selected' : '' }}>Đã gán</option>
+                                <option value="calling" {{ ($filters['last_order_status'] ?? '') == 'calling' ? 'selected' : '' }}>Đang gọi</option>
+                                <option value="failed" {{ ($filters['last_order_status'] ?? '') == 'failed' ? 'selected' : '' }}>Thất bại</option>
+                                <option value="canceled" {{ ($filters['last_order_status'] ?? '') == 'canceled' ? 'selected' : '' }}>Đã hủy</option>
+                                <option value="no_answer" {{ ($filters['last_order_status'] ?? '') == 'no_answer' ? 'selected' : '' }}>Không nghe máy</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="tags">Nhãn khách hàng:</label>
+                            <select name="tag" id="tags" class="form-control select2">
+                                <option value="">-- Tất cả nhãn --</option>
+                                <option value="VIP" {{ ($filters['tag'] ?? '') == 'VIP' ? 'selected' : '' }}>VIP</option>
+                                <option value="Khách quen" {{ ($filters['tag'] ?? '') == 'Khách quen' ? 'selected' : '' }}>Khách quen</option>
+                                <option value="Khách mới" {{ ($filters['tag'] ?? '') == 'Khách mới' ? 'selected' : '' }}>Khách mới</option>
+                                <option value="Tiềm năng" {{ ($filters['tag'] ?? '') == 'Tiềm năng' ? 'selected' : '' }}>Tiềm năng</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="date_from" class="mr-1">Từ ngày tạo:</label>
-                    <input type="date" name="date_from" id="date_from" class="form-control form-control-sm" value="{{ $filters['date_from'] ?? '' }}">
+                <div class="d-flex justify-content-between">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Lọc
+                    </button>
+                    <a href="{{ route('customers.index') }}" class="btn btn-default" id="reset-filter">
+                        <i class="fas fa-sync"></i> Đặt lại
+                    </a>
                 </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="date_to" class="mr-1">Đến ngày tạo:</label>
-                    <input type="date" name="date_to" id="date_to" class="form-control form-control-sm" value="{{ $filters['date_to'] ?? '' }}">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="min_orders" class="mr-1">Min đơn:</label>
-                    <input type="number" name="min_orders" id="min_orders" class="form-control form-control-sm" placeholder="Min" value="{{ $filters['min_orders'] ?? '' }}" style="width: 80px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="max_orders" class="mr-1">Max đơn:</label>
-                    <input type="number" name="max_orders" id="max_orders" class="form-control form-control-sm" placeholder="Max" value="{{ $filters['max_orders'] ?? '' }}" style="width: 80px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="min_spent" class="mr-1">Min chi tiêu:</label>
-                    <input type="number" name="min_spent" id="min_spent" class="form-control form-control-sm" placeholder="Min" value="{{ $filters['min_spent'] ?? '' }}" style="width: 100px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="max_spent" class="mr-1">Max chi tiêu:</label>
-                    <input type="number" name="max_spent" id="max_spent" class="form-control form-control-sm" placeholder="Max" value="{{ $filters['max_spent'] ?? '' }}" style="width: 100px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="last_order_status" class="mr-1">Đơn cuối:</label>
-                    <select name="last_order_status" id="last_order_status" class="form-control form-control-sm">
-                        <option value="">-- Trạng thái --</option>
-                        <option value="completed" {{ ($filters['last_order_status'] ?? '') == 'completed' ? 'selected' : '' }}>Hoàn thành</option>
-                        <option value="pending" {{ ($filters['last_order_status'] ?? '') == 'pending' ? 'selected' : '' }}>Chờ xử lý</option>
-                        <option value="assigned" {{ ($filters['last_order_status'] ?? '') == 'assigned' ? 'selected' : '' }}>Đã gán</option>
-                        <option value="calling" {{ ($filters['last_order_status'] ?? '') == 'calling' ? 'selected' : '' }}>Đang gọi</option>
-                        <option value="failed" {{ ($filters['last_order_status'] ?? '') == 'failed' ? 'selected' : '' }}>Thất bại</option>
-                        <option value="canceled" {{ ($filters['last_order_status'] ?? '') == 'canceled' ? 'selected' : '' }}>Đã hủy</option>
-                        <option value="no_answer" {{ ($filters['last_order_status'] ?? '') == 'no_answer' ? 'selected' : '' }}>Không nghe máy</option>
-                    </select>
-                </div>
-                <button type="submit" class="btn btn-primary btn-sm mb-2 mr-2">Lọc</button>
-                <a href="{{ route('customers.index') }}" class="btn btn-secondary btn-sm mb-2" id="reset-filter">Xóa lọc</a>
             </form>
         </div>
     </div>
@@ -86,7 +146,7 @@
     <div class="card">
         <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
-                <h3 class="card-title">Danh sách Khách hàng</h3>
+                <h3 class="card-title">Danh sách Khách hàng <span class="badge badge-primary">{{ $customers->total() }}</span></h3>
                 <div>
                     @can('customers.delete')
                         <button id="bulk-delete-btn" class="btn btn-danger btn-sm mr-1" style="display: none;">Xóa mục đã chọn (<span id="selected-count">0</span>)</button>
@@ -205,6 +265,14 @@
 @section('js')
 <script>
 $(document).ready(function() {
+    // Initialize select2
+    $('.select2').select2();
+    
+    // Apply filters automatically when select boxes change
+    $('#last_order_status, #tags').change(function() {
+        $('#filter-form').submit();
+    });
+    
     function fetch_customers(url) {
         $.ajax({
             url: url,
@@ -247,9 +315,19 @@ $(document).ready(function() {
     $('#reset-filter').on('click', function(e) {
         e.preventDefault();
         $('#filter-form').find('input[type="text"], input[type="date"], input[type="number"], select').val('');
+        // For select2 dropdowns, we need to trigger the change event
+        $('.select2').val('').trigger('change');
         var url = $('#filter-form').attr('action');
-        history.pushState(null, '', url);
+        history.pushState(null, '', url); // Update URL
         fetch_customers(url);
+    });
+
+    // Highlight active filters
+    $('#filter-form select, #filter-form input[type="text"], #filter-form input[type="date"], #filter-form input[type="number"]').each(function() {
+        if ($(this).val()) {
+            $(this).closest('.form-group').addClass('has-success');
+            $(this).closest('.form-group').find('label').addClass('text-success font-weight-bold');
+        }
     });
 
     // Đồng bộ khách hàng AJAX - New flow with modals

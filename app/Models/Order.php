@@ -13,6 +13,7 @@ use App\Models\CallLog;
 use App\Traits\LogsActivity;
 use App\Models\ActivityLog;
 use App\Models\PancakeOrderStatus;
+use App\Models\PancakeStaff;
 
 class Order extends Model
 {
@@ -319,6 +320,14 @@ class Order extends Model
     public function pancakeOrderStatus(): BelongsTo
     {
         return $this->belongsTo(PancakeOrderStatus::class, 'pancake_status', 'status_code');
+    }
+
+    /**
+     * Get the Pancake staff member who is assigned to this order.
+     */
+    public function assignedStaff(): BelongsTo
+    {
+        return $this->belongsTo(PancakeStaff::class, 'assigning_seller_id', 'pancake_id');
     }
 
     public function activities()

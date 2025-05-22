@@ -39,20 +39,18 @@
         @canany(['view orders', 'view team orders'])
             <td>{{ $order->user->name ?? 'Chưa gán' }}</td>
         @endcanany
-        <td> {{-- Trạng thái CRM --}}
-            <span class="badge {{ $order->getStatusClass() }}">{{ $order->getStatusText() }}</span>
-        </td>
         <td> {{-- Trạng thái Pancake --}}
-            @if($order->pancake_push_status === 'success')
-                <span class="badge badge-success">Đã đẩy OK</span>
-            @elseif($order->pancake_push_status === 'failed_stock')
-                <span class="badge badge-danger">Lỗi Stock</span>
-            @elseif($order->pancake_push_status === 'failed_other')
-                <span class="badge badge-warning">Lỗi Khác</span>
-            @elseif($order->pancake_push_status)
-                <span class="badge badge-secondary">{{ ucfirst(str_replace('_', ' ', $order->pancake_push_status)) }}</span>
+            @if($order->pancake_status)
+                @if(is_numeric($order->pancake_status) && App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->exists())
+                    @php $pancakeStatus = App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->first(); @endphp
+                    <span class="badge badge-{{ $pancakeStatus->color }}" title="Trạng thái trên Pancake">
+                        {{ $pancakeStatus->name }}
+                    </span>
+                @else
+                    <span class="badge {{ $order->getPancakeStatusClass() }}" title="Trạng thái trên Pancake">{{ $order->getPancakeStatusText() }}</span>
+                @endif
             @else
-                <span class="badge badge-light">Chưa đẩy</span>
+                <span class="badge badge-light">Chưa có</span>
             @endif
         </td>
         <td> {{-- Pancake Info --}}
@@ -60,19 +58,6 @@
                 @if($order->pancake_order_id)
                     <div class="mb-1">
                         <span class="badge badge-info">ID: {{ $order->pancake_order_id }}</span>
-                    </div>
-                @endif
-                
-                @if($order->pancake_status)
-                    <div class="mb-1">
-                        @if(is_numeric($order->pancake_status) && App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->exists())
-                            @php $pancakeStatus = App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->first(); @endphp
-                            <span class="badge badge-{{ $pancakeStatus->color }}" title="Trạng thái trên Pancake">
-                                {{ $pancakeStatus->name }}
-                            </span>
-                        @else
-                            <span class="badge {{ $order->getPancakeStatusClass() }}" title="Trạng thái trên Pancake">{{ $order->getPancakeStatusText() }}</span>
-                        @endif
                     </div>
                 @endif
                 
@@ -147,9 +132,9 @@
 @empty
     <tr>
         @php
-            $colspan = 7; // Base columns: Mã đơn, KH, SĐT, Trạng thái CRM, Trạng thái Pancake, Pancake Info, Ngày tạo, Hành động = 8
+            $colspan = 6; // Base columns: Mã đơn, KH, SĐT, Trạng thái Pancake, Pancake Info, Ngày tạo, Hành động = 7
             if (auth()->user()->canany(['view orders', 'view team orders'])) {
-                $colspan = 8; // Add Sale column
+                $colspan = 7; // Add Sale column
             }
         @endphp
         <td colspan="{{ $colspan }}" class="text-center">Không tìm thấy đơn hàng nào.</td>
@@ -161,9 +146,9 @@
 @if(isset($orders) && $orders instanceof \Illuminate\Pagination\LengthAwarePaginator && $orders->hasPages())
 <tr id="pagination-row" class="d-none">
      @php
-        $colspan = 7;
+        $colspan = 6;
         if (auth()->user()->canany(['view orders', 'view team orders'])) {
-            $colspan = 8;
+            $colspan = 7;
         }
     @endphp
     <td colspan="{{ $colspan }}">

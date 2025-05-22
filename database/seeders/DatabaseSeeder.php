@@ -46,7 +46,7 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             RolesAndPermissionsSeeder::class,
-            UserSeeder::class,
+            // UserSeeder::class,
             // CategorySeeder::class,
             // ProductSeeder::class,
             // ProductVariationSeeder::class,
@@ -55,7 +55,7 @@ class DatabaseSeeder extends Seeder
             DistrictSeeder::class,          // Prerequisite for Orders
             WardSeeder::class,              // Prerequisite for Orders
             ShippingProviderSeeder::class,  // Prerequisite for Orders
-            OrderSeeder::class,             // Now runs after its dependencies
+          //  OrderSeeder::class,             // Now runs after its dependencies
             DailyRevenueAggregateSeeder::class,
             PancakePermissionSeeder::class, // Thêm quyền đồng bộ dữ liệu từ Pancake
             PancakeOrderStatusSeeder::class, // Thêm bảng mapping trạng thái từ Pancake

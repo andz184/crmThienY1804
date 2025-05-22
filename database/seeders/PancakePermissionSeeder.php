@@ -14,6 +14,7 @@ class PancakePermissionSeeder extends Seeder
         $permissions = [
             'sync-pancake' => 'Đồng bộ dữ liệu từ Pancake',
             'view-sync-status' => 'Xem trạng thái đồng bộ Pancake',
+            'sync-employees' => 'Đồng bộ nhân viên từ Pancake',
         ];
 
         foreach ($permissions as $name => $description) {

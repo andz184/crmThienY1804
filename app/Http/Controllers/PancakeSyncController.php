@@ -119,6 +119,10 @@ class PancakeSyncController extends Controller
     public function syncOrders(Request $request)
     {
         try {
+            // Increase execution time limit to 2 hours and memory limit to 1GB
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
+            
             $this->authorize('sync-pancake');
 
             // Get API configuration
@@ -256,805 +260,122 @@ class PancakeSyncController extends Controller
     }
 
     /**
- * Create a new order from Pancake data
- *
- * @param array $orderData
- * @return Order
- */
-private function createOrderFromPancake(array $orderData)
-{
-    // Debug log the order data structure to help diagnose issues
-    Log::info('Creating order from Pancake data structure', [
-        'keys' => array_keys($orderData),
-        'order_id' => $orderData['id'] ?? 'Unknown',
-        'has_customer' => isset($orderData['customer']),
-        'has_items' => isset($orderData['items']) ? count($orderData['items']) : 0,
-        'has_line_items' => isset($orderData['line_items']) ? count($orderData['line_items']) : 0,
-    ]);
-
-    // Find or create customer
+     * Tạo đơn hàng mới từ dữ liệu Pancake
+     *
+     * @param array $orderData Dữ liệu đơn hàng từ Pancake API
+     * @return \App\Models\Order
+     */
+    protected function createOrderFromPancakeData(array $orderData)
+    {
+        // Tìm hoặc tạo khách hàng
     $customer = null;
     if (!empty($orderData['customer'])) {
-       
         $customerData = $orderData['customer'];
 
-        // Try to find customer by Pancake ID
+            // Tìm khách hàng theo Pancake ID
         if (!empty($customerData['id'])) {
-            $customer = Customer::where('pancake_id', $customerData['id'])->first();
+                $customer = \App\Models\Customer::where('pancake_id', $customerData['id'])->first();
         }
 
-        // If not found, try to find by phone number
+            // Nếu không tìm thấy, thử tìm theo số điện thoại
         if (!$customer && !empty($customerData['phone'])) {
-            $customer = Customer::where('phone', $customerData['phone'])->first();
-        } else if (!$customer && !empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
-            // Try with the first phone number in the array
-            $customer = Customer::where('phone', $customerData['phone_numbers'][0])->first();
+                $customer = \App\Models\Customer::where('phone', $customerData['phone'])->first();
         }
 
-        // If still not found, create new customer
+            // Nếu vẫn không tìm thấy, tạo khách hàng mới
         if (!$customer) {
-            $customer = new Customer();
+                $customer = new \App\Models\Customer();
             $customer->name = $customerData['name'] ?? '';
-            
-            // Handle phone number(s)
-            if (!empty($customerData['phone'])) {
-                $customer->phone = $customerData['phone'];
-            } elseif (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
-                $customer->phone = $customerData['phone_numbers'][0];
-                
-                // Store all phone numbers in a JSON field if available
-                if (Schema::hasColumn('customers', 'phone_numbers')) {
-                    $customer->phone_numbers = json_encode($customerData['phone_numbers']);
-                }
-            }
-            
-            // Only set email if not empty to avoid unique constraint violation
-            if (!empty($customerData['email'])) {
-                $customer->email = $customerData['email'];
-            } elseif (!empty($customerData['emails']) && is_array($customerData['emails'])) {
-                if (!empty($customerData['emails'][0])) {
-                    $customer->email = $customerData['emails'][0];
-                }
-                
-                // Store all emails in a JSON field if available
-                if (Schema::hasColumn('customers', 'emails')) {
-                    $customer->emails = json_encode($customerData['emails']);
-                }
-            }
-            
+                $customer->phone = $customerData['phone'] ?? '';
+                $customer->email = $customerData['email'] ?? '';
             $customer->pancake_id = $customerData['id'] ?? null;
-            $customer->gender = $customerData['gender'] ?? null;
-            $customer->date_of_birth = $customerData['date_of_birth'] ?? null;
-            
-            // Store additional customer fields if the columns exist
-            if (Schema::hasColumn('customers', 'fb_id')) {
-                $customer->fb_id = $customerData['fb_id'] ?? null;
-            }
-            
-            if (Schema::hasColumn('customers', 'order_count')) {
-                $customer->order_count = $customerData['order_count'] ?? 0;
-            }
-            
-            if (Schema::hasColumn('customers', 'succeeded_order_count')) {
-                $customer->succeeded_order_count = $customerData['succeed_order_count'] ?? 0;
-            }
-            
-            if (Schema::hasColumn('customers', 'returned_order_count')) {
-                $customer->returned_order_count = $customerData['returned_order_count'] ?? 0;
-            }
-            
-            if (Schema::hasColumn('customers', 'purchased_amount')) {
-                $customer->purchased_amount = $customerData['purchased_amount'] ?? 0;
-            }
-            
-            if (Schema::hasColumn('customers', 'customer_level')) {
-                $customer->customer_level = $customerData['level'] ?? null;
-            }
-            
-            if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
-                $customer->tags = json_encode($customerData['tags']);
-            }
-            
-            if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
-                $customer->conversation_tags = json_encode($customerData['conversation_tags']);
-            }
-            
-            if (Schema::hasColumn('customers', 'reward_points')) {
-                $customer->reward_points = $customerData['reward_point'] ?? 0;
-            }
-
-            // Parse address details
-            $addressInfo = $this->parseAddress($customerData['address'] ?? null);
-            $customer->full_address = $addressInfo['full_address'];
-            $customer->province = $addressInfo['province'];
-            $customer->district = $addressInfo['district'];
-            $customer->ward = $addressInfo['ward'];
-            $customer->street_address = $addressInfo['street_address'];
-            
-            // Save customer addresses if available
-            if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
-                $customer->addresses = json_encode($customerData['shop_customer_addresses']);
-            }
-
+                $customer->address = $customerData['address'] ?? '';
             $customer->save();
-
-            Log::info('Created new customer', [
-                'customer_id' => $customer->id,
-                'pancake_id' => $customerData['id'] ?? null,
-                'phone' => $customer->phone
-            ]);
-        } else {
-            // Update existing customer with any new information
-            $customer->pancake_id = $customerData['id'] ?? $customer->pancake_id;
-            $customer->name = $customerData['name'] ?? $customer->name;
-            
-            // Update phone if available
-            if (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
-                // Keep existing phone as primary if available
-                if (empty($customer->phone)) {
-                    $customer->phone = $customerData['phone_numbers'][0];
-                }
-                
-                // Store all phone numbers in a JSON field if available
-                if (Schema::hasColumn('customers', 'phone_numbers')) {
-                    $customer->phone_numbers = json_encode($customerData['phone_numbers']);
-                }
             }
-            
-            // Only update email if not empty
-            if (!empty($customerData['email'])) {
-                $customer->email = $customerData['email'];
-            } elseif (!empty($customerData['emails']) && is_array($customerData['emails'])) {
-                if (!empty($customerData['emails'][0]) && empty($customer->email)) {
-                    $customer->email = $customerData['emails'][0];
-                }
-                
-                // Store all emails in a JSON field if available
-                if (Schema::hasColumn('customers', 'emails')) {
-                    $customer->emails = json_encode($customerData['emails']);
-                }
-            }
-            
-            // Update additional customer fields
-            $customer->gender = $customerData['gender'] ?? $customer->gender;
-            $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
-            
-            if (Schema::hasColumn('customers', 'fb_id')) {
-                $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
-            }
-            
-            if (Schema::hasColumn('customers', 'order_count')) {
-                $customer->order_count = $customerData['order_count'] ?? $customer->order_count;
-            }
-            
-            if (Schema::hasColumn('customers', 'succeeded_order_count')) {
-                $customer->succeeded_order_count = $customerData['succeed_order_count'] ?? $customer->succeeded_order_count;
-            }
-            
-            if (Schema::hasColumn('customers', 'returned_order_count')) {
-                $customer->returned_order_count = $customerData['returned_order_count'] ?? $customer->returned_order_count;
-            }
-            
-            if (Schema::hasColumn('customers', 'purchased_amount')) {
-                $customer->purchased_amount = $customerData['purchased_amount'] ?? $customer->purchased_amount;
-            }
-            
-            if (Schema::hasColumn('customers', 'customer_level')) {
-                $customer->customer_level = $customerData['level'] ?? $customer->customer_level;
-            }
-            
-            if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
-                $customer->tags = json_encode($customerData['tags']);
-            }
-            
-            if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
-                $customer->conversation_tags = json_encode($customerData['conversation_tags']);
-            }
-            
-            if (Schema::hasColumn('customers', 'reward_points')) {
-                $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
-            }
-
-            // Only update address if it's provided
-            if (!empty($customerData['address'])) {
-                $addressInfo = $this->parseAddress($customerData['address']);
-                $customer->full_address = $addressInfo['full_address'];
-                $customer->province = $addressInfo['province'];
-                $customer->district = $addressInfo['district'];
-                $customer->ward = $addressInfo['ward'];
-                $customer->street_address = $addressInfo['street_address'];
-            }
-            
-            // Update customer addresses if available
-            if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
-                $customer->addresses = json_encode($customerData['shop_customer_addresses']);
-            }
-
-            $customer->save();
-
-            Log::info('Updated existing customer', [
-                'customer_id' => $customer->id,
-                'pancake_id' => $customer->pancake_id
-            ]);
-        }
-    } else if (isset($orderData['customer_name']) || isset($orderData['customer_phone']) || isset($orderData['customer_email'])) {
-        // Handle flat customer data structure
-        $phone = $orderData['customer_phone'] ?? null;
-
-        // Try to find customer by phone
-        if (!empty($phone)) {
-            $customer = Customer::where('phone', $phone)->first();
         }
 
-        // If not found, create new customer
-        if (!$customer && !empty($phone)) {
-            $customer = new Customer();
-            $customer->name = $orderData['customer_name'] ?? '';
-            $customer->phone = $phone;
-            // Only set email if not empty
-            if (!empty($orderData['customer_email'])) {
-                $customer->email = $orderData['customer_email'];
-            }
-            $customer->save();
-
-            Log::info('Created new customer from flat data', [
-                'customer_id' => $customer->id,
-                'phone' => $phone
-            ]);
-        }
-    }
-
-    // Find shop and page if they exist
+        // Tìm hoặc tạo shop và page
     $shopId = null;
     $pageId = null;
-    $saleId = null;
 
     if (!empty($orderData['shop_id'])) {
-        $shop = PancakeShop::where('pancake_id', $orderData['shop_id'])->first();
+            $shop = \App\Models\PancakeShop::where('pancake_id', $orderData['shop_id'])->first();
         if ($shop) {
             $shopId = $shop->id;
         }
     }
 
-    // Handle page information
-    if (!empty($orderData['page'])) {
-        $pageData = $orderData['page'];
-        $page = PancakePage::where('pancake_id', $pageData['id'])->first();
-        
-        // Create page if doesn't exist
-        if (!$page) {
-            $page = new PancakePage();
-            $page->pancake_id = $pageData['id'];
-            $page->name = $pageData['name'];
-            $page->username = $pageData['username'] ?? null;
-            
-            // Make sure to set the pancake_shop_table_id field
-            if ($shopId) {
-                $page->pancake_shop_table_id = $shopId;
-            } else {
-                // If no shop ID, try to find or create a default shop
-                $defaultShop = PancakeShop::firstOrCreate(
-                    ['name' => 'Default Shop'],
-                    ['pancake_id' => $orderData['shop_id'] ?? '0', 'description' => 'Auto-created default shop']
-                );
-                $page->pancake_shop_table_id = $defaultShop->id;
-            }
-            
-            $page->save();
-            
-            Log::info('Created new Pancake Page', [
-                'page_id' => $page->id,
-                'pancake_id' => $page->pancake_id,
-                'name' => $page->name,
-                'shop_id' => $page->pancake_shop_table_id
-            ]);
-        } else {
-            // Update page info if needed
-            $page->name = $pageData['name'] ?? $page->name;
-            $page->username = $pageData['username'] ?? $page->username;
-            
-            // Update shop association if it's missing
-            if (empty($page->pancake_shop_table_id) && $shopId) {
-                $page->pancake_shop_table_id = $shopId;
-            }
-            
-            $page->save();
-        }
-        
-        $pageId = $page->id;
-    }
-    else if (!empty($orderData['page_id'])) {
-        $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
+        if (!empty($orderData['page_id'])) {
+            $page = \App\Models\PancakePage::where('pancake_id', $orderData['page_id'])->first();
         if ($page) {
             $pageId = $page->id;
         }
     }
 
-    // Handle staff assignment
-    if (!empty($orderData['user_id'])) {
-        // Try to find user by pancake_user_id
-        $staff = \App\Models\User::where('pancake_user_id', $orderData['user_id'])->first();
+        // Map trạng thái Pancake sang trạng thái nội bộ
+        $status = $this->mapPancakeStatus($orderData['status'] ?? 'pending');
 
-        if (!$staff && !empty($orderData['user_name'])) {
-            // Try to find by name as fallback
-            $staff = \App\Models\User::where('name', $orderData['user_name'])->first();
-        }
-
-        if ($staff) {
-            $saleId = $staff->id;
-            Log::info('Assigned existing staff member to order', [
-                'staff_id' => $staff->id,
-                'pancake_user_id' => $orderData['user_id'] ?? null
-            ]);
-        } elseif (!empty($orderData['user_id']) || !empty($orderData['user_name'])) {
-            // Assign to default staff if configured
-            $defaultStaffId = WebsiteSetting::where('key', 'default_staff_id')->first()->value ?? null;
-            if ($defaultStaffId) {
-                $saleId = $defaultStaffId;
-                Log::info('Assigned default staff to order', [
-                    'default_staff_id' => $defaultStaffId,
-                    'pancake_user_id' => $orderData['user_id'] ?? null,
-                    'pancake_user_name' => $orderData['user_name'] ?? null
-                ]);
-            } else {
-                Log::warning('Could not find staff match and no default configured', [
-                    'pancake_user_id' => $orderData['user_id'] ?? null,
-                    'pancake_user_name' => $orderData['user_name'] ?? null
-                ]);
-            }
-        }
-    }
-
-    // Handle creator/seller assignment
-    $creatorId = null;
-    if (!empty($orderData['creator']) && !empty($orderData['creator']['id'])) {
-        // Try to find or create the creator/seller
-        $creator = \App\Models\User::where('pancake_user_id', $orderData['creator']['id'])->first();
-        
-        if (!$creator) {
-            // If no matching user found, store the creator info in a JSON field
-            if (Schema::hasColumn('orders', 'creator_info')) {
-                $creatorInfo = $orderData['creator'];
-            } else {
-                // Try to find by name as fallback
-                if (!empty($orderData['creator']['name'])) {
-                    $creator = \App\Models\User::where('name', $orderData['creator']['name'])->first();
-                }
-            }
-        }
-        
-        if ($creator) {
-            $creatorId = $creator->id;
-        }
-    }
-
-    // Create new order
-    $order = new Order();
-
-    try {
-        // Always store the original Pancake order ID - might be different from code
-        if (!empty($orderData['id'])) {
-            $order->pancake_order_id = $orderData['id'];
-        }
-
-        // Use code field as the order code, fallback to Pancake ID if available
-        $orderCode = $orderData['code'] ?? null;
-        if (empty($orderCode) && !empty($orderData['id'])) {
-            $orderCode = 'PCK-' . $orderData['id'];
-        } elseif (empty($orderCode)) {
-            $orderCode = 'PCK-' . Str::random(8);
-        }
-
-        $order->order_code = $orderCode;
-
-        // Extract customer information
-        $customerName = '';
-        $customerPhone = '';
-        $customerEmail = '';
-
-        if (!empty($orderData['customer'])) {
-            $customerName = $orderData['customer']['name'] ?? '';
-            
-            if (!empty($orderData['customer']['phone'])) {
-                $customerPhone = $orderData['customer']['phone'];
-            } elseif (!empty($orderData['customer']['phone_numbers']) && is_array($orderData['customer']['phone_numbers'])) {
-                $customerPhone = $orderData['customer']['phone_numbers'][0];
-            }
-            
-            if (!empty($orderData['customer']['email'])) {
-                $customerEmail = $orderData['customer']['email'];
-            } elseif (!empty($orderData['customer']['emails']) && is_array($orderData['customer']['emails'])) {
-                $customerEmail = $orderData['customer']['emails'][0] ?? '';
-            }
-        } else {
-            // If no customer object, try direct fields
-            $customerName = $orderData['bill_full_name'] ?? ($orderData['customer_name'] ?? '');
-            $customerPhone = $orderData['bill_phone_number'] ?? ($orderData['customer_phone'] ?? '');
-            $customerEmail = $orderData['customer_email'] ?? '';
-        }
-
-        $order->customer_name = $customerName ?: ($customer ? $customer->name : '');
-        $order->customer_phone = $customerPhone ?: ($customer ? $customer->phone : '');
-        // Handle NULL email values safely
-        if (!empty($customerEmail)) {
-            $order->customer_email = $customerEmail;
-        } elseif ($customer && !empty($customer->email)) {
-            $order->customer_email = $customer->email;
-        }
+        // Tạo đơn hàng mới
+        $order = new \App\Models\Order();
+        $order->pancake_order_id = $orderData['id'] ?? null;
+        $order->order_code = $orderData['code'] ?? ('PCK-' . \Illuminate\Support\Str::random(8));
+        $order->customer_name = $orderData['customer']['name'] ?? ($customer ? $customer->name : '');
+        $order->customer_phone = $orderData['customer']['phone'] ?? ($customer ? $customer->phone : '');
+        $order->customer_email = $orderData['customer']['email'] ?? ($customer ? $customer->email : '');
         $order->customer_id = $customer ? $customer->id : null;
-        
-        // Map status
-        $pancakeStatus = $orderData['status'] ?? 'moi';
-        $order->status = $this->mapPancakeStatus($pancakeStatus);
-        
-        // Store the numeric status code directly for Pancake status
-        if (isset($orderData['status'])) {
-            // If status is numeric, save it directly
-            if (is_numeric($orderData['status'])) {
-                $order->pancake_status = $orderData['status'];
-            } 
-            // If it's a string status_name, we'll continue using string statuses for backward compatibility
-            else if (isset($orderData['status_name'])) {
-                $order->pancake_status = $orderData['status_name'];
-            }
-        }
-        
-        $order->internal_status = $orderData['internal_status'] ?? 'Imported from Pancake';
-        $order->source = $orderData['source'] ?? ($orderData['order_sources_name'] ?? 'pancake');
+        $order->status = $status;
+        $order->pancake_status = $orderData['status'] ?? '';
+        $order->internal_status = 'Imported from Pancake';
         $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
         $order->payment_method = $orderData['payment_method'] ?? 'cod';
-        $order->total_value = $orderData['total'] ?? ($orderData['total_price'] ?? 0);
-        $order->notes = $orderData['note'] ?? ($orderData['notes'] ?? '');
-        $order->additional_notes = $orderData['additional_notes'] ?? '';
+        $order->total_value = $orderData['total'] ?? 0;
 
-        // Store COD amount
-        if (isset($orderData['cod'])) {
-            $order->cod_amount = $orderData['cod'];
-        }
-        
-        // Store money to collect
-        if (isset($orderData['money_to_collect']) && Schema::hasColumn('orders', 'money_to_collect')) {
-            $order->money_to_collect = $orderData['money_to_collect'];
-        }
-        
-        // Store conversation ID
-        if (isset($orderData['conversation_id']) && Schema::hasColumn('orders', 'conversation_id')) {
-            $order->conversation_id = $orderData['conversation_id'];
-        }
-        
-        // Store post ID
-        if (isset($orderData['post_id']) && Schema::hasColumn('orders', 'post_id')) {
-            $order->post_id = $orderData['post_id'];
-        }
-        
-        // Store system ID
-        if (isset($orderData['system_id']) && Schema::hasColumn('orders', 'system_id')) {
-            $order->system_id = $orderData['system_id'];
-        }
-        
-        // Store tags
-        if (!empty($orderData['tags']) && Schema::hasColumn('orders', 'tags')) {
-            $order->tags = json_encode($orderData['tags']);
-        }
-
-        // Handle order dates
-        if (!empty($orderData['created_at'])) {
-            try {
-                $order->created_at = Carbon::parse($orderData['created_at']);
-            } catch (\Exception $e) {
-                Log::warning('Invalid created_at date format from Pancake', [
-                    'date' => $orderData['created_at'],
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
-        if (!empty($orderData['updated_at'])) {
-            try {
-                $order->updated_at = Carbon::parse($orderData['updated_at']);
-            } catch (\Exception $e) {
-                Log::warning('Invalid updated_at date format from Pancake', [
-                    'date' => $orderData['updated_at'],
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
-
-        // Address information - handle different address format possibilities
-        $shippingAddress = $orderData['shipping_address'] ?? null;
-        if ($shippingAddress) {
-            $order->full_address = !empty($shippingAddress['full_address']) ? $this->sanitizeAddress($shippingAddress['full_address']) : '';
-            $order->province_code = $shippingAddress['province_id'] ?? null;
-            $order->district_code = $shippingAddress['district_id'] ?? null;
-            $order->ward_code = $shippingAddress['commune_id'] ?? null;
-            $order->street_address = !empty($shippingAddress['address']) ? $this->sanitizeAddress($shippingAddress['address']) : '';
-            
-            // Set address names if available
-            $order->province_name = $shippingAddress['province_name'] ?? null;
-            $order->district_name = $shippingAddress['district_name'] ?? null;
-            $order->ward_name = $shippingAddress['ward_name'] ?? ($shippingAddress['commune_name'] ?? null);
-            
-            // Store the full shipping address info if the column exists
-            if (Schema::hasColumn('orders', 'shipping_address_info')) {
-                $order->shipping_address_info = json_encode($shippingAddress);
-            }
-        } else {
-            // Fallback to concatenating address fields if no shipping_address object
-            $addressParts = [];
-            if (!empty($orderData['address'])) {
-                // Handle case when address contains phone number
-                $address = $this->sanitizeAddress($orderData['address']);
-                $addressParts[] = $address;
-            }
-            if (!empty($orderData['ward_name'])) $addressParts[] = $orderData['ward_name'];
-            if (!empty($orderData['district_name'])) $addressParts[] = $orderData['district_name'];
-            if (!empty($orderData['province_name'])) $addressParts[] = $orderData['province_name'];
-
-            $fullAddress = implode(', ', $addressParts);
-            $order->full_address = !empty($fullAddress) ? $fullAddress : ($orderData['full_address'] ?? '');
-            $order->province_code = $orderData['province_id'] ?? null;
-            $order->district_code = $orderData['district_id'] ?? null;
-            $order->ward_code = $orderData['ward_id'] ?? null;
-            $order->street_address = $orderData['address'] ?? '';
-
-            // Set related names if available
-            $order->province_name = $orderData['province_name'] ?? null;
-            $order->district_name = $orderData['district_name'] ?? null;
-            $order->ward_name = $orderData['ward_name'] ?? null;
+        // Xử lý địa chỉ nếu có
+        if (!empty($orderData['shipping_address'])) {
+            $order->full_address = $orderData['shipping_address']['full_address'] ?? '';
+            $order->province_code = $orderData['shipping_address']['province_id'] ?? null;
+            $order->district_code = $orderData['shipping_address']['district_id'] ?? null;
+            $order->ward_code = $orderData['shipping_address']['commune_id'] ?? null;
+            $order->street_address = $orderData['shipping_address']['address'] ?? '';
         }
 
         $order->pancake_shop_id = $shopId;
         $order->pancake_page_id = $pageId;
-        $order->sale_id = $saleId; // Add staff/sale assignment
-        $order->user_id = $saleId; // Set user_id same as sale_id for consistency
-        $order->pancake_sale_id = $orderData['user_id'] ?? null; // Store original Pancake user ID
-        $order->created_by = Auth::check() ? Auth::id() : ($creatorId ?? null);
+        $order->notes = $orderData['note'] ?? '';
+        $order->created_by = \Illuminate\Support\Facades\Auth::check() ? \Illuminate\Support\Facades\Auth::id() : null;
         
-        // Store creator/seller information
-        if (isset($orderData['creator']) && Schema::hasColumn('orders', 'creator_info')) {
-            $order->creator_info = json_encode($orderData['creator']);
+        // Lưu thông tin người bán từ Pancake
+        if (!empty($orderData['assigning_seller_id'])) {
+            $order->assigning_seller_id = $orderData['assigning_seller_id'];
+            $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
+        } else {
+            // Nếu không có seller được gán, tự động phân phối đơn hàng
+            $this->assignOrderToSalesStaff($order);
         }
         
-        if (isset($orderData['assigning_seller']) && Schema::hasColumn('orders', 'assigning_seller_info')) {
-            $order->assigning_seller_info = json_encode($orderData['assigning_seller']);
-        }
-
-        // Store tracking info if available
-        $order->tracking_code = $orderData['tracking_code'] ?? null;
-        $order->tracking_url = $orderData['tracking_url'] ?? null;
-        
-        // Set checkboxes - use default values if not provided
-        $order->is_free_shipping = $orderData['is_free_shipping'] ?? false;
-        $order->is_livestream = $orderData['is_livestream'] ?? false;
-        $order->is_live_shopping = $orderData['is_live_shopping'] ?? false;
-        $order->customer_pay_fee = $orderData['customer_pay_fee'] ?? false;
-        $order->partner_fee = $orderData['partner_fee'] ?? 0;
-        $order->transfer_money = $orderData['transfer_money'] ?? 0;
-        $order->returned_reason = $orderData['returned_reason'] ?? null;
-        
-        // Store status history if column exists
-        if (Schema::hasColumn('orders', 'status_history') && !empty($orderData['status_history'])) {
-            $order->status_history = json_encode($orderData['status_history']);
-        }
-        
-        // Store partner info if column exists
-        if (Schema::hasColumn('orders', 'partner_info') && !empty($orderData['partner'])) {
-            $order->partner_info = json_encode($orderData['partner']);
-        }
-        
-        // Store warehouse info if column exists
-        if (Schema::hasColumn('orders', 'warehouse_info') && !empty($orderData['warehouse_info'])) {
-            $order->warehouse_info = json_encode($orderData['warehouse_info']);
-        }
-        
-        // Store history if column exists
-        if (Schema::hasColumn('orders', 'order_history') && !empty($orderData['histories'])) {
-            $order->order_history = json_encode($orderData['histories']);
-        }
-
-        // Log the creation with Pancake ID for tracking
-        if (!empty($orderData['id'])) {
-            Log::info('Creating new order from Pancake with ID', [
-                'pancake_id' => $orderData['id'],
-                'order_code' => $order->order_code
-            ]);
+        // Lưu thời gian tạo đơn từ Pancake
+        if (!empty($orderData['inserted_at'])) {
+            try {
+                $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
+            } catch (\Exception $e) {
+                Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
+            }
         }
 
         $order->save();
 
-        // Save Pancake warehouse and shipping data
-        if (!empty($orderData['warehouse_id'])) {
-            // First try to find warehouse by exact pancake_id match
-            $warehouse = Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
-
-            // If not found by pancake_id, try code as a fallback (some systems may use same value for both)
-            if (!$warehouse) {
-                $warehouse = Warehouse::where('code', $orderData['warehouse_id'])->first();
-            }
-
-            if ($warehouse) {
-                $order->warehouse_id = $warehouse->id;
-                $order->warehouse_code = $warehouse->code;
-                $order->pancake_warehouse_id = $orderData['warehouse_id'];
-
-                Log::info('Updated order warehouse mapping', [
-                    'order_id' => $order->id,
-                    'pancake_warehouse_id' => $orderData['warehouse_id'],
-                    'local_warehouse_id' => $warehouse->id,
-                    'local_warehouse_name' => $warehouse->name
-                ]);
-            } else {
-                Log::warning('Update: Could not find matching warehouse for Pancake ID', [
-                    'order_id' => $order->id,
-                    'pancake_warehouse_id' => $orderData['warehouse_id']
-                ]);
-                
-                // Set pancake_warehouse_id even if we can't find a local warehouse
-                $order->pancake_warehouse_id = $orderData['warehouse_id'];
-            }
-        }
-
-        // Handle shipping provider mapping
-        $partner = null;
-        if (!empty($orderData['partner']) && isset($orderData['partner']['partner_id'])) {
-            $partner = $orderData['partner'];
-            $partnerId = $partner['partner_id'];
-            $shippingProvider = \App\Models\ShippingProvider::where('pancake_partner_id', $partnerId)
-                ->orWhere('pancake_id', $partnerId)
-                ->first();
-            if ($shippingProvider) {
-                $order->shipping_provider_id = $shippingProvider->id;
-                $order->pancake_shipping_provider_id = $partnerId;
-            }
-        }
-        
-        // Update checkboxes and other settings
-        if (isset($orderData['is_free_shipping'])) {
-            $order->is_free_shipping = $orderData['is_free_shipping'];
-        }
-        if (isset($orderData['is_livestream'])) {
-            $order->is_livestream = $orderData['is_livestream'];
-        }
-        if (isset($orderData['is_live_shopping'])) {
-            $order->is_live_shopping = $orderData['is_live_shopping'];
-        }
-        if (isset($orderData['customer_pay_fee'])) {
-            $order->customer_pay_fee = $orderData['customer_pay_fee'];
-        }
-        if (isset($orderData['partner_fee'])) {
-            $order->partner_fee = $orderData['partner_fee'];
-        }
-        if (isset($orderData['transfer_money'])) {
-            $order->transfer_money = $orderData['transfer_money'];
-        }
-        if (isset($orderData['returned_reason'])) {
-            $order->returned_reason = $orderData['returned_reason'];
-        }
-
-        $order->save();
-
-        // Create order items - first look for items in the expected format
-        $hasItems = false;
-
-        // Try 'items' field first - this is the new format with components
+        // Tạo các item của đơn hàng
         if (!empty($orderData['items'])) {
-            Log::info('Processing order items with components format', [
-                'order_id' => $order->id, 
-                'items_count' => count($orderData['items'])
-            ]);
-            
             foreach ($orderData['items'] as $item) {
-                // Check if item has components structure
-                if (!empty($item['components']) && is_array($item['components'])) {
-                    // Each component might need to be a separate order item
-                    foreach ($item['components'] as $component) {
-                        $orderItem = new OrderItem();
+                $orderItem = new \App\Models\OrderItem();
                         $orderItem->order_id = $order->id;
-                        $this->setOrderItemFields($orderItem, $item);  // Will handle component extraction
+                $orderItem->product_name = $item['name'] ?? 'Unknown Product';
+                $orderItem->product_code = $item['sku'] ?? null;
+                $orderItem->quantity = $item['quantity'] ?? 1;
+                $orderItem->price = $item['price'] ?? 0;
+                $orderItem->pancake_variant_id = $item['variant_id'] ?? null;
                         $orderItem->save();
-                        
-                        Log::info('Created order item from component structure', [
-                            'order_id' => $order->id,
-                            'product_name' => $orderItem->product_name,
-                            'quantity' => $orderItem->quantity,
-                            'price' => $orderItem->price
-                        ]);
-                        $hasItems = true;
-                        
-                        // We're only creating one order item per component set for now
-                        // Can be modified if multiple items are needed per component
-                        break;
-                    }
-                } else {
-                    // Handle traditional item format
-                    $orderItem = new OrderItem();
-                    $orderItem->order_id = $order->id;
-                    $this->setOrderItemFields($orderItem, $item);
-                    $orderItem->save();
-                    
-                    Log::info('Created order item from standard format', [
-                        'order_id' => $order->id,
-                        'product_name' => $orderItem->product_name,
-                        'quantity' => $orderItem->quantity
-                    ]);
-                    $hasItems = true;
-                }
             }
-        }
-
-        // Then try 'line_items' field if no items were found
-        if (!$hasItems && !empty($orderData['line_items'])) {
-            foreach ($orderData['line_items'] as $item) {
-                $orderItem = new OrderItem();
-                $orderItem->order_id = $order->id;
-                $this->setOrderItemFields($orderItem, $item);
-                $orderItem->save();
-
-                Log::info('Created order item from line_items', [
-                    'order_id' => $order->id,
-                    'product_name' => $orderItem->product_name,
-                    'quantity' => $orderItem->quantity
-                ]);
-                $hasItems = true;
-            }
-        }
-
-        // If no items found in either standard place, check if there might be products array
-        if (!$hasItems && !empty($orderData['products'])) {
-            foreach ($orderData['products'] as $item) {
-                $orderItem = new OrderItem();
-                $orderItem->order_id = $order->id;
-                $this->setOrderItemFields($orderItem, $item);
-                $orderItem->save();
-
-                Log::info('Created order item from products array', [
-                    'order_id' => $order->id,
-                    'product_name' => $orderItem->product_name,
-                    'quantity' => $orderItem->quantity
-                ]);
-                $hasItems = true;
-            }
-        }
-
-        // If still no items, create a placeholder if we have information about total price
-        if (!$hasItems && $order->total_value > 0) {
-            $orderItem = new OrderItem();
-            $orderItem->order_id = $order->id;
-            $orderItem->product_name = 'Order from Pancake';
-            $orderItem->name = 'Order from Pancake';
-            $orderItem->quantity = 1;
-            $orderItem->price = $order->total_value - ($order->shipping_fee ?? 0);
-            
-            // Create a basic product_info structure for consistency
-            $itemData = [
-                'name' => 'Order from Pancake',
-                'product_name' => 'Order from Pancake',
-                'quantity' => 1,
-                'price' => $order->total_value - ($order->shipping_fee ?? 0),
-                'is_placeholder' => true
-            ];
-            $orderItem->product_info = $itemData;
-            
-            $orderItem->save();
-
-            Log::warning('Created placeholder order item due to missing product data', [
-                'order_id' => $order->id,
-                'total_value' => $order->total_value
-            ]);
-        }
-
-        Log::info('Successfully created order from Pancake', [
-            'order_id' => $order->id,
-            'pancake_order_id' => $order->pancake_order_id,
-            'order_code' => $order->order_code
-        ]);
-    } catch (\Exception $e) {
-        Log::error('Error creating order from Pancake data', [
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
-            'order_data' => json_encode(array_keys($orderData))
-        ]);
-        throw $e;
     }
 
     return $order;
@@ -1147,10 +468,26 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $order->ward_code = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
             $order->street_address = $shippingAddress['address'] ?? null;
             
-            // Update address names
-            $order->province_name = $shippingAddress['province_name'] ?? $order->province_name;
-            $order->district_name = $shippingAddress['district_name'] ?? $order->district_name;
-            $order->ward_name = $shippingAddress['ward_name'] ?? ($shippingAddress['commune_name'] ?? $order->ward_name);
+                // Look up and update address names from the database
+                $this->updateAddressNames($order);
+                
+                // Update seller information if available
+                if (!empty($orderData['assigning_seller_id'])) {
+                    $order->assigning_seller_id = $orderData['assigning_seller_id'];
+                    $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
+                } else if (empty($order->assigning_seller_id)) {
+                    // Nếu không có seller được gán, tự động phân phối đơn hàng
+                    $this->assignOrderToSalesStaff($order);
+                }
+                
+                // Update Pancake insertion timestamp if available and not already set
+                if (!empty($orderData['inserted_at']) && empty($order->pancake_inserted_at)) {
+                    try {
+                        $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
+                    } catch (\Exception $e) {
+                        Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
+                    }
+                }
             
             // Store the full shipping address info if the column exists
             if (Schema::hasColumn('orders', 'shipping_address_info')) {
@@ -1182,6 +519,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $order->province_name = $orderData['province_name'] ?? null;
                 $order->district_name = $orderData['district_name'] ?? null;
                 $order->ward_name = $orderData['ward_name'] ?? null;
+                    
+                    // Look up and update address names if codes are provided but names are missing
+                    if (($order->province_code && empty($order->province_name)) || 
+                        ($order->district_code && empty($order->district_name)) || 
+                        ($order->ward_code && empty($order->ward_name))) {
+                        $this->updateAddressNames($order);
+                    }
             }
         }
         
@@ -1423,7 +767,17 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             } else {
                 // Update page info if needed
                 $page->name = $pageData['name'] ?? $page->name;
-                $page->username = $pageData['username'] ?? $page->username;
+                
+                // Only update username if the column exists
+                if (Schema::hasColumn('pancake_pages', 'username')) {
+                    $page->username = $pageData['username'] ?? $page->username;
+                }
+                
+                // Update shop association if it's missing
+                if (empty($page->pancake_shop_table_id) && isset($orderData['shop_id'])) {
+                    $page->pancake_shop_table_id = $orderData['shop_id'];
+                }
+                
                 $page->save();
             }
             
@@ -1497,6 +851,166 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'new_orders' => 0,
             'updated_orders' => 0
         ];
+    }
+}
+
+/**
+ * Tự động gán đơn hàng cho nhân viên sale theo cài đặt phân phối
+ * 
+ * @param \App\Models\Order $order
+ * @return void
+ */
+private function assignOrderToSalesStaff(\App\Models\Order $order)
+{
+    try {
+        // Lấy danh sách nhân viên sale đang hoạt động
+        $activeStaff = \App\Models\User::role('staff')
+            ->where('is_active', true)
+            ->whereNotNull('pancake_uuid')
+            ->get();
+
+        if ($activeStaff->isEmpty()) {
+            Log::warning('Không tìm thấy nhân viên sale nào đang hoạt động để phân phối đơn hàng. Order ID: ' . $order->id);
+            return;
+        }
+
+        // Lấy cài đặt phân phối
+        $distributionType = \App\Models\WebsiteSetting::get('order_distribution_type', 'sequential');
+        $distributionPattern = explode(',', \App\Models\WebsiteSetting::get('order_distribution_pattern', '1,1,1'));
+
+        \Illuminate\Support\Facades\DB::beginTransaction();
+
+        if ($distributionType === 'sequential') {
+            // Phân phối tuần tự: lấy nhân viên nào có ít đơn nhất
+            $staffOrderCounts = [];
+            foreach ($activeStaff as $staff) {
+                $orderCount = \Illuminate\Support\Facades\DB::table('orders')
+                    ->where('assigning_seller_id', $staff->pancake_uuid)
+                    ->count();
+                $staffOrderCounts[$staff->id] = $orderCount;
+            }
+            
+            // Tìm nhân viên có ít đơn hàng nhất
+            $minOrderCount = min($staffOrderCounts);
+            $staffIds = array_keys($staffOrderCounts, $minOrderCount);
+            $staffId = $staffIds[0]; // Lấy nhân viên đầu tiên nếu có nhiều người có cùng số đơn
+            
+            $assignedStaff = $activeStaff->firstWhere('id', $staffId);
+        } else {
+            // Phân phối theo lô: sử dụng mẫu để xác định nhân viên tiếp theo
+            $totalOrders = \Illuminate\Support\Facades\DB::table('orders')
+                ->whereNotNull('assigning_seller_id')
+                ->count();
+            
+            $patternSum = array_sum($distributionPattern);
+            $patternIndex = $totalOrders % $patternSum;
+            
+            // Tìm lô mà đơn hàng này thuộc về
+            $currentSum = 0;
+            $staffIndex = 0;
+            
+            foreach ($distributionPattern as $index => $batch) {
+                $currentSum += $batch;
+                if ($patternIndex < $currentSum) {
+                    $staffIndex = $index % $activeStaff->count();
+                    break;
+                }
+            }
+            
+            $assignedStaff = $activeStaff[$staffIndex];
+        }
+
+        if ($assignedStaff) {
+            $order->assigning_seller_id = $assignedStaff->pancake_uuid;
+            $order->assigning_seller_name = $assignedStaff->name;
+            
+            Log::info("Đơn hàng #{$order->id} được tự động phân phối cho {$assignedStaff->name} (ID: {$assignedStaff->pancake_uuid})");
+        }
+
+        \Illuminate\Support\Facades\DB::commit();
+    } catch (\Exception $e) {
+        \Illuminate\Support\Facades\DB::rollBack();
+        Log::error('Lỗi khi gán đơn hàng cho nhân viên sale: ' . $e->getMessage(), [
+            'order_id' => $order->id,
+            'trace' => $e->getTraceAsString()
+        ]);
+    }
+}
+
+/**
+ * Look up and update address names (province, district, ward) from their codes
+ *
+ * @param Order $order
+ * @return void
+ */
+private function updateAddressNames(Order $order)
+{
+    try {
+        // Update province name if code is available
+        if (!empty($order->province_code)) {
+            $province = \App\Models\Province::where('code', $order->province_code)->first();
+            if ($province) {
+                $order->province_name = $province->name;
+                Log::info("Updated province name for order", [
+                    'order_id' => $order->id,
+                    'province_code' => $order->province_code,
+                    'province_name' => $province->name
+                ]);
+            }
+        }
+
+        // Update district name if code is available
+        if (!empty($order->district_code)) {
+            $district = \App\Models\District::where('code', $order->district_code)->first();
+            if ($district) {
+                $order->district_name = $district->name;
+                Log::info("Updated district name for order", [
+                    'order_id' => $order->id,
+                    'district_code' => $order->district_code,
+                    'district_name' => $district->name
+                ]);
+            }
+        }
+
+        // Update ward name if code is available
+        if (!empty($order->ward_code)) {
+            $ward = \App\Models\Ward::where('code', $order->ward_code)->first();
+            if ($ward) {
+                $order->ward_name = $ward->name;
+                Log::info("Updated ward name for order", [
+                    'order_id' => $order->id,
+                    'ward_code' => $order->ward_code,
+                    'ward_name' => $ward->name
+                ]);
+            }
+        }
+
+        // Reconstruct full address if the components are available
+        if (!empty($order->street_address)) {
+            $addressParts = [];
+            $addressParts[] = $order->street_address;
+            
+            if (!empty($order->ward_name)) {
+                $addressParts[] = $order->ward_name;
+            }
+            
+            if (!empty($order->district_name)) {
+                $addressParts[] = $order->district_name;
+            }
+            
+            if (!empty($order->province_name)) {
+                $addressParts[] = $order->province_name;
+            }
+            
+            if (count($addressParts) > 1) {
+                $order->full_address = implode(', ', $addressParts);
+            }
+        }
+    } catch (\Exception $e) {
+        Log::warning('Error updating address names', [
+            'error' => $e->getMessage(),
+            'order_id' => $order->id
+        ]);
     }
 }
 
@@ -1596,6 +1110,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
     public function syncOrdersByDateManual(Request $request)
     {
         try {
+            // Increase execution time limit to 2 hours and memory limit to 1GB
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
+            
             // Clear debug log to mark entry into this method
             Log::info('*** ENTERING syncOrdersByDateManual ***');
             
@@ -1614,7 +1132,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Nếu có startDateTime và endDateTime thì dùng luôn (đồng bộ nhóm ngày)
             $startTimestamp = $request->input('startDateTime');
            
-            $endTimestamp=   ''.$request->input('endDateTime').'';
+            $endTimestamp = ''.$request->input('endDateTime').'';
             $dateForCacheKey = null;
             $date = null;
             
@@ -1641,9 +1159,12 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $date = Carbon::createFromFormat('Y-m-d', $dateValue);
                     $dateForCacheKey = $date->format('Y-m-d');
                     
-                    // Format date for API query
-                    $startDate = $date->copy()->startOfDay();
-                    $endDate = $date->copy()->endOfDay();
+                    // Format date for API query - using created_at field in Pancake
+                    
+                    
+                    // Set timestamps for the API request 
+                    // These timestamps will be used to filter orders by created_at in Pancake
+                    
                     
                     Log::info('Parsed date for sync', [
                         'input_date' => $dateValue,
@@ -1704,15 +1225,20 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             ], now()->addHour());
 
             // Prepare API parameters
-            $endTimestamp_2 = (int)($request->input('endDateTime'));
-            $endTimestamp = ''. $endTimestamp_2.'';
             $apiParams = [
                 'api_key' => $apiKey,
                 'page_number' => 1,
-                'page_size' => 100,
-                'startDateTime' => $startTimestamp,
-                'endDateTime' => $endTimestamp
+                'page_size' => 100
             ];
+            
+            // Add date filtering parameters if provided
+            dd($startTimestamp);
+            if ($startTimestamp) {
+                $apiParams['startDateTime'] = $startTimestamp;
+            }
+            if ($endTimestamp) {
+                $apiParams['endDateTime'] = $endTimestamp;
+            }
             
             // Log API call for debugging
             Log::info('Starting date-based Pancake API sync', [
@@ -1739,7 +1265,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             $data = $response->json();
             $orders = $data['data'] ?? [];
-            $totalPages = ceil(($data['total'] ?? 0) / 100); // Match the page_size
+            $totalPages = $data['total_pages'] ?? ceil(($data['total'] ?? 0) / 100); // Match the page_size
             $totalEntries = $data['total'] ?? count($orders);
             
             Log::info('API response received', [
@@ -1835,7 +1361,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'success' => true,
                 'message' => $message,
                 'continue' => $totalPages > 1,
-                'next_page' => 2,
+                'next_page' => $totalPages > 1 ? 2 : null,
                 'total_pages' => $totalPages,
                 'total_entries' => $totalEntries,
                 'sync_info' => $cacheKey,
@@ -1843,7 +1369,8 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     'created' => $created,
                     'updated' => $updated,
                     'errors' => $errorMessages,
-                    'errors_count' => count($errors)
+                    'errors_count' => count($errors),
+                    'current_page' => 1
                 ]
             ]);
 
@@ -1869,6 +1396,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
     public function processNextPage(Request $request)
     {
         try {
+            // Increase execution time limit to 2 hours and memory limit to 1GB
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
+            
             // Authorize access
             $this->authorize('sync-pancake');
 
@@ -1938,16 +1469,28 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             // Get timestamps from sync info or request
             if (isset($syncInfo['startTimestamp']) && isset($syncInfo['endTimestamp'])) {
-                $apiParams['startDateTime'] = $syncInfo['startTimestamp'];
-                $apiParams['endDateTime'] = $syncInfo['endTimestamp'];
+                if (!empty($syncInfo['startTimestamp'])) {
+                    $apiParams['startDateTime'] = $syncInfo['startTimestamp'];
+                }
+                if (!empty($syncInfo['endTimestamp'])) {
+                    $apiParams['endDateTime'] = $syncInfo['endTimestamp'];
+                }
             } elseif ($request->has('startDateTime') && $request->has('endDateTime')) {
                 $apiParams['startDateTime'] = $request->input('startDateTime');
                 $apiParams['endDateTime'] = $request->input('endDateTime');
             } elseif (isset($syncInfo['date'])) {
                 // Create timestamps from date
-                $date = Carbon::createFromFormat('Y-m-d', $syncInfo['date']);
-                $apiParams['startDateTime'] = $date->copy()->startOfDay()->timestamp;
-                $apiParams['endDateTime'] = $date->copy()->endOfDay()->timestamp;
+                try {
+                    $date = Carbon::createFromFormat('Y-m-d', $syncInfo['date']);
+                    $apiParams['startDateTime'] = $date->copy()->startOfDay()->timestamp;
+                    $apiParams['endDateTime'] = $date->copy()->endOfDay()->timestamp;
+                } catch (\Exception $e) {
+                    Log::warning('Failed to parse date for timestamp creation', [
+                        'date' => $syncInfo['date'],
+                        'error' => $e->getMessage()
+                    ]);
+                    // Continue without date filtering if date parsing fails
+                }
             }
 
             // API endpoint
@@ -1978,7 +1521,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 // Update sync progress as completed
                 $syncInfo['in_progress'] = false;
                 $syncInfo['page'] = $pageNumber;
+                $syncInfo['end_time'] = now()->toDateTimeString();
                 Cache::put($cacheKey, $syncInfo, now()->addHour());
+
+                // Calculate total processed
+                $totalCreated = $syncInfo['stats']['created'] ?? 0;
+                $totalUpdated = $syncInfo['stats']['updated'] ?? 0;
+                $totalProcessed = $totalCreated + $totalUpdated;
 
                 return response()->json([
                     'success' => true,
@@ -1986,6 +1535,9 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     'stats' => [
                         'created' => 0,
                         'updated' => 0,
+                        'total_created' => $totalCreated,
+                        'total_updated' => $totalUpdated,
+                        'total_processed' => $totalProcessed,
                         'errors' => [],
                         'errors_count' => 0,
                         'current_page' => $pageNumber,
@@ -2002,6 +1554,9 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $created = 0;
             $updated = 0;
             $errors = [];
+
+            // Create a timestamp to measure processing time
+            $startProcessingTime = microtime(true);
 
             // Process each order
             foreach ($orders as $orderData) {
@@ -2056,12 +1611,28 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 }
             }
 
-            // Get total pages from API response
-            $totalPages = $responseData['total_pages'] ?? $syncInfo['total_pages'];
+            // Calculate processing time for this batch
+            $processingTime = round(microtime(true) - $startProcessingTime, 2);
+            
+            // Calculate processing rate (orders/second)
+            $processingRate = count($orders) > 0 ? round(count($orders) / $processingTime, 2) : 0;
+
+            // Extract pagination information from API response
+            $totalPages = $responseData['total_pages'] ?? 
+                          $syncInfo['total_pages'] ?? 
+                          ceil(($responseData['total'] ?? 0) / 100);
+            
+            // Check response to see if it indicates pagination information
+            if (isset($responseData['meta'])) {
+                $meta = $responseData['meta'];
+                if (isset($meta['last_page'])) {
+                    $totalPages = $meta['last_page'];
+                }
+            }
 
             // Fix issue where total_pages equals page_number
             // Make sure totalPages is always at least as large as the current page number
-            if ($totalPages <= $pageNumber && $responseData['has_next'] !== false) {
+            if ($totalPages < $pageNumber && !empty($orders)) {
                 $totalPages = $pageNumber + 1;
             }
 
@@ -2087,15 +1658,54 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $syncInfo['stats']['updated'] = ($syncInfo['stats']['updated'] ?? 0) + $updated;
             $syncInfo['stats']['errors'] = $mergedErrors;
             $syncInfo['stats']['total'] = ($syncInfo['stats']['total'] ?? 0) + count($orders);
+            $syncInfo['stats']['processing_time'] = ($syncInfo['stats']['processing_time'] ?? 0) + $processingTime;
+            $syncInfo['stats']['last_page_processing_time'] = $processingTime;
+            $syncInfo['stats']['last_page_processing_rate'] = $processingRate;
+            
+            // Also update total_entries from API if available
+            if (isset($responseData['total'])) {
+                $syncInfo['stats']['total_entries'] = $responseData['total'];
+            } else if (isset($responseData['meta']['total'])) {
+                $syncInfo['stats']['total_entries'] = $responseData['meta']['total'];
+            }
             
             // Check if we've processed all pages
-            $isLastPage = $pageNumber >= $totalPages || (isset($responseData['has_next']) && $responseData['has_next'] === false);
+            $isLastPage = $pageNumber >= $totalPages || 
+                          (isset($responseData['has_next']) && $responseData['has_next'] === false) ||
+                          empty($orders);
+                          
             $syncInfo['in_progress'] = !$isLastPage;
+            
+            // If this is the last page, store end time
+            if ($isLastPage) {
+                $syncInfo['end_time'] = now()->toDateTimeString();
+            }
 
             Cache::put($cacheKey, $syncInfo, now()->addHour());
 
             // Calculate progress percentage
             $progress = min(100, round(($pageNumber / $totalPages) * 100));
+
+            // Calculate total processed records
+            $totalCreated = $syncInfo['stats']['created'];
+            $totalUpdated = $syncInfo['stats']['updated'];
+            $totalProcessed = $totalCreated + $totalUpdated;
+            
+            // Calculate estimated time remaining
+            $estimatedTimeRemaining = null;
+            if (!$isLastPage && $pageNumber > 1 && isset($syncInfo['stats']['processing_time'])) {
+                $avgTimePerPage = $syncInfo['stats']['processing_time'] / $pageNumber;
+                $remainingPages = $totalPages - $pageNumber;
+                $remainingSeconds = $avgTimePerPage * $remainingPages;
+                
+                if ($remainingSeconds < 60) {
+                    $estimatedTimeRemaining = "dưới 1 phút";
+                } else if ($remainingSeconds < 3600) {
+                    $estimatedTimeRemaining = round($remainingSeconds / 60) . " phút";
+                } else {
+                    $estimatedTimeRemaining = round($remainingSeconds / 3600, 1) . " giờ";
+                }
+            }
 
             // Log sync progress
             Log::info("Completed sync page {$pageNumber}/{$totalPages}", [
@@ -2103,14 +1713,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'updated' => $updated,
                 'errors' => count($errors),
                 'progress' => $progress,
-                'is_last_page' => $isLastPage
+                'is_last_page' => $isLastPage,
+                'processing_time' => $processingTime,
+                'processing_rate' => $processingRate
             ]);
 
             // Determine next page (if any)
             $nextPage = $isLastPage ? null : $pageNumber + 1;
-
-            // Calculate total processed records
-            $totalProcessed = $syncInfo['stats']['created'] + $syncInfo['stats']['updated'];
             
             // Create a clean response with simplified error information to avoid array conversion issues
             $errorMessages = array_slice($errors, 0, 10); // Limit to 10 recent errors
@@ -2123,12 +1732,16 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'stats' => [
                     'created' => $created,
                     'updated' => $updated,
-                    'total_created' => $syncInfo['stats']['created'],
-                    'total_updated' => $syncInfo['stats']['updated'],
+                    'total_created' => $totalCreated,
+                    'total_updated' => $totalUpdated,
+                    'total_processed' => $totalProcessed,
                     'errors' => $errorMessages,
                     'errors_count' => count($mergedErrors),
                     'current_page' => $pageNumber,
-                    'total_pages' => $totalPages
+                    'total_pages' => $totalPages,
+                    'processing_time' => $processingTime,
+                    'processing_rate' => $processingRate,
+                    'estimated_time_remaining' => $estimatedTimeRemaining
                 ],
                 'continue' => !$isLastPage,
                 'next_page' => $nextPage,
@@ -2175,13 +1788,30 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
         // If no active sync found, get the most recent sync info
         if (!$activeSyncInfo && !empty($dateCacheKeys)) {
+            // Sort keys by timestamp to find most recent
+            $latestTimestamp = 0;
+            $latestKey = null;
+            
             foreach ($dateCacheKeys as $cacheKey) {
                 $syncInfo = Cache::get($cacheKey);
-                if ($syncInfo) {
-                    $activeSyncInfo = $syncInfo;
-                    $activeCacheKey = $cacheKey;
-                    break;
+                // Extract timestamp from the key if possible
+                if (preg_match('/(\d+)$/', $cacheKey, $matches)) {
+                    $keyTimestamp = intval($matches[1]);
+                    if ($keyTimestamp > $latestTimestamp) {
+                        $latestTimestamp = $keyTimestamp;
+                        $latestKey = $cacheKey;
+                    }
                 }
+            }
+            
+            // If found a latest key, use it
+            if ($latestKey) {
+                $activeSyncInfo = Cache::get($latestKey);
+                $activeCacheKey = $latestKey;
+            } else {
+                // Fallback to first key if no timestamps found
+                $activeSyncInfo = Cache::get($dateCacheKeys[0]);
+                $activeCacheKey = $dateCacheKeys[0];
             }
         }
 
@@ -2241,7 +1871,21 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         
         if (isset($activeSyncInfo['date']) && !empty($activeSyncInfo['date'])) {
             try {
-                $syncDate = Carbon::createFromFormat('Y-m-d', $activeSyncInfo['date'])->format('d/m/Y');
+                // Check if date is a timestamp range or a normal date
+                if (strpos($activeSyncInfo['date'], '_') !== false) {
+                    // This is a timestamp range
+                    $parts = explode('_', $activeSyncInfo['date']);
+                    if (count($parts) == 2) {
+                        $startTime = Carbon::createFromTimestamp($parts[0])->format('d/m/Y H:i');
+                        $endTime = Carbon::createFromTimestamp($parts[1])->format('d/m/Y H:i');
+                        $syncDate = "từ {$startTime} đến {$endTime}";
+                    } else {
+                        $syncDate = $activeSyncInfo['date']; 
+                    }
+                } else {
+                    // Normal date
+                    $syncDate = Carbon::createFromFormat('Y-m-d', $activeSyncInfo['date'])->format('d/m/Y');
+                }
             } catch (\Exception $e) {
                 $syncDate = $activeSyncInfo['date']; // Use as-is if not a valid date
             }
@@ -2249,25 +1893,49 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         
         if ($isInProgress) {
             $message = $syncDate ? 
-                "Đang đồng bộ dữ liệu ngày {$syncDate}. Trang {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']}..." :
+                "Đang đồng bộ dữ liệu {$syncDate}. Trang {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']}..." :
                 "Đang đồng bộ. Trang {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']}...";
         } else if ($progress >= 100) {
-            $message = 'Đồng bộ đã hoàn tất.';
+            $message = $syncDate ? 
+                "Đồng bộ dữ liệu {$syncDate} đã hoàn tất." : 
+                'Đồng bộ đã hoàn tất.';
         } else if ($activeSyncInfo['page'] > 0) {
-            $message = "Đã xử lý {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']} trang. Đồng bộ tạm dừng.";
+            $message = $syncDate ? 
+                "Đã xử lý {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']} trang cho {$syncDate}. Đồng bộ tạm dừng." : 
+                "Đã xử lý {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']} trang. Đồng bộ tạm dừng.";
         }
 
         // Calculate elapsed time
         $elapsedTime = null;
         $startTime = null;
+        $elapsedSeconds = 0;
         
         if (!empty($activeSyncInfo['start_time'])) {
             try {
                 $startTime = Carbon::parse($activeSyncInfo['start_time']);
                 $elapsedTime = $startTime->diffForHumans(null, true);
+                $elapsedSeconds = Carbon::now()->diffInSeconds($startTime);
             } catch (\Exception $e) {
                 // Handle invalid date format
                 $elapsedTime = 'không xác định';
+                $elapsedSeconds = 0;
+            }
+        }
+        
+        // Calculate estimated time remaining if in progress
+        $estimatedTimeRemaining = null;
+        if ($isInProgress && $progress > 0 && $elapsedSeconds > 0) {
+            // Calculate seconds per percent
+            $secondsPerPercent = $elapsedSeconds / $progress;
+            // Calculate remaining seconds
+            $remainingSeconds = $secondsPerPercent * (100 - $progress);
+            
+            if ($remainingSeconds < 60) {
+                $estimatedTimeRemaining = "dưới 1 phút";
+            } else if ($remainingSeconds < 3600) {
+                $estimatedTimeRemaining = round($remainingSeconds / 60) . " phút";
+            } else {
+                $estimatedTimeRemaining = round($remainingSeconds / 3600, 1) . " giờ";
             }
         }
 
@@ -2280,13 +1948,23 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'total_expected' => intval($activeSyncInfo['stats']['total_entries'] ?? ($newOrders + $updatedOrders)),
         ];
         
+        // Calculate processing rate (orders per minute) if we have elapsed time
+        $processingRate = null;
+        if ($elapsedSeconds > 0) {
+            $totalProcessed = $orderStats['total_processed'];
+            $processingRate = round(($totalProcessed / $elapsedSeconds) * 60, 1);
+        }
+        
         // Add detailed progress info about current processing
         $detailedProgress = [
             'current_page' => $activeSyncInfo['page'] ?? 0,
             'total_pages' => $activeSyncInfo['total_pages'] ?? 1,
             'page_progress' => $progress,
             'elapsed_time' => $elapsedTime,
+            'elapsed_seconds' => $elapsedSeconds,
             'start_time' => $activeSyncInfo['start_time'] ?? null,
+            'processing_rate' => $processingRate, // Orders processed per minute
+            'estimated_time_remaining' => $estimatedTimeRemaining,
             'timestamp' => now()->toIso8601String()
         ];
         
@@ -2378,6 +2056,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
     public function syncOrdersFromApi(Request $request)
     {
         try {
+            // Increase execution time limit to 2 hours and memory limit to 1GB
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
+            
             $this->authorize('sync-pancake');
 
             // Lấy cấu hình API
@@ -2534,6 +2216,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
     public function syncAllOrders(Request $request)
     {
         try {
+            // Increase execution time limit to 2 hours and memory limit to 1GB
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
+            
             $this->authorize('sync-pancake');
 
             // First check if this is actually a date-specific sync that should be redirected
@@ -2662,10 +2348,33 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $totalPages = $responseData['total_pages'] ?? 1;
             $totalEntries = $responseData['total'] ?? count($orders);
             
+            // Check response metadata format
+            if (isset($responseData['meta'])) {
+                $meta = $responseData['meta'];
+                if (isset($meta['last_page'])) {
+                    $totalPages = $meta['last_page'];
+                }
+                if (isset($meta['total'])) {
+                    $totalEntries = $meta['total'];
+                }
+            }
+            
+            // Determine if there are more pages
+            $hasMorePages = true;
+            if (empty($orders)) {
+                $hasMorePages = false;
+            } else if (isset($responseData['has_next'])) {
+                $hasMorePages = $responseData['has_next'];
+            } else if (isset($responseData['meta']['current_page']) && isset($responseData['meta']['last_page'])) {
+                $hasMorePages = $responseData['meta']['current_page'] < $responseData['meta']['last_page'];
+            } else if (count($orders) < $apiParams['page_size']) {
+                $hasMorePages = false;
+            }
+            
             // Store sync progress in cache
             Cache::put($cacheKey, [
-                'in_progress' => true,
-                'start_time' => now(),
+                'in_progress' => $hasMorePages, // Set to true only if there are more pages
+                'start_time' => now()->toDateTimeString(),
                 'page' => 1,
                 'total_pages' => $totalPages,
                 'startTimestamp' => $startDateTime,
@@ -2680,11 +2389,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             ], now()->addHour());
 
             // Log first page completion
-            Log::info("Completed first page sync 1/{$totalPages}", $statsFirstPage);
+            Log::info("Completed first page sync 1/{$totalPages}", [
+                'created' => $statsFirstPage['created'], 
+                'updated' => $statsFirstPage['updated'],
+                'has_more_pages' => $hasMorePages
+            ]);
             
             // Continue if more pages exist
-            $continueProcess = $totalPages > 1;
-            $nextPage = $continueProcess ? 2 : null;
+            $nextPage = $hasMorePages ? 2 : null;
 
             return response()->json([
                 'success' => true,
@@ -2693,11 +2405,12 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     'created' => $statsFirstPage['created'],
                     'updated' => $statsFirstPage['updated'],
                     'skipped' => $statsFirstPage['skipped'],
+                    'errors' => array_slice($statsFirstPage['errors'], 0, 10), // Limit errors
                     'errors_count' => count($statsFirstPage['errors']),
                     'current_page' => 1,
                     'total_pages' => $totalPages
                 ],
-                'continue' => $continueProcess,
+                'continue' => $hasMorePages,
                 'next_page' => $nextPage,
                 'total_entries' => $totalEntries,
                 'sync_info' => $cacheKey
@@ -2732,13 +2445,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $variationInfo = $component['variation_info'];
                     
                     // Get product name from variation_info
-                    $orderItem->product_name = $variationInfo['name'] ?? $itemData['name'] ?? 'Unknown Product';
+                    $orderItem->product_name = $component['name'] ?? $itemData['name'] ?? 'Unknown Product';
                     
                     // Get product code from variation_id
                     $orderItem->code = $component['variation_id'] ?? $itemData['code'] ?? null;
                     
                     // Get price from variation_info
-                    $orderItem->price = $variationInfo['retail_price'] ?? $itemData['price'] ?? 0;
+                    $orderItem->price = $component['retail_price'] ?? $itemData['price'] ?? 0;
                     
                     // Get quantity from component
                     $orderItem->quantity = $component['quantity'] ?? $itemData['quantity'] ?? 1;
@@ -2772,7 +2485,52 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     break;
                 }
             }
-        } else {
+        } 
+        // Handle direct variation_info format without components (new Pancake format)
+        else if (!empty($itemData['variation_info'])) {
+            $variationInfo = $itemData['variation_info'];
+            
+            // Get product name from variation_info
+            $orderItem->product_name = $variationInfo['name'] ?? $itemData['name'] ?? 'Unknown Product';
+            
+            // Get product code from various possible sources
+            $orderItem->code = $variationInfo['display_id'] ?? $variationInfo['barcode'] ?? $itemData['variation_id'] ?? null;
+            
+            // Set price from variation_info
+            $orderItem->price = $variationInfo['retail_price'] ?? $itemData['price'] ?? 0;
+            
+            // Set quantity
+            $orderItem->quantity = $itemData['quantity'] ?? 1;
+            
+            // Set weight if available
+            $orderItem->weight = $variationInfo['weight'] ?? $itemData['weight'] ?? 0;
+            
+            // Set name field
+            $orderItem->name = $variationInfo['name'] ?? $itemData['name'] ?? null;
+            
+            // Store IDs if columns exist
+            if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
+                $orderItem->pancake_variant_id = $itemData['variation_id'] ?? $itemData['id'] ?? null;
+            }
+            
+            if (Schema::hasColumn('order_items', 'pancake_product_id')) {
+                $orderItem->pancake_product_id = $itemData['product_id'] ?? null;
+            }
+            
+            // Set barcode if column exists
+            if (Schema::hasColumn('order_items', 'barcode')) {
+                $orderItem->barcode = $variationInfo['barcode'] ?? null;
+            }
+            
+            // Store variation details
+            if (Schema::hasColumn('order_items', 'variation_details')) {
+                $orderItem->variation_details = $variationInfo['detail'] ?? null;
+            }
+            
+            // Store the complete item data in product_info field
+            $orderItem->product_info = $itemData;
+        }
+        else {
             // Handle traditional item format (fallback to original code)
             
             // Set product name
@@ -2823,6 +2581,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
      */
     public function syncOrdersByDate($date)
     {
+        // Increase execution time limit to 2 hours and memory limit to 1GB
+        set_time_limit(7200);
+        ini_set('memory_limit', '1024M');
+        
         // Create a request with the date to reuse the existing method
         $request = new \Illuminate\Http\Request();
         $request->merge(['date' => $date->format('Y-m-d')]);

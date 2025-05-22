@@ -16,6 +16,7 @@ use App\Models\PancakePage;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Customer;
+use App\Models\User;
 
 class PancakeSyncController extends Controller
 {
@@ -30,8 +31,12 @@ class PancakeSyncController extends Controller
         if (!$lastSyncTime && PancakePage::count() > 0) {
             $lastSyncTime = PancakePage::max('updated_at');
         }
+        
+        // Get the last time employees were synced (if available)
+        $lastEmployeeSyncTime = Cache::get('last_employee_sync_time');
+        $employeeCount = User::whereNotNull('pancake_uuid')->count();
 
-        return view('admin.pancake.sync', compact('shops', 'lastSyncTime'));
+        return view('admin.pancake.sync', compact('shops', 'lastSyncTime', 'lastEmployeeSyncTime', 'employeeCount'));
     }
 
     /**
@@ -765,6 +770,21 @@ class PancakeSyncController extends Controller
             $order->street_address = $orderData['shipping_address']['address'] ?? '';
         }
 
+        // Store seller assignment information if available
+        if (!empty($orderData['assigning_seller_id'])) {
+            $order->assigning_seller_id = $orderData['assigning_seller_id'];
+            $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
+        }
+        
+        // Store the original creation timestamp from Pancake if available
+        if (!empty($orderData['inserted_at'])) {
+            try {
+                $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
+            }
+        }
+
         $order->pancake_shop_id = $shopId;
         $order->pancake_page_id = $pageId;
         $order->notes = $orderData['note'] ?? '';
@@ -813,6 +833,21 @@ class PancakeSyncController extends Controller
             $order->district_code = $orderData['shipping_address']['district_id'] ?? $order->district_code;
             $order->ward_code = $orderData['shipping_address']['commune_id'] ?? $order->ward_code;
             $order->street_address = $orderData['shipping_address']['address'] ?? $order->street_address;
+        }
+
+        // Update seller assignment information if available
+        if (!empty($orderData['assigning_seller_id'])) {
+            $order->assigning_seller_id = $orderData['assigning_seller_id'];
+            $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
+        }
+        
+        // Update the original creation timestamp from Pancake if available and not set already
+        if (empty($order->pancake_inserted_at) && !empty($orderData['inserted_at'])) {
+            try {
+                $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
+            }
         }
 
         $order->save();
@@ -1380,5 +1415,346 @@ class PancakeSyncController extends Controller
                 'message' => 'Error retrieving sync status: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Synchronize employees from Pancake API.
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function syncEmployees(Request $request)
+    {
+        // Check for permission
+        $this->authorize('settings.manage');
+
+        $apiKey = config('pancake.api_key');
+        $shopId = config('pancake.shop_id');
+        $baseUrl = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1'), '/');
+        
+        if (empty($apiKey) || empty($shopId)) {
+            Log::error('Pancake API key or Shop ID is not configured for employee sync.');
+            return response()->json(['success' => false, 'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake'], 400);
+        }
+        
+        try {
+            // Endpoint for employee list according to Pancake API docs
+            $endpoint = "{$baseUrl}/shops/{$shopId}/users?api_key={$apiKey}";
+            Log::info('Pancake Sync: Fetching employees from ' . $endpoint);
+            
+            $response = Http::get($endpoint);
+            
+            if (!$response->successful()) {
+                Log::error('Pancake Sync: Failed to fetch employees.', [
+                    'status' => $response->status(),
+                    'response_body' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Không thể tải danh sách nhân viên từ Pancake: ' . $response->status()
+                ], 500);
+            }
+            
+            $data = $response->json();
+            
+            // Debug the received data structure
+            Log::debug('Pancake Sync: Received data structure', [
+                'data_keys' => array_keys($data),
+                'has_data' => isset($data['data']),
+                'has_success' => isset($data['success']),
+                'response_snippet' => substr(json_encode($data), 0, 200) . '...'
+            ]);
+            
+            // Store the raw API response in cache for debugging
+            Cache::put('pancake_staff_last_api_data', $data, now()->addDays(7));
+            
+            if (!isset($data['data']) || !is_array($data['data'])) {
+                Log::error('Pancake Sync: Invalid employee data format.', [
+                    'response_body' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false, 
+                    'message' => 'Dữ liệu nhân viên từ Pancake không đúng định dạng: Không tìm thấy mảng "data".'
+                ], 500);
+            }
+            
+            $employees = $data['data'];
+            $created = 0;
+            $updated = 0;
+            $skipped = 0;
+            $errors = [];
+            $syncedEmployees = [];
+            $skippedReasons = [];
+            
+            // Get the staff role by name
+            $staffRole = \Spatie\Permission\Models\Role::where('name', 'staff')->first();
+            
+            if (!$staffRole) {
+                Log::warning('Pancake Sync: Staff role not found. Creating it.');
+                $staffRole = \Spatie\Permission\Models\Role::create(['name' => 'staff', 'guard_name' => 'web']);
+            }
+            
+            DB::beginTransaction();
+            
+            foreach ($employees as $employeeData) {
+                try {
+                    // Log what we received for each employee
+                    Log::debug('Processing employee data:', [
+                        'employee' => $employeeData
+                    ]);
+                    
+                    // Skip if missing essential data - ID is required
+                    if (empty($employeeData['id'])) {
+                        $reason = 'Missing ID field';
+                        $skippedReasons[] = [
+                            'reason' => $reason,
+                            'data' => $employeeData
+                        ];
+                        $skipped++;
+                        Log::warning('Pancake Sync: Skipped employee - ' . $reason, ['employee_data' => $employeeData]);
+                        continue;
+                    }
+                    
+                    // Check if user data exists - this is the key part for getting email and name
+                    $userData = $employeeData['user'] ?? [];
+                    $email = null;
+                    $name = null;
+                    
+                    // Extract email and name, trying both the top level and user property
+                    if (!empty($userData['email'])) {
+                        $email = $userData['email']; // From user object
+                    }
+                    
+                    if (!empty($userData['name'])) {
+                        $name = $userData['name']; // From user object
+                    }
+                    
+                    // Skip if either email or name is missing - we need these fields
+                    if (empty($email)) {
+                        $reason = 'Missing email in user data';
+                        $skippedReasons[] = [
+                            'reason' => $reason,
+                            'data' => $employeeData
+                        ];
+                        $skipped++;
+                        Log::warning('Pancake Sync: Skipped employee - ' . $reason, ['employee_data' => $employeeData]);
+                        continue;
+                    }
+                    
+                    if (empty($name)) {
+                        $reason = 'Missing name in user data';
+                        $skippedReasons[] = [
+                            'reason' => $reason,
+                            'data' => $employeeData
+                        ];
+                        $skipped++;
+                        Log::warning('Pancake Sync: Skipped employee - ' . $reason, ['employee_data' => $employeeData]);
+                        continue;
+                    }
+                    
+                    // First check if we already have a PancakeStaff record for this employee
+                    $pancakeStaff = \App\Models\PancakeStaff::where('pancake_id', $employeeData['id'])->first();
+                    
+                    // Then check if we have a user with this email
+                    $user = User::where('email', $email)->first();
+                    
+                    if (!$user) {
+                        // Create new user with email as password
+                        $user = User::create([
+                            'name' => $name,
+                            'email' => $email,
+                            'password' => bcrypt($email), // Password is the same as email
+                            'pancake_uuid' => $userData['id'] ?? null,
+                        ]);
+                        
+                        // Assign staff role
+                        $user->assignRole($staffRole);
+                        
+                        Log::info("Created new user for Pancake staff member: {$name} ({$email})");
+                        $created++;
+                    } else {
+                        // Update existing user's name if needed
+                        if ($user->name !== $name) {
+                            $user->name = $name;
+                            $user->save();
+                        }
+                        
+                        // Make sure they have the staff role
+                        if (!$user->hasRole('staff')) {
+                            $user->assignRole($staffRole);
+                        }
+                        
+                        // Update pancake_uuid if needed
+                        if (empty($user->pancake_uuid) && !empty($userData['id'])) {
+                            $user->pancake_uuid = $userData['id'];
+                            $user->save();
+                        }
+                        
+                        Log::info("Updated existing user for Pancake staff member: {$name} ({$email})");
+                        $updated++;
+                    }
+                   
+                    // Now create or update the PancakeStaff record with all details
+                    $staffAttributes = [
+                        'user_id' => $user->id,
+                        'pancake_id' => $employeeData['id'] ?? null,
+                        'user_id_pancake' => $employeeData['user_id'] ?? null, 
+                        'profile_id' => $employeeData['profile_id'] ?? null,
+                        'email' => $email,
+                        'name' => $name,
+                        'phone' => $userData['phone_number'] ?? null,
+                        'fb_id' => $userData['fb_id'] ?? null,
+                        'avatar_url' => $userData['avatar_url'] ?? null,
+                        'role' => $employeeData['role'] ?? null,
+                        'shop_id' => $employeeData['shop_id'] ?? null,
+                        'is_assigned' => $employeeData['is_assigned'] ?? false,
+                        'is_assigned_break_time' => $employeeData['is_assigned_break_time'] ?? null,
+                        'enable_api' => $employeeData['enable_api'] ?? null,
+                        'api_key' => $employeeData['api_key'] ?? null,
+                        'note_api_key' => $employeeData['note_api_key'] ?? null,
+                        'app_warehouse' => $employeeData['app_warehouse'] ?? null,
+                        'department' => $employeeData['department'] ?? null,
+                        'department_id' => $employeeData['department_id'] ?? null,
+                        'preferred_shop' => $employeeData['preferred_shop'] ?? null,
+                        'profile' => $employeeData['profile'] ?? null,
+                        'pending_order_count' => $employeeData['pending_order_count'] ?? 0,
+                        'permission_in_sale_group' => $employeeData['permission_in_sale_group'] ?? null,
+                        'transaction_tags' => $employeeData['transaction_tags'] ?? null,
+                        'work_time' => $employeeData['work_time'] ?? null,
+                        'creator' => $employeeData['creator'] ?? null,
+                    ];
+                    
+                    // Handle inserted_at timestamp conversion
+                    if (!empty($employeeData['inserted_at'])) {
+                        try {
+                            $staffAttributes['pancake_inserted_at'] = \Carbon\Carbon::parse($employeeData['inserted_at']);
+                        } catch (\Exception $e) {
+                            Log::warning("Could not parse inserted_at date for employee {$name}: " . $e->getMessage());
+                        }
+                    }
+                    
+                    try {
+                        if ($pancakeStaff) {
+                            // Update existing staff record
+                            $pancakeStaff->fill($staffAttributes);
+                            $pancakeStaff->save();
+                            Log::info("Updated Pancake staff details for: {$name} with ID: {$employeeData['id']}");
+                        } else {
+                            // Create new staff record
+                            $pancakeStaff = new \App\Models\PancakeStaff();
+                            $pancakeStaff->fill($staffAttributes);
+                            $pancakeStaff->save();
+                            Log::info("Created new Pancake staff record for: {$name} with ID: {$employeeData['id']}");
+                        }
+                    } catch (\Exception $e) {
+                        Log::error("Error saving Pancake staff record: " . $e->getMessage(), [
+                            'name' => $name,
+                            'email' => $email,
+                            'pancake_id' => $employeeData['id'] ?? null,
+                            'trace' => $e->getTraceAsString()
+                        ]);
+                        throw $e; // Re-throw to trigger transaction rollback
+                    }
+                    
+                    // Add to synced employees list for UI display
+                    $syncedEmployees[] = [
+                        'id' => $user->id,
+                        'pancake_id' => $employeeData['id'],
+                        'name' => $name,
+                        'email' => $email,
+                        'status' => $pancakeStaff ? 'updated' : 'created',
+                        'password' => !$pancakeStaff ? $email : null, // Only show password for new users
+                    ];
+                    
+                } catch (\Exception $e) {
+                    $errors[] = "Lỗi với nhân viên " . (isset($employeeData['user']['name']) ? $employeeData['user']['name'] : 'Unknown') . ": " . $e->getMessage();
+                    Log::error('Pancake Employee Sync Error:', [
+                        'employee' => isset($employeeData['user']['name']) ? $employeeData['user']['name'] : 'Unknown',
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            }
+            
+            DB::commit();
+            
+            // Store last sync time
+            Cache::put('last_employee_sync_time', now(), now()->addDays(30));
+            
+            // Store skipped reasons in cache for display in admin
+            Cache::put('pancake_sync_skipped_staff', $skippedReasons, now()->addDays(30));
+            
+            Log::info("Pancake Sync: Completed employee sync process", [
+                'created' => $created,
+                'updated' => $updated, 
+                'skipped' => $skipped,
+                'errors' => count($errors),
+                'employees_count' => count($employees),
+                'skipped_reasons' => $skippedReasons
+            ]);
+            
+            if ($skipped > 0 && $created == 0 && $updated == 0) {
+                return response()->json([
+                    'success' => false, 
+                    'message' => "Tất cả {$skipped} nhân viên đã bị bỏ qua trong quá trình đồng bộ. Xem lỗi bên dưới.",
+                    'stats' => [
+                        'created' => $created,
+                        'updated' => $updated,
+                        'skipped' => $skipped,
+                        'errors' => $errors
+                    ],
+                    'skipped_reasons' => $skippedReasons,
+                    'employees' => $syncedEmployees
+                ]);
+            }
+            
+            return response()->json([
+                'success' => true, 
+                'message' => "Đồng bộ nhân viên thành công! Đã tạo $created nhân viên mới, cập nhật $updated nhân viên hiện có. Bỏ qua $skipped.",
+                'stats' => [
+                    'created' => $created,
+                    'updated' => $updated,
+                    'skipped' => $skipped,
+                    'errors' => $errors
+                ],
+                'employees' => $syncedEmployees
+            ]);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Pancake Employee Sync: Exception - ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json([
+                'success' => false, 
+                'message' => 'Lỗi đồng bộ nhân viên: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get list of skipped employees and reasons without running a sync
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getSkippedEmployeesReasons(Request $request)
+    {
+        $this->authorize('settings.manage');
+        
+        // Get skipped reasons from cache
+        $skippedReasons = Cache::get('pancake_sync_skipped_staff', []);
+        
+        // Get any raw API data from the last sync if available
+        $rawApiData = Cache::get('pancake_staff_last_api_data', null);
+        
+        // Get last sync time
+        $lastSyncTime = Cache::get('last_employee_sync_time');
+        
+        return response()->json([
+            'success' => true,
+            'last_sync' => $lastSyncTime ? $lastSyncTime->format('Y-m-d H:i:s') : null,
+            'skipped_count' => count($skippedReasons),
+            'skipped_reasons' => $skippedReasons,
+            'has_raw_data' => !empty($rawApiData)
+        ]);
     }
 }

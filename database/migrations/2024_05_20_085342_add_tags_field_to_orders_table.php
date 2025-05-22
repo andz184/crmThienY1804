@@ -12,11 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            // Add tags column for order categorization
-            if (!Schema::hasColumn('orders', 'tags')) {
-                $table->text('tags')->nullable()->after('returned_reason');
-            }
-
+            // Tags column should already exist as JSON from previous migrations
+            // We'll ensure the other columns are added properly
+            
             // Add pancake warehouse and shipping provider IDs for better mapping
             if (!Schema::hasColumn('orders', 'pancake_warehouse_id')) {
                 $table->string('pancake_warehouse_id')->nullable()->after('warehouse_id');
@@ -34,10 +32,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            if (Schema::hasColumn('orders', 'tags')) {
-                $table->dropColumn('tags');
-            }
-
+            // Don't drop the tags column as it's managed by another migration
+            
             if (Schema::hasColumn('orders', 'pancake_warehouse_id')) {
                 $table->dropColumn('pancake_warehouse_id');
             }

@@ -42,9 +42,38 @@ class CustomerController extends Controller
             'max_orders' => $request->input('max_orders'),
             'min_spent' => $request->input('min_spent'),
             'max_spent' => $request->input('max_spent'),
+            'last_order_status' => $request->input('last_order_status'),
+            'tag' => $request->input('tag'),
+            'quick_filter' => $request->input('quick_filter')
         ];
 
         $query = Customer::query();
+
+        // Apply quick filters
+        if ($request->has('quick_filter')) {
+            switch ($request->input('quick_filter')) {
+                case 'new':
+                    // Khách hàng mới (trong 30 ngày gần đây)
+                    $query->whereDate('created_at', '>=', now()->subDays(30));
+                    break;
+                case 'repeat':
+                    // Khách hàng mua lại (có nhiều hơn 1 đơn hàng)
+                    $query->where('total_orders_count', '>', 1);
+                    break;
+                case 'vip':
+                    // Khách VIP (căn cứ vào tag hoặc tổng chi tiêu)
+                    $query->where(function($q) {
+                        $q->whereJsonContains('tags', 'VIP')
+                          ->orWhere('total_spent', '>=', 5000000); // 5 triệu đồng
+                    });
+                    break;
+                case 'inactive':
+                    // Khách không hoạt động (không mua hàng trong 90 ngày)
+                    $query->whereDate('last_order_date', '<=', now()->subDays(90))
+                          ->orWhereNull('last_order_date');
+                    break;
+            }
+        }
 
         if ($request->filled('search')) {
             $searchTerm = strtolower($request->input('search'));
@@ -79,6 +108,19 @@ class CustomerController extends Controller
 
         if ($request->filled('max_spent')) {
             $query->where('total_spent', '<=', $request->input('max_spent'));
+        }
+        
+        if ($request->filled('last_order_status')) {
+            $status = $request->input('last_order_status');
+            $query->whereHas('orders', function($q) use ($status) {
+                $q->where('status', $status)
+                  ->whereRaw('orders.id = (SELECT MAX(id) FROM orders WHERE customer_id = customers.id)');
+            });
+        }
+        
+        if ($request->filled('tag')) {
+            $tag = $request->input('tag');
+            $query->whereJsonContains('tags', $tag);
         }
 
         $customers = $query->orderBy('created_at', 'desc')->paginate(15);
@@ -384,6 +426,10 @@ class CustomerController extends Controller
     public function syncFromOrders(Request $request)
     {
         dd(1);
+        // Increase execution time limit to 2 hours and memory limit to 1GB
+        set_time_limit(7200);
+        ini_set('memory_limit', '1024M');
+        
         $this->authorize('customers.sync');
         $user = Auth::user();
         $isAjax = $request->ajax();
@@ -582,8 +628,8 @@ class CustomerController extends Controller
     {
         try {
             // Set execution time
-            set_time_limit(7200); // Tăng lên 2 giờ
-            ini_set('memory_limit', '1024M'); // Tăng memory limit lên 1GB
+            set_time_limit(7200); // 2 hours execution time limit
+            ini_set('memory_limit', '1024M'); // 1GB memory limit
 
             $result = $this->pancakeService->syncCustomers();
 
@@ -628,6 +674,10 @@ class CustomerController extends Controller
     public function startSync()
     {
         try {
+            // Increase execution time limit to 2 hours and memory limit to 1GB
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
+            
             // Bắt đầu đồng bộ trong queue
             dispatch(function() {
                 $this->pancakeService->syncCustomers();

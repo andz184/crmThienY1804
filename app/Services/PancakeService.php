@@ -85,8 +85,8 @@ class PancakeService
             $lastSync = Cache::get($this->lastSyncKey);
             $params = [
                 'api_key' => $this->apiKey,
-                'page' => 1,
-                'per_page' => 100 // Tăng số lượng items mỗi trang
+                'page_size' => 1000,
+               
             ];
 
             // If we have last sync time, only get customers updated after that

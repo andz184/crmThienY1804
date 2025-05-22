@@ -184,11 +184,17 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
 
         // Pancake Sync Routes
         Route::get('pancake-sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'index'])
-            ->name('pancake.sync.index')
-            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.manage'); // Reuse a suitable permission
+            ->name('sync.index')
+            ->middleware(['auth', 'can:settings.manage']);
         Route::post('pancake-sync/now', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'syncNow'])
-            ->name('pancake.sync.now')
-            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':settings.manage'); // Reuse a suitable permission
+            ->name('sync.now')
+            ->middleware(['auth', 'can:settings.manage']);
+        Route::post('pancake-sync/employees', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'syncEmployees'])
+            ->name('sync.employees')
+            ->middleware(['auth', 'can:settings.manage']);
+        Route::get('pancake-sync/skipped-employees', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'getSkippedEmployeesReasons'])
+            ->name('sync.skipped-employees')
+            ->middleware(['auth', 'can:settings.manage']);
 
         // Activity Logs - Remove duplicate route definitions and consolidate here
         Route::middleware(['auth'])
@@ -299,4 +305,12 @@ Route::middleware(['auth'])->prefix('reports')->name('reports.')->group(function
     Route::get('/returning-customers', [App\Http\Controllers\ReportController::class, 'returningCustomersPage'])
         ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.customer_returning')
         ->name('returning_customers');
+});
+
+// Sales Staff Management
+Route::prefix('admin/sales-staff')->name('admin.sales-staff.')->middleware(['auth', 'verified'])->group(function () {
+    Route::get('/', [App\Http\Controllers\Admin\SalesStaffController::class, 'index'])->name('index');
+    Route::post('/{user}/toggle-active', [App\Http\Controllers\Admin\SalesStaffController::class, 'toggleActive'])->name('toggle-active');
+    Route::post('/{user}/reassign-orders', [App\Http\Controllers\Admin\SalesStaffController::class, 'reassignOrders'])->name('reassign-orders');
+    Route::post('/distribute-new-orders', [App\Http\Controllers\Admin\SalesStaffController::class, 'distributeNewOrders'])->name('distribute-new-orders');
 });

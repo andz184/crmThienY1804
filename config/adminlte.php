@@ -455,6 +455,12 @@ return [
             'can' => 'settings.manage'
         ],
         [
+            'text' => 'Quản lý nhân viên Sale',
+            'route' => 'admin.sales-staff.index',
+            'icon' => 'fas fa-fw fa-users',
+            'can' => 'settings.manage'
+        ],
+        [
             'text'    => 'Bảng Xếp Hạng',
             'url'  => 'leaderboard',
             'icon' => 'fas fa-fw fa-trophy',
@@ -475,7 +481,7 @@ return [
         // Add the new Pancake Sync menu item here
         [
             'text' => 'Đồng bộ Pancake',
-            'route'  => 'admin.pancake.sync.index',
+            'route'  => 'admin.sync.index',
             'icon' => 'fas fa-fw fa-sync-alt',
             'can'  => 'settings.manage', // Or your new pancake.sync permission
         ],
