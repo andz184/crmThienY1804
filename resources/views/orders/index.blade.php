@@ -252,9 +252,6 @@
                 <button type="button" class="btn btn-secondary btn-sync" id="sync-yesterday-btn" title="Đồng bộ đơn hàng hôm qua">
                     <i class="fas fa-sync-alt"></i> Hôm qua
                 </button>
-                <button type="button" class="btn btn-warning btn-sync" id="sync-specific-date-btn" title="Đồng bộ theo ngày được chọn trong bộ lọc">
-                    <i class="fas fa-calendar-check"></i> Đồng bộ theo ngày lọc
-                </button>
                 <button type="button" class="btn btn-info dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Đồng bộ theo ngày cụ thể">
                     <i class="fas fa-calendar-alt"></i> Ngày cụ thể
                 </button>
@@ -384,34 +381,6 @@
       </div>
     </div>
   </div>
-</div>
-
-<!-- Modal for date range sync -->
-<div class="modal fade" id="syncDateRangeModal" tabindex="-1" role="dialog" aria-labelledby="syncDateRangeModalLabel" aria-hidden="true">
-    <div class="modal-dialog" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="syncDateRangeModalLabel">Chọn khoảng thời gian đồng bộ</h5>
-                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                    <span aria-hidden="true">&times;</span>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="sync_date_from">Từ ngày:</label>
-                    <input type="date" class="form-control" id="sync_date_from" required>
-                </div>
-                <div class="form-group">
-                    <label for="sync_date_to">Đến ngày:</label>
-                    <input type="date" class="form-control" id="sync_date_to" required>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
-                <button type="button" class="btn btn-primary" id="syncDateRangeBtn">Đồng bộ</button>
-            </div>
-        </div>
-    </div>
 </div>
 
 {{-- Add Sync button that will be shown only to admin users --}}
@@ -807,106 +776,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    $('#sync-specific-date-btn').on('click', function() {
-        Swal.fire({
-            title: 'Chọn khoảng thời gian đồng bộ',
-            html: `
-                <div class="form-group">
-                    <label for="swal-sync-date-from" class="float-left">Từ ngày:</label>
-                    <input type="date" class="form-control" id="swal-sync-date-from">
-                </div>
-                <div class="form-group">
-                    <label for="swal-sync-date-to" class="float-left">Đến ngày:</label>
-                    <input type="date" class="form-control" id="swal-sync-date-to">
-                </div>
-            `,
-            showCancelButton: true,
-            confirmButtonText: 'Đồng bộ',
-            cancelButtonText: 'Hủy',
-            preConfirm: () => {
-                const startDate = document.getElementById('swal-sync-date-from').value;
-                const endDate = document.getElementById('swal-sync-date-to').value;
-
-                if (!startDate || !endDate) {
-                    Swal.showValidationMessage('Vui lòng chọn đầy đủ ngày bắt đầu và kết thúc');
-                    return false;
-                }
-
-                if (new Date(startDate) > new Date(endDate)) {
-                    Swal.showValidationMessage('Ngày bắt đầu không thể lớn hơn ngày kết thúc');
-                    return false;
-                }
-
-                return { startDate, endDate };
-            }
-        }).then((result) => {
-            if (result.isConfirmed) {
-                const { startDate, endDate } = result.value;
-
-                // Convert dates to timestamps
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                const startDateTime = Math.floor(new Date(start.setHours(0, 0, 0, 0)).getTime() / 1000);
-                const endDateTime = Math.floor(new Date(end.setHours(23, 59, 59, 999)).getTime() / 1000);
-
-                // Call API directly
-                $.ajax({
-                    url: '{{ route("pancake.orders.sync-all") }}',
-                    method: 'POST',
-                    data: {
-                        startDateTime: startDateTime,
-                        endDateTime: endDateTime
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            // Store sync info
-                            if (response.sync_info) {
-                                syncState.syncInfo = response.sync_info;
-                            }
-
-                            // Store total pages
-                            if (response.total_pages) {
-                                syncState.totalPages = response.total_pages;
-                            }
-
-                            // Store total entries
-                            if (response.total_entries) {
-                                syncState.totalEntries = response.total_entries;
-                            }
-
-                            // Update sync stats if available
-                            if (response.stats) {
-                                syncState.stats.created += response.stats.created || 0;
-                                syncState.stats.updated += response.stats.updated || 0;
-                                if (response.stats.errors && response.stats.errors.length) {
-                                    syncState.stats.errors = syncState.stats.errors.concat(response.stats.errors);
-                                }
-                            }
-
-                            // Show progress dialog
-                            showSyncProgress();
-
-                            // If there are more pages to process
-                            if (response.continue && response.next_page) {
-                                processNextPage(response.next_page);
-                            } else {
-                                // Finish sync if only one page
-                                finishSync();
-                            }
-                        } else {
-                            handleSyncError(response.message || 'Có lỗi xảy ra trong quá trình đồng bộ.');
-                        }
-                    },
-                    error: function(xhr) {
-                        console.error('Sync error:', xhr);
-                        const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Đã xảy ra lỗi khi đồng bộ';
-                        handleSyncError(errorMsg);
-                    }
-                });
-            }
-        });
-    });
-
     $('#cancel-stuck-sync-btn').on('click', function() {
         cancelSync();
     });
@@ -973,9 +842,6 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (syncType === 'date') {
             title = `Xác nhận đồng bộ đơn hàng ${options.displayText}`;
             text = `Bạn có chắc muốn đồng bộ đơn hàng của ${options.displayText}?`;
-        } else if (syncType === 'specific_date') {
-            title = `Xác nhận đồng bộ đơn hàng ngày ${options.displayText}`;
-            text = `Bạn có chắc muốn đồng bộ đơn hàng của ngày ${options.displayText}?`;
         }
 
         Swal.fire({
@@ -1055,23 +921,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const today = new Date();
             const diffDays = Math.floor((today - selectedDate) / (1000 * 60 * 60 * 24));
 
-        if (diffDays > 7) {
-            Swal.fire({
-                title: 'Lưu ý',
-                text: `Bạn đang đồng bộ dữ liệu từ ${diffDays} ngày trước. Quá trình này có thể mất nhiều thời gian hoặc không lấy được đầy đủ dữ liệu cũ.`,
-                icon: 'info',
-                showCancelButton: true,
-                confirmButtonText: 'Vẫn tiếp tục',
-                cancelButtonText: 'Hủy bỏ'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    executeSync(url, data);
-                } else {
-                    syncState.inProgress = false;
-                    Swal.close();
-                }
-            });
-            return;
+            if (diffDays > 7) {
+                Swal.fire({
+                    title: 'Lưu ý',
+                    text: `Bạn đang đồng bộ dữ liệu từ ${diffDays} ngày trước. Quá trình này có thể mất nhiều thời gian hoặc không lấy được đầy đủ dữ liệu cũ.`,
+                    icon: 'info',
+                    showCancelButton: true,
+                    confirmButtonText: 'Vẫn tiếp tục',
+                    cancelButtonText: 'Hủy bỏ'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        executeSync(url, data);
+                    } else {
+                        syncState.inProgress = false;
+                        Swal.close();
+                    }
+                });
+                return;
+            }
         }
 
         // Execute sync
