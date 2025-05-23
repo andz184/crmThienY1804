@@ -899,12 +899,12 @@ document.addEventListener('DOMContentLoaded', () => {
             url = '{{ route("pancake.orders.sync-all") }}';
         } else if (syncType === 'date') {
             url = '{{ route("pancake.orders.sync-all") }}';
-            
+
             // Convert date to start and end timestamps
             const selectedDate = new Date(options.date);
             const startDateTime = Math.floor(new Date(selectedDate.setHours(0, 0, 0, 0)).getTime() / 1000);
             const endDateTime = Math.floor(new Date(selectedDate.setHours(23, 59, 59, 999)).getTime() / 1000);
-            
+
             data = {
                 date: options.date,
                 startDateTime: startDateTime,
@@ -949,13 +949,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function executeSync(url, data) {
         // Log the data being sent for debugging
         console.log('Sending sync request:', url, data);
-        
+
         // Ensure we're using the correct parameter name 'date' instead of 'sync_date'
         if (data.sync_date) {
             data.date = data.sync_date;
             delete data.sync_date;
         }
-        
+
         $.ajax({
             url: url,
             method: 'POST',
@@ -967,20 +967,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.sync_info) {
                         syncState.syncInfo = response.sync_info;
                     }
-                    
+
                     // Store total pages
                     if (response.total_pages) {
                         syncState.totalPages = response.total_pages;
                     }
-                    
+
                     // Store total entries
                     if (response.total_entries) {
                         syncState.totalEntries = response.total_entries;
                     }
-                    
-                    console.log("Sync started: Page " + (response.current_page || 1) + "/" + 
-                               (response.total_pages || 1) + ", Continue: " + 
-                               (response.continue ? "Yes" : "No") + ", Next page: " + 
+
+                    console.log("Sync started: Page " + (response.current_page || 1) + "/" +
+                               (response.total_pages || 1) + ", Continue: " +
+                               (response.continue ? "Yes" : "No") + ", Next page: " +
                                (response.next_page || "None"));
 
                     // Update sync stats if available
@@ -1044,13 +1044,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (response.total_pages) {
                         syncState.totalPages = response.total_pages;
                     }
-                    
+
                     // Update stats
                     if (response.stats) {
                         syncState.stats.created += response.stats.created || 0;
                         syncState.stats.updated += response.stats.updated || 0;
                         syncState.stats.total += response.stats.total || 0;
-                        
+
                         if (response.stats.errors && response.stats.errors.length) {
                             syncState.stats.errors = syncState.stats.errors.concat(response.stats.errors);
                         }
@@ -1058,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         // Update stats in the progress dialog
                         updateProgressDialog();
                     }
-                    
+
                     console.log(`Completed page ${response.current_page}/${response.total_pages}, continue=${response.continue}, next_page=${response.next_page || 'none'}`);
 
                     // If there are more pages
@@ -1127,7 +1127,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Start checking progress periodically
         startProgressTracking();
-        
+
         // Hiển thị ngay phản hồi ban đầu
         updateElapsedTime();
         $('#sync-current-operation').text('Đang kết nối đến máy chủ Pancake...');
@@ -1138,12 +1138,12 @@ document.addEventListener('DOMContentLoaded', () => {
         $('#sync-created').text(syncState.stats.created);
         $('#sync-updated').text(syncState.stats.updated);
         $('#sync-errors').text(syncState.stats.errors.length);
-        
+
         // Update progress bar
-        const progress = syncState.totalPages > 0 
-            ? Math.round((syncState.currentPage / syncState.totalPages) * 100) 
+        const progress = syncState.totalPages > 0
+            ? Math.round((syncState.currentPage / syncState.totalPages) * 100)
             : 0;
-        
+
         $('#sync-progress-bar').css('width', progress + '%').attr('aria-valuenow', progress).text(progress + '%');
     }
 
@@ -1157,30 +1157,30 @@ document.addEventListener('DOMContentLoaded', () => {
         // Variable for tracking timing
         let checkCount = 0;
         let interval = 500; // Start with more frequent checks (500ms)
-        
+
         // Initial immediate check
         setTimeout(() => checkSyncProgress(), 100);
 
         // Check progress with adaptive timing
         function setNextCheck() {
             checkCount++;
-            
+
             // Adjust interval based on check count
             if (checkCount > 3 && checkCount < 10) {
                 interval = 1000; // 1 second after first few checks
             } else if (checkCount >= 10) {
                 interval = 2000; // 2 seconds after more checks
             }
-            
+
             syncState.progressInterval = setTimeout(() => {
                 checkSyncProgress();
                 setNextCheck();
             }, interval);
         }
-        
+
         // Start the first timer
         setNextCheck();
-        
+
         // Function to check sync progress
         function checkSyncProgress() {
             $.ajax({
@@ -1192,7 +1192,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (response.sync_info) {
                             syncState.syncInfo = response.sync_info;
                         }
-                        
+
                         // Update progress bar
                         const progress = response.progress || 0;
                         $('#sync-progress-bar').css('width', progress + '%').attr('aria-valuenow', progress).text(progress + '%');
@@ -1202,7 +1202,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const currentPage = response.current_page || syncState.currentPage || 0;
                         const totalPages = response.total_pages || syncState.totalPages || 1;
                         $('#sync-page-progress').text(`${currentPage}/${totalPages}`);
-                        
+
                         // Update order counts
                         const created = response.stats?.created || 0;
                         const updated = response.stats?.updated || 0;
@@ -1210,7 +1210,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         $('#sync-created').text(created);
                         $('#sync-updated').text(updated);
                         $('#sync-errors').text(errors);
-                        
+
                         // Update total processed/expected
                         const totalProcessed = response.order_stats?.total_processed || (created + updated);
                         const totalExpected = response.order_stats?.total_expected || totalProcessed;
@@ -1231,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 statusElement.text(statusMsg);
                             }
                         }
-                        
+
                         // Show elapsed time from server if available, otherwise calculate locally
                         const timeElement = $('#sync-time-elapsed');
                         if (timeElement.length) {
@@ -1241,37 +1241,37 @@ document.addEventListener('DOMContentLoaded', () => {
                                 updateElapsedTime();
                             }
                         }
-                        
+
                         // Add estimated time remaining if available
                         const processingDetails = $('#sync-processing-details');
                         if (processingDetails.length) {
                             let detailsHtml = '';
-                            
+
                             // Add processing rate if available
                             if (response.detailed_progress?.processing_rate) {
                                 detailsHtml += `<span class="badge badge-info">Tốc độ: ${response.detailed_progress.processing_rate} đơn/phút</span> `;
                             }
-                            
+
                             // Add estimated time remaining if available
                             if (response.detailed_progress?.estimated_time_remaining) {
                                 detailsHtml += `<span class="badge badge-warning">Còn lại: ${response.detailed_progress.estimated_time_remaining}</span>`;
                             }
-                            
+
                             processingDetails.html(detailsHtml);
                         }
-                        
+
                         // Display recent errors if available
                         if (response.stats?.failed_orders && response.stats.failed_orders.length > 0) {
                             const errorDetails = $('#sync-error-details');
                             const errorList = $('#sync-error-list');
-                            
+
                             errorDetails.removeClass('d-none');
                             errorList.empty();
-                            
+
                             // Display up to 3 most recent errors
                             response.stats.failed_orders.slice(-3).forEach(error => {
-                                const errorText = error.order_id ? 
-                                    `Đơn #${error.order_id}: ${error.error}` : 
+                                const errorText = error.order_id ?
+                                    `Đơn #${error.order_id}: ${error.error}` :
                                     error.error;
                                 errorList.append(`<li>${errorText}</li>`);
                             });
@@ -1281,15 +1281,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (response.current_page) syncState.currentPage = response.current_page;
                         if (response.total_pages) syncState.totalPages = response.total_pages;
                         syncState.inProgress = response.in_progress;
-                        
+
                         // Check if sync is completed
                         const isCompleted = progress >= 100 || !response.in_progress;
-                        
+
                         // If sync is paused but not completed
                         if (!response.in_progress && response.current_page < response.total_pages) {
                             // Show resume confirmation
                             clearInterval(syncState.progressInterval);
-                            
+
                             Swal.fire({
                                 title: 'Đồng bộ tạm dừng',
                                 html: `Đồng bộ đã tạm dừng ở trang ${response.current_page}/${response.total_pages}. Bạn có muốn tiếp tục không?`,
@@ -1328,16 +1328,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const now = new Date().getTime();
         const elapsed = Math.floor((now - syncState.startTime) / 1000); // Seconds
-        
+
         // Format elapsed time
         let timeString = formatTime(elapsed);
-        
+
         $('#sync-time-elapsed').text('Thời gian: ' + timeString);
-        
+
         // Also update the progress bar in the card if it exists
         $('#sync_progress_bar').css('width', (syncState.totalPages > 0 ? Math.round((syncState.currentPage / syncState.totalPages) * 100) : 0) + '%');
         $('#sync_status_text').text('Đang đồng bộ trang ' + syncState.currentPage + '/' + syncState.totalPages);
-        
+
         // Update stats in the card
         if (syncState.stats) {
             $('#sync_order_stats').removeClass('d-none');
@@ -1360,7 +1360,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Check if sync was partial
         const isPartialSync = syncState.currentPage < syncState.totalPages;
-        
+
         // Calculate stats
         const totalOrders = syncState.stats.created + syncState.stats.updated;
         const elapsedSeconds = Math.floor((new Date().getTime() - syncState.startTime) / 1000);
@@ -1368,7 +1368,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Show results dialog
         let resultTitle = isPartialSync ? 'Đồng bộ tạm dừng!' : 'Đồng bộ hoàn tất!';
-        
+
         // Add badge labels
         const newBadge = '<span class="badge badge-success">Mới</span>';
         const updateBadge = '<span class="badge badge-info">Cập nhật</span>';
@@ -1379,7 +1379,7 @@ document.addEventListener('DOMContentLoaded', () => {
             html: `
                 <div class="text-left">
                     <p class="mb-3">Quá trình đồng bộ ${isPartialSync ? 'đã tạm dừng' : 'đã hoàn tất'} sau ${formatTime(elapsedSeconds)}.</p>
-                    ${isPartialSync ? 
+                    ${isPartialSync ?
                       `<div class="alert alert-warning">
                         <p class="mb-2"><i class="fas fa-exclamation-triangle mr-2"></i> Đã xử lý ${syncState.currentPage}/${syncState.totalPages} trang.</p>
                         <p class="mb-0">Bạn có thể tiếp tục đồng bộ các trang còn lại sau.</p>
@@ -1427,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 processNextPage(syncState.currentPage + 1);
                 return;
             }
-            
+
             // Reload page if orders were created or updated
             if (totalOrders > 0) {
                 window.location.reload();
@@ -1452,14 +1452,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Allow retrying a few times for connection issues
-        if (syncState.retryAttempts < 2 && 
-           (errorMessage.includes('timeout') || 
-            errorMessage.includes('connection') || 
+        if (syncState.retryAttempts < 2 &&
+           (errorMessage.includes('timeout') ||
+            errorMessage.includes('connection') ||
             errorMessage.includes('network') ||
             errorMessage.includes('không kết nối'))) {
-            
+
             syncState.retryAttempts++;
-            
+
             Swal.fire({
                 title: 'Đang thử lại...',
                 html: `
@@ -1487,10 +1487,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     startSync(syncState.date ? 'date' : 'all', syncState.date ? { date: syncState.date } : {});
                 }
             });
-            
+
             return;
         }
-        
+
         // Reset retry counter
         syncState.retryAttempts = 0;
 
