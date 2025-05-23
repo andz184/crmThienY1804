@@ -447,11 +447,54 @@ class PancakeSyncController extends Controller
 
         // Xử lý địa chỉ nếu có
         if (!empty($orderData['shipping_address'])) {
-            $order->full_address = $orderData['shipping_address']['full_address'] ?? '';
-            $order->province_code = $orderData['shipping_address']['province_id'] ?? null;
-            $order->district_code = $orderData['shipping_address']['district_id'] ?? null;
-            $order->ward_code = $orderData['shipping_address']['commune_id'] ?? null;
-            $order->street_address = $orderData['shipping_address']['address'] ?? '';
+            $shippingAddress = $orderData['shipping_address'];
+            $order->full_address = $shippingAddress['full_address'] ?? '';
+            $order->province_code = $shippingAddress['province_id'] ?? $shippingAddress['province_code'] ?? null;
+            $order->district_code = $shippingAddress['district_id'] ?? $shippingAddress['district_code'] ?? null;
+            $order->ward_code = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
+            $order->street_address = $shippingAddress['address'] ?? '';
+            
+            // Look up and update address names from the database
+            $this->updateAddressNames($order);
+            
+            // Store the full shipping address info if the column exists
+            if (Schema::hasColumn('orders', 'shipping_address_info')) {
+                $order->shipping_address_info = json_encode($shippingAddress);
+            }
+        } else {
+            // Fallback for direct address fields
+            if (!empty($orderData['address']) || !empty($orderData['province_name']) ||
+                !empty($orderData['district_name']) || !empty($orderData['ward_name'])) {
+
+                $addressParts = [];
+                if (!empty($orderData['address'])) {
+                    // Handle case when address contains phone number
+                    $address = $this->sanitizeAddress($orderData['address']);
+                    $addressParts[] = $address;
+                }
+                if (!empty($orderData['ward_name'])) $addressParts[] = $orderData['ward_name'];
+                if (!empty($orderData['district_name'])) $addressParts[] = $orderData['district_name'];
+                if (!empty($orderData['province_name'])) $addressParts[] = $orderData['province_name'];
+
+                $fullAddress = implode(', ', $addressParts);
+                $order->full_address = !empty($fullAddress) ? $fullAddress : ($orderData['full_address'] ?? '');
+                $order->province_code = $orderData['province_id'] ?? null;
+                $order->district_code = $orderData['district_id'] ?? null;
+                $order->ward_code = $orderData['ward_id'] ?? null;
+                $order->street_address = $orderData['address'] ?? '';
+
+                // Update related names if available
+                $order->province_name = $orderData['province_name'] ?? null;
+                $order->district_name = $orderData['district_name'] ?? null;
+                $order->ward_name = $orderData['ward_name'] ?? null;
+                        
+                // Look up and update address names if codes are provided but names are missing
+                if (($order->province_code && empty($order->province_name)) || 
+                    ($order->district_code && empty($order->district_name)) || 
+                    ($order->ward_code && empty($order->ward_name))) {
+                    $this->updateAddressNames($order);
+                }
+            }
         }
 
         $order->pancake_shop_id = $shopId;
