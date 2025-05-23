@@ -420,13 +420,9 @@ class ReportController extends Controller
             $allPotentialLiveOrders = Order::query()
                 ->whereNotNull('notes')
                 ->where('notes', 'LIKE', '%LIVE%')
-                // Add a buffer to the date range to catch orders where notes might be added later
-                // or session date slightly differs from created_at.
-                ->whereBetween('created_at', [
-                    $filterPeriodStart->copy()->subDays(7)->startOfDay(),
-                    $filterPeriodEnd->copy()->addDays(7)->endOfDay()
-                ])
-                // ->where('created_at', '>=', Carbon::now()->subYears(2)) // Example: Limit to orders created in last 2 years for performance
+                // Fetch orders from a fixed historical window to ensure all potential sessions are considered.
+                // The primary filtering by user-selected date range happens later based on parsed session_date from notes.
+                ->where('created_at', '>=', Carbon::now()->subYears(2)->startOfDay()) // Using a 2-year lookback as an example. Consider making '2' configurable.
                 ->with(['items']) // Eager load items
                 ->get();
             Log::info('ReportController@processReportData: Found ' . $allPotentialLiveOrders->count() . ' total orders with LIVE in notes (globally or within a wider pre-filter if any was applied).');

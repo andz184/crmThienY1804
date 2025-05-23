@@ -197,9 +197,9 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
             ->name('sync.skipped-employees')
             ->middleware(['auth', 'can:settings.manage']);
 
-        // New route for syncing categories
-        Route::post('pancake-sync/categories', [\App\Http\Controllers\PancakeSyncController::class, 'syncCategories'])
-            ->name('sync.categories')
+        // Route for syncing categories - now points to PancakeCategoryController
+        Route::post('pancake-sync/categories', [\App\Http\Controllers\Admin\PancakeCategoryController::class, 'syncCategories'])
+            ->name('sync.categories') // This name is used in the blade file
             ->middleware(['auth', 'can:settings.manage']);
 
         // Activity Logs - Remove duplicate route definitions and consolidate here
