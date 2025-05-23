@@ -122,7 +122,7 @@ class PancakeSyncController extends Controller
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
             ini_set('memory_limit', '1024M');
-
+            
             $this->authorize('sync-pancake');
 
             // Get API configuration
@@ -136,17 +136,17 @@ class PancakeSyncController extends Controller
                     'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake'
                 ], 400);
             }
-
+               
             // Check if this is a specific date sync or ALL orders sync
             if ($request->has('date') || $request->has('sync_date')) {
                 // Add a sync_type parameter to make routing clearer
                 $request->merge(['sync_type' => 'date']);
-
+                
                 // Ensure we have a consistent 'date' parameter
                 if ($request->has('sync_date') && !$request->has('date')) {
                     $request->merge(['date' => $request->input('sync_date')]);
                 }
-
+                
                 // Log request information
                 Log::info('Redirecting to syncOrdersByDateManual from syncOrders', [
                     'date' => $request->input('date'),
@@ -328,7 +328,7 @@ class PancakeSyncController extends Controller
             $pageId = $page->id;
         }
     }
-
+        
         // Tìm hoặc tạo kho hàng
         $warehouseId = null;
         $warehouseCode = null;
@@ -348,7 +348,7 @@ class PancakeSyncController extends Controller
                 $warehouse->code = 'WH-' . $orderData['warehouse_id'];
                 $warehouse->pancake_id = $orderData['warehouse_id'];
                 $warehouse->save();
-
+                
                 Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake', [
                     'warehouse_id' => $warehouse->id,
                     'pancake_id' => $orderData['warehouse_id'],
@@ -382,7 +382,7 @@ class PancakeSyncController extends Controller
                 $provider->name = $orderData['shipping_provider_name'];
                 $provider->pancake_id = $providerId;
                 $provider->save();
-
+                
                 Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake', [
                     'provider_id' => $provider->id,
                     'pancake_id' => $providerId,
@@ -463,27 +463,7 @@ class PancakeSyncController extends Controller
         $order->pancake_shipping_provider_id = $pancakeShippingProviderId;
         $order->notes = $orderData['note'] ?? '';
         $order->created_by = \Illuminate\Support\Facades\Auth::check() ? \Illuminate\Support\Facades\Auth::id() : null;
-
-        // Ưu tiên inserted_at từ Pancake cho created_at và updated_at của đơn hàng mới
-        // Đồng thời lưu pancake_inserted_at riêng
-        if (!empty($orderData['inserted_at'])) {
-            try {
-                $pancakeInsertedAt = \Carbon\Carbon::parse($orderData['inserted_at']);
-                $order->created_at = $pancakeInsertedAt;
-                $order->updated_at = $pancakeInsertedAt; // Đối với bản ghi mới, updated_at giống created_at
-                $order->pancake_inserted_at = $pancakeInsertedAt; // Lưu trữ riêng giá trị này
-            } catch (\Exception $e) {
-                Log::warning("PancakeSyncController: Không thể phân tích inserted_at [{$orderData['inserted_at']}] cho đơn hàng mới {$order->order_code}: " . $e->getMessage());
-                // Nếu lỗi, Eloquent sẽ tự đặt created_at/updated_at khi lưu
-                // và pancake_inserted_at sẽ là null nếu chưa được set
-                if (!isset($order->pancake_inserted_at)) { $order->pancake_inserted_at = null; }
-            }
-        } else {
-            // Nếu không có inserted_at, pancake_inserted_at là null.
-            // Eloquent sẽ tự đặt created_at/updated_at khi lưu.
-            $order->pancake_inserted_at = null;
-        }
-
+        
         // Lưu thông tin người bán từ Pancake
         if (!empty($orderData['assigning_seller_id'])) {
             $order->assigning_seller_id = $orderData['assigning_seller_id'];
@@ -492,13 +472,22 @@ class PancakeSyncController extends Controller
             // Nếu không có seller được gán, tự động phân phối đơn hàng
             $this->assignOrderToSalesStaff($order);
         }
+        
+        // Lưu thời gian tạo đơn từ Pancake
+        if (!empty($orderData['inserted_at'])) {
+            try {
+                $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
+            } catch (\Exception $e) {
+                Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
+            }
+        }
 
         $order->save();
 
         // Tạo các item của đơn hàng với hỗ trợ cấu trúc nâng cao
         if (!empty($orderData['items'])) {
             $updated = false;
-
+            
             // Create new items from the data
             foreach ($orderData['items'] as $item) {
                 // Check if item has components structure
@@ -509,14 +498,14 @@ class PancakeSyncController extends Controller
                         $this->setOrderItemFields($orderItem, $item);  // Will handle component extraction
                         $orderItem->save();
                         $updated = true;
-
+                        
                         Log::info('Created order item from component structure', [
                             'order_id' => $order->id,
                             'product_name' => $orderItem->product_name,
                             'quantity' => $orderItem->quantity,
                             'price' => $orderItem->price
                         ]);
-
+                        
                         // We're only creating one order item per component set for now
                         break;
                     }
@@ -527,7 +516,7 @@ class PancakeSyncController extends Controller
                     $this->setOrderItemFields($orderItem, $item);
                     $orderItem->save();
                     $updated = true;
-
+                    
                     Log::info('Created order item using standard format', [
                         'order_id' => $order->id,
                         'product_name' => $orderItem->product_name,
@@ -535,21 +524,21 @@ class PancakeSyncController extends Controller
                     ]);
                 }
             }
-
+            
             if ($updated) {
                 // Update total value based on new items
                 $newTotal = $order->items->sum(function($item) {
                     return ($item->price ?? 0) * ($item->quantity ?? 1);
                 });
-
+                
                 // Add shipping fee if available
                 $newTotal += ($order->shipping_fee ?? 0);
-
+                
                 // Update order total if changed
                 if ($newTotal > 0 && $newTotal != $order->total_value) {
                     $order->total_value = $newTotal;
                     $order->save();
-
+                    
                     Log::info('Updated order total value based on new items', [
                         'order_id' => $order->id,
                         'new_total' => $newTotal
@@ -580,19 +569,19 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         // Update basic order info
         $order->order_code = $orderData['code'] ?? $order->order_code;
         $order->status = $this->mapPancakeStatus($orderData['status'] ?? $order->status);
-
+        
         // Store the numeric status code directly for Pancake status
         if (isset($orderData['status'])) {
             // If status is numeric, save it directly
             if (is_numeric($orderData['status'])) {
                 $order->pancake_status = $orderData['status'];
-            }
+            } 
             // If it's a string status_name, we'll continue using string statuses for backward compatibility
             else if (isset($orderData['status_name'])) {
                 $order->pancake_status = $orderData['status_name'];
             }
         }
-
+        
         $order->shipping_fee = $orderData['shipping_fee'] ?? $order->shipping_fee;
         $order->payment_method = $orderData['payment_method'] ?? $order->payment_method;
         $order->total_value = $orderData['total'] ?? ($orderData['total_price'] ?? $order->total_value);
@@ -608,32 +597,32 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         if (isset($orderData['tracking_url'])) {
             $order->tracking_url = $orderData['tracking_url'];
         }
-
+        
         // Store COD amount
         if (isset($orderData['cod'])) {
             $order->cod_amount = $orderData['cod'];
         }
-
+        
         // Store money to collect
         if (isset($orderData['money_to_collect']) && Schema::hasColumn('orders', 'money_to_collect')) {
             $order->money_to_collect = $orderData['money_to_collect'];
         }
-
+        
         // Store conversation ID
         if (isset($orderData['conversation_id']) && Schema::hasColumn('orders', 'conversation_id')) {
             $order->conversation_id = $orderData['conversation_id'];
         }
-
+        
         // Store post ID
         if (isset($orderData['post_id']) && Schema::hasColumn('orders', 'post_id')) {
             $order->post_id = $orderData['post_id'];
         }
-
+        
         // Store system ID
         if (isset($orderData['system_id']) && Schema::hasColumn('orders', 'system_id')) {
             $order->system_id = $orderData['system_id'];
         }
-
+        
         // Store tags
         if (!empty($orderData['tags']) && Schema::hasColumn('orders', 'tags')) {
             $order->tags = json_encode($orderData['tags']);
@@ -647,10 +636,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $order->district_code = $shippingAddress['district_id'] ?? $shippingAddress['district_code'] ?? null;
             $order->ward_code = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
             $order->street_address = $shippingAddress['address'] ?? null;
-
+            
                 // Look up and update address names from the database
                 $this->updateAddressNames($order);
-
+                
                 // Update seller information if available
                 if (!empty($orderData['assigning_seller_id'])) {
                     $order->assigning_seller_id = $orderData['assigning_seller_id'];
@@ -659,24 +648,16 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     // Nếu không có seller được gán, tự động phân phối đơn hàng
                     $this->assignOrderToSalesStaff($order);
                 }
-
-                // Update Pancake insertion timestamp and set it as the primary created_at
-                // Also ensure pancake_inserted_at field is populated if it was missed before
-                if (!empty($orderData['inserted_at'])) {
+                
+                // Update Pancake insertion timestamp if available and not already set
+                if (!empty($orderData['inserted_at']) && empty($order->pancake_inserted_at)) {
                     try {
-                        $pancakeInsertedAt = \Carbon\Carbon::parse($orderData['inserted_at']);
-                        $order->created_at = $pancakeInsertedAt; // Override local created_at with Pancake's inserted_at
-
-                        // Store in pancake_inserted_at if it's empty or different
-                        if (empty($order->pancake_inserted_at) || ($order->pancake_inserted_at instanceof \Carbon\Carbon && !$order->pancake_inserted_at->eq($pancakeInsertedAt))) {
-                            $order->pancake_inserted_at = $pancakeInsertedAt;
-                        }
+                        $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
                     } catch (\Exception $e) {
-                        $orderCodeForLog = $order->order_code ?? $order->id ?? 'N/A';
-                        Log::warning("PancakeSyncController: Không thể phân tích inserted_at [{$orderData['inserted_at']}] khi cập nhật đơn {$orderCodeForLog}: " . $e->getMessage());
+                        Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
                     }
                 }
-
+            
             // Store the full shipping address info if the column exists
             if (Schema::hasColumn('orders', 'shipping_address_info')) {
                 $order->shipping_address_info = json_encode($shippingAddress);
@@ -707,10 +688,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $order->province_name = $orderData['province_name'] ?? null;
                 $order->district_name = $orderData['district_name'] ?? null;
                 $order->ward_name = $orderData['ward_name'] ?? null;
-
+                        
                     // Look up and update address names if codes are provided but names are missing
-                    if (($order->province_code && empty($order->province_name)) ||
-                        ($order->district_code && empty($order->district_name)) ||
+                    if (($order->province_code && empty($order->province_name)) || 
+                        ($order->district_code && empty($order->district_name)) || 
                         ($order->ward_code && empty($order->ward_name))) {
                         $this->updateAddressNames($order);
                     }
@@ -720,29 +701,29 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Update shop và page
             if (!empty($orderData['shop_id'])) {
                 $shop = \App\Models\PancakeShop::where('pancake_id', $orderData['shop_id'])->first();
-
+                
                 if (!$shop && !empty($orderData['shop_name'])) {
                     // Tạo shop mới nếu không tồn tại
                     $shop = new \App\Models\PancakeShop();
                     $shop->pancake_id = $orderData['shop_id'];
                     $shop->name = $orderData['shop_name'];
                     $shop->save();
-
+                    
                     Log::info('Đã tạo shop mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
                         'shop_id' => $shop->id,
                         'pancake_id' => $orderData['shop_id'],
                         'name' => $orderData['shop_name']
                     ]);
                 }
-
+                
                 if ($shop) {
                     $order->pancake_shop_id = $shop->id;
                 }
             }
-
+            
             if (!empty($orderData['page_id'])) {
                 $page = \App\Models\PancakePage::where('pancake_id', $orderData['page_id'])->first();
-
+                
                 if (!$page && !empty($orderData['page_name'])) {
                     // Tạo page mới nếu không tồn tại
                     $page = new \App\Models\PancakePage();
@@ -751,14 +732,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $page->name = $orderData['page_name'];
                     $page->pancake_shop_table_id = $order->pancake_shop_id; // Liên kết với shop hiện tại
                     $page->save();
-
+                    
                     Log::info('Đã tạo page mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
                         'page_id' => $page->id,
                         'pancake_id' => $orderData['page_id'],
                         'name' => $orderData['page_name']
                     ]);
                 }
-
+                
                 if ($page) {
                     $order->pancake_page_id = $page->id;
                 }
@@ -767,12 +748,12 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Cập nhật kho hàng
             if (!empty($orderData['warehouse_id'])) {
                 $warehouse = \App\Models\Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
-
+                
                 if (!$warehouse) {
                     // Thử tìm theo code
                     $warehouse = \App\Models\Warehouse::where('code', $orderData['warehouse_id'])->first();
                 }
-
+                
                 // Nếu không tìm thấy và có thông tin kho, tạo kho mới
                 if (!$warehouse && !empty($orderData['warehouse_name'])) {
                     $warehouse = new \App\Models\Warehouse();
@@ -780,14 +761,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $warehouse->code = 'WH-' . $orderData['warehouse_id'];
                     $warehouse->pancake_id = $orderData['warehouse_id'];
                     $warehouse->save();
-
+                    
                     Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
                         'warehouse_id' => $warehouse->id,
                         'pancake_id' => $orderData['warehouse_id'],
                         'name' => $orderData['warehouse_name']
                     ]);
                 }
-
+                
                 if ($warehouse) {
                     $order->warehouse_id = $warehouse->id;
                     $order->warehouse_code = $warehouse->code;
@@ -804,21 +785,21 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $provider = \App\Models\ShippingProvider::where('pancake_id', $providerId)
                     ->orWhere('pancake_partner_id', $providerId)
                     ->first();
-
+                    
                 // Nếu không tìm thấy và có tên đơn vị vận chuyển, tạo mới
                 if (!$provider && !empty($orderData['shipping_provider_name'])) {
                     $provider = new \App\Models\ShippingProvider();
                     $provider->name = $orderData['shipping_provider_name'];
                     $provider->pancake_id = $providerId;
                     $provider->save();
-
+                    
                     Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
                         'provider_id' => $provider->id,
                         'pancake_id' => $providerId,
                         'name' => $orderData['shipping_provider_name']
                     ]);
                 }
-
+                
                 if ($provider) {
                     $order->shipping_provider_id = $provider->id;
                     $order->pancake_shipping_provider_id = $provider->pancake_id;
@@ -827,19 +808,19 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $order->pancake_shipping_provider_id = $providerId;
             }
         }
-
+        
         // Update customer information if provided
         if (!empty($orderData['customer'])) {
             $customerData = $orderData['customer'];
             $order->customer_name = $customerData['name'] ?? $order->customer_name;
-
+            
             // Handle phone numbers
             if (!empty($customerData['phone'])) {
                 $order->customer_phone = $customerData['phone'];
             } elseif (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
                 $order->customer_phone = $customerData['phone_numbers'][0];
             }
-
+            
             // Handle email
             if (!empty($customerData['email'])) {
                 $order->customer_email = $customerData['email'];
@@ -857,9 +838,9 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     if (empty($customer->pancake_id) && !empty($customerData['id'])) {
                         $customer->pancake_id = $customerData['id'];
                     }
-
+                    
                     $customer->name = $customerData['name'] ?? $customer->name;
-
+                    
                     // Handle phone
                     if (!empty($customerData['phone'])) {
                         $customer->phone = $customerData['phone'];
@@ -868,13 +849,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         if (empty($customer->phone)) {
                             $customer->phone = $customerData['phone_numbers'][0];
                         }
-
+                        
                         // Store all phone numbers
                         if (Schema::hasColumn('customers', 'phone_numbers')) {
                             $customer->phone_numbers = json_encode($customerData['phone_numbers']);
                         }
                     }
-
+                    
                     // Handle email
                     if (!empty($customerData['email'])) {
                         $customer->email = $customerData['email'];
@@ -882,53 +863,53 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         if (!empty($customerData['emails'][0])) {
                             $customer->email = $customerData['emails'][0];
                         }
-
+                        
                         // Store all emails
                         if (Schema::hasColumn('customers', 'emails')) {
                             $customer->emails = json_encode($customerData['emails']);
                         }
                     }
-
+                    
                     // Update other customer fields
                     $customer->gender = $customerData['gender'] ?? $customer->gender;
                     $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
-
+                    
                     if (Schema::hasColumn('customers', 'fb_id')) {
                         $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'order_count')) {
                         $customer->order_count = $customerData['order_count'] ?? $customer->order_count;
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'succeeded_order_count')) {
                         $customer->succeeded_order_count = $customerData['succeed_order_count'] ?? $customer->succeeded_order_count;
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'returned_order_count')) {
                         $customer->returned_order_count = $customerData['returned_order_count'] ?? $customer->returned_order_count;
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'purchased_amount')) {
                         $customer->purchased_amount = $customerData['purchased_amount'] ?? $customer->purchased_amount;
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'customer_level')) {
                         $customer->customer_level = $customerData['level'] ?? $customer->customer_level;
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
                         $customer->tags = json_encode($customerData['tags']);
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
                         $customer->conversation_tags = json_encode($customerData['conversation_tags']);
                     }
-
+                    
                     if (Schema::hasColumn('customers', 'reward_points')) {
                         $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
                     }
-
+                    
                         // Update addresses if available - REMOVED address column that was causing errors
                     if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
                         $customer->addresses = json_encode($customerData['shop_customer_addresses']);
@@ -942,7 +923,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     ]);
                 }
             }
-        }
+        } 
          if (isset($orderData['bill_full_name']) || isset($orderData['bill_phone_number']) || isset($orderData['customer_name']) || isset($orderData['customer_phone']) || isset($orderData['customer_email'])) {
             // Handle flat customer data structure
             $order->bill_full_name = $orderData['bill_full_name'] ?? ($orderData['customer_name'] ?? $order->customer_name);
@@ -971,13 +952,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 }
             }
         }
-
+        
         // Update items if provided
         if (!empty($orderData['items'])) {
             // Get existing items to compare and update
             $existingItems = $order->items;
             $updated = false;
-
+            
             // Delete existing items if needed
             if ($existingItems->count() > 0) {
                 $order->items()->delete();
@@ -987,7 +968,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     'deleted_item_count' => $existingItems->count()
                 ]);
             }
-
+            
             // Create new items from the updated data
             foreach ($orderData['items'] as $item) {
                 // Check if item has components structure
@@ -998,14 +979,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         $this->setOrderItemFields($orderItem, $item);  // Will handle component extraction
                         $orderItem->save();
                         $updated = true;
-
+                        
                         Log::info('Updated order item from component structure', [
                             'order_id' => $order->id,
                             'product_name' => $orderItem->product_name,
                             'quantity' => $orderItem->quantity,
                             'price' => $orderItem->price
                         ]);
-
+                        
                         // We're only creating one order item per component set for now
                         break;
                     }
@@ -1016,7 +997,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $this->setOrderItemFields($orderItem, $item);
                     $orderItem->save();
                     $updated = true;
-
+                    
                     Log::info('Updated order item using standard format', [
                         'order_id' => $order->id,
                         'product_name' => $orderItem->product_name,
@@ -1024,16 +1005,16 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     ]);
                 }
             }
-
+            
             if ($updated) {
                 // Update total value based on new items
                 $newTotal = $order->items->sum(function($item) {
                     return ($item->price ?? 0) * ($item->quantity ?? 1);
                 });
-
+                
                 // Add shipping fee if available
                 $newTotal += ($order->shipping_fee ?? 0);
-
+                
                 // Update order total if changed
                 if ($newTotal > 0 && $newTotal != $order->total_value) {
                     $order->total_value = $newTotal;
@@ -1050,7 +1031,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         if (!empty($orderData['page'])) {
             $pageData = $orderData['page'];
             $page = PancakePage::where('pancake_id', $pageData['id'])->first();
-
+            
             // Create page if doesn't exist
             if (!$page) {
                 $page = new PancakePage();
@@ -1059,7 +1040,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $page->name = $pageData['name'];
                 $page->username = $pageData['username'] ?? null;
                 $page->save();
-
+                
                 Log::info('Created new Pancake Page during order update', [
                     'page_id' => $page->id,
                     'pancake_id' => $page->pancake_id,
@@ -1068,29 +1049,24 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             } else {
                 // Update page info if needed
                 $page->name = $pageData['name'] ?? $page->name;
-
+                
                 // Only update username if the column exists
                 if (Schema::hasColumn('pancake_pages', 'username')) {
                     $page->username = $pageData['username'] ?? $page->username;
                 }
-
+                
                 // Update shop association if it's missing
                     if (empty($page->pancake_shop_table_id) && isset($orderData['shop_id'])) {
                         $page->pancake_shop_table_id = $orderData['shop_id'];
                 }
-
+                
                 $page->save();
             }
-
+            
             $order->pancake_page_id = $page->id;
         }
 
         // Handle order dates
-        // Note: created_at is now primarily handled by inserted_at logic above.
-        // The updated_at is handled by parsing $orderData['updated_at'] or Eloquent's default.
-        // Keeping the original created_at parsing logic from Pancake's 'created_at' field commented out
-        // as 'inserted_at' is prioritized based on user request.
-        /*
         if (!empty($orderData['created_at']) && !$order->getOriginal('created_at')) {
             try {
                 $order->created_at = Carbon::parse($orderData['created_at']);
@@ -1101,7 +1077,6 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 ]);
             }
         }
-        */
 
         if (!empty($orderData['updated_at'])) {
             try {
@@ -1130,7 +1105,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
-
+        
         return [
             'success' => false,
             'message' => 'Đã xảy ra lỗi: ' . $e->getMessage(),
@@ -1143,7 +1118,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
     /**
      * Tự động gán đơn hàng cho nhân viên sale theo cài đặt phân phối
-     *
+     * 
      * @param \App\Models\Order $order
      * @return void
      */
@@ -1166,30 +1141,30 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Phân phối tuần tự: mỗi người 1 đơn lần lượt
             // Lấy ID của người cuối cùng được gán đơn hàng
             $lastAssignedId = \Illuminate\Support\Facades\Cache::get('last_assigned_staff_id');
-
+            
             // Sắp xếp danh sách nhân viên theo ID
             $staffIds = $activeStaff->pluck('id')->sort()->values();
-
+            
             // Tìm index của người cuối cùng được gán
             $currentIndex = -1;
             if ($lastAssignedId) {
                 $currentIndex = $staffIds->search($lastAssignedId);
             }
-
+            
             // Lấy người tiếp theo trong danh sách
             $nextIndex = ($currentIndex + 1) % $staffIds->count();
             $nextStaffId = $staffIds[$nextIndex];
-
+            
             // Lưu ID của người vừa được gán đơn
             \Illuminate\Support\Facades\Cache::put('last_assigned_staff_id', $nextStaffId, now()->addMonth());
-
+            
             // Tìm thông tin của nhân viên được gán
             $assignedStaff = $activeStaff->firstWhere('id', $nextStaffId);
 
             if ($assignedStaff) {
                 $order->assigning_seller_id = $assignedStaff->pancake_uuid;
                 $order->assigning_seller_name = $assignedStaff->name;
-
+                
                 Log::info("Đơn hàng #{$order->id} được tự động phân phối cho {$assignedStaff->name} (ID: {$assignedStaff->id}, Pancake UUID: {$assignedStaff->pancake_uuid})");
             }
 
@@ -1255,19 +1230,19 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             if (!empty($order->street_address)) {
                 $addressParts = [];
                 $addressParts[] = $order->street_address;
-
+                
                 if (!empty($order->ward_name)) {
                     $addressParts[] = $order->ward_name;
                 }
-
+                
                 if (!empty($order->district_name)) {
                     $addressParts[] = $order->district_name;
                 }
-
+                
                 if (!empty($order->province_name)) {
                     $addressParts[] = $order->province_name;
                 }
-
+                
                 if (count($addressParts) > 1) {
                     $order->full_address = implode(', ', $addressParts);
                 }
@@ -1313,14 +1288,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         try {
             // Check if specific sync session is specified
             $syncInfo = $request->input('sync_info');
-
+            
             if ($syncInfo) {
                 // Cancel specific sync session
                 $syncData = Cache::get($syncInfo);
                 if ($syncData) {
                     $syncData['in_progress'] = false;
                     Cache::put($syncInfo, $syncData, now()->addHour());
-
+                    
                     return response()->json([
                         'success' => true,
                         'message' => 'Đã hủy quá trình đồng bộ'
@@ -1330,7 +1305,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 // Find and cancel all active sync sessions
                 $dateCacheKeys = Cache::get('pancake_sync_date_keys', []);
                 $canceledCount = 0;
-
+                
                 foreach ($dateCacheKeys as $cacheKey) {
                     $syncData = Cache::get($cacheKey);
                     if ($syncData && ($syncData['in_progress'] ?? false)) {
@@ -1339,7 +1314,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         $canceledCount++;
                     }
                 }
-
+                
                 if ($canceledCount > 0) {
                     return response()->json([
                         'success' => true,
@@ -1347,19 +1322,19 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     ]);
                 }
             }
-
+            
             // No active sync found
             return response()->json([
                 'success' => true,
                 'message' => 'Không có quá trình đồng bộ nào đang chạy'
             ]);
-
+            
         } catch (\Exception $e) {
             Log::error('Error canceling sync', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Có lỗi xảy ra khi hủy đồng bộ: ' . $e->getMessage()
@@ -1379,10 +1354,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
             ini_set('memory_limit', '1024M');
-
+            
             // Clear debug log to mark entry into this method
             Log::info('*** ENTERING syncOrdersByDateManual ***');
-
+          
             $this->authorize('sync-pancake');
            // Add debug logging for incoming request
             Log::info('Request data for syncOrdersByDateManual:', [
@@ -1394,14 +1369,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'endDateTime' => $request->input('endDateTime'),
                 'request_url' => $request->fullUrl()
             ]);
-
+            
             // Nếu có startDateTime và endDateTime thì dùng luôn (đồng bộ nhóm ngày)
             $startTimestamp = $request->input('startDateTime');
-
+           
             $endTimestamp = ''.$request->input('endDateTime').'';
             $dateForCacheKey = null;
             $date = null;
-
+            
             if ($startTimestamp && $endTimestamp) {
                 Log::info('Using timestamp range for sync', [
                     'startTimestamp' => $startTimestamp,
@@ -1411,7 +1386,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             } else {
                 // Try to find a date parameter (could be 'date' or 'sync_date')
                 $dateValue = $request->input('date', $request->input('sync_date'));
-
+                
                 if (!$dateValue) {
                     Log::error('No date parameter found in request');
                     return response()->json([
@@ -1419,19 +1394,19 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         'message' => 'Thiếu tham số ngày cần đồng bộ (date).'
                     ], 400);
                 }
-
+                
                 // Validate date format
                 try {
                     $date = Carbon::createFromFormat('Y-m-d', $dateValue);
                     $dateForCacheKey = $date->format('Y-m-d');
-
+                    
                     // Format date for API query - using created_at field in Pancake
-
-
-                    // Set timestamps for the API request
+                    
+                    
+                    // Set timestamps for the API request 
                     // These timestamps will be used to filter orders by created_at in Pancake
-
-
+                    
+                    
                     Log::info('Parsed date for sync', [
                         'input_date' => $dateValue,
                         'parsed_date' => $date->format('Y-m-d'),
@@ -1443,14 +1418,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         'input_date' => $dateValue,
                         'error' => $e->getMessage()
                     ]);
-
+                    
                     return response()->json([
                         'success' => false,
                         'message' => 'Ngày không hợp lệ. Vui lòng sử dụng định dạng Y-m-d.'
                     ], 400);
                 }
             }
-
+            
             // Create a unique cache key for this sync session
             $cacheKey = 'pancake_sync_' . $dateForCacheKey;
 
@@ -1496,7 +1471,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'page_number' => 1,
                 'page_size' => 100
             ];
-
+            
             // Add date filtering parameters if provided
             if ($startTimestamp) {
                 $apiParams['startDateTime'] = $startTimestamp;
@@ -1504,7 +1479,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             if ($endTimestamp) {
                 $apiParams['endDateTime'] = $endTimestamp;
             }
-
+            
             // Log API call for debugging
             Log::info('Starting date-based Pancake API sync', [
                 'date' => $dateForCacheKey,
@@ -1512,10 +1487,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'cache_key' => $cacheKey,
                 'api_url' => "{$baseUrl}/shops/{$shopId}/orders"
             ]);
-
+           
             // Call Pancake API with increased timeout (60 seconds)
-
-
+           
+           
             $response = Http::timeout(60)
                 ->withHeaders(['Content-Type' => 'application/json'])
                 ->get("{$baseUrl}/shops/{$shopId}/orders", $apiParams);
@@ -1532,7 +1507,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $orders = $data['data'] ?? [];
             $totalPages = $data['total_pages'] ?? ceil(($data['total'] ?? 0) / 100); // Match the page_size
             $totalEntries = $data['total'] ?? count($orders);
-
+            
             Log::info('API response received', [
                 'orders_count' => count($orders),
                 'total_pages' => $totalPages,
@@ -1608,7 +1583,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             ];
 
             Cache::put($cacheKey, $syncInfo, now()->addHour());
-
+            
             // Format display date for message
             $displayDate = '';
             if (isset($date)) {
@@ -1616,7 +1591,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             } else {
                 $displayDate = "khoảng thời gian đã chọn";
             }
-
+            
             $message = "Bắt đầu đồng bộ cho {$displayDate}. Trang 1/{$totalPages}.";
 
             // Create a simplified error response to avoid array conversion issues
@@ -1664,7 +1639,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
             ini_set('memory_limit', '1024M');
-
+            
             // Authorize access
             $this->authorize('sync-pancake');
 
@@ -1674,17 +1649,17 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Determine sync info - first try from sync_info parameter
             $cacheKey = $request->input('sync_info');
             $syncInfo = null;
-
+            
             if ($cacheKey) {
                 // Try to get sync info from provided key
                 $syncInfo = Cache::get($cacheKey);
             }
-
+            
             // If sync_info not provided or invalid, try to find active sync
             if (!$syncInfo) {
                 // Get list of all sync keys
                 $dateCacheKeys = Cache::get('pancake_sync_date_keys', []);
-
+                
                 // Find active sync session
                 foreach ($dateCacheKeys as $key) {
                     $tempInfo = Cache::get($key);
@@ -1694,13 +1669,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         break;
                     }
                 }
-
+                
                 // If no active session, try 'pancake_sync_in_progress' as fallback
                 if (!$syncInfo) {
                     $cacheKey = 'pancake_sync_in_progress';
                     $syncInfo = Cache::get($cacheKey);
                 }
-
+                
                 // If still no sync info, check for date-based key using date from request
                 if (!$syncInfo && $request->has('date')) {
                     $dateKey = 'pancake_sync_' . $request->input('date');
@@ -1710,7 +1685,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     }
                 }
             }
-
+            
             // If still no sync info, we can't continue
             if (!$syncInfo) {
                 throw new \Exception('Không tìm thấy thông tin đồng bộ đang hoạt động. Vui lòng bắt đầu lại.');
@@ -1878,15 +1853,15 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             // Calculate processing time for this batch
             $processingTime = round(microtime(true) - $startProcessingTime, 2);
-
+            
             // Calculate processing rate (orders/second)
             $processingRate = count($orders) > 0 ? round(count($orders) / $processingTime, 2) : 0;
 
             // Extract pagination information from API response
-            $totalPages = $responseData['total_pages'] ??
-                          $syncInfo['total_pages'] ??
+            $totalPages = $responseData['total_pages'] ?? 
+                          $syncInfo['total_pages'] ?? 
                           ceil(($responseData['total'] ?? 0) / 100);
-
+            
             // Check response to see if it indicates pagination information
             if (isset($responseData['meta'])) {
                 $meta = $responseData['meta'];
@@ -1903,12 +1878,12 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             // Store the original errors array
             $originalErrors = $syncInfo['stats']['errors'] ?? [];
-
+            
             // Ensure errors array is properly handled (might be causing the Array to string conversion error)
             if (!is_array($originalErrors)) {
                 $originalErrors = [];
             }
-
+            
             // Create a merged array of errors that is safe for JSON serialization
             $mergedErrors = array_merge($originalErrors, $errors);
             // Limit the number of errors to prevent the array from growing too large
@@ -1926,21 +1901,21 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $syncInfo['stats']['processing_time'] = ($syncInfo['stats']['processing_time'] ?? 0) + $processingTime;
             $syncInfo['stats']['last_page_processing_time'] = $processingTime;
             $syncInfo['stats']['last_page_processing_rate'] = $processingRate;
-
+            
             // Also update total_entries from API if available
             if (isset($responseData['total'])) {
                 $syncInfo['stats']['total_entries'] = $responseData['total'];
             } else if (isset($responseData['meta']['total'])) {
                 $syncInfo['stats']['total_entries'] = $responseData['meta']['total'];
             }
-
+            
             // Check if we've processed all pages
-            $isLastPage = $pageNumber >= $totalPages ||
+            $isLastPage = $pageNumber >= $totalPages || 
                           (isset($responseData['has_next']) && $responseData['has_next'] === false) ||
                           empty($orders);
-
+                          
             $syncInfo['in_progress'] = !$isLastPage;
-
+            
             // If this is the last page, store end time
             if ($isLastPage) {
                 $syncInfo['end_time'] = now()->toDateTimeString();
@@ -1955,14 +1930,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $totalCreated = $syncInfo['stats']['created'];
             $totalUpdated = $syncInfo['stats']['updated'];
             $totalProcessed = $totalCreated + $totalUpdated;
-
+            
             // Calculate estimated time remaining
             $estimatedTimeRemaining = null;
             if (!$isLastPage && $pageNumber > 1 && isset($syncInfo['stats']['processing_time'])) {
                 $avgTimePerPage = $syncInfo['stats']['processing_time'] / $pageNumber;
                 $remainingPages = $totalPages - $pageNumber;
                 $remainingSeconds = $avgTimePerPage * $remainingPages;
-
+                
                 if ($remainingSeconds < 60) {
                     $estimatedTimeRemaining = "dưới 1 phút";
                 } else if ($remainingSeconds < 3600) {
@@ -1985,10 +1960,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             // Determine next page (if any)
             $nextPage = $isLastPage ? null : $pageNumber + 1;
-
+            
             // Create a clean response with simplified error information to avoid array conversion issues
             $errorMessages = array_slice($errors, 0, 10); // Limit to 10 recent errors
-
+            
             return response()->json([
                 'success' => true,
                 'message' => $isLastPage ?
@@ -2056,7 +2031,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Sort keys by timestamp to find most recent
             $latestTimestamp = 0;
             $latestKey = null;
-
+            
             foreach ($dateCacheKeys as $cacheKey) {
                 $syncInfo = Cache::get($cacheKey);
                 // Extract timestamp from the key if possible
@@ -2068,7 +2043,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     }
                 }
             }
-
+            
             // If found a latest key, use it
             if ($latestKey) {
                 $activeSyncInfo = Cache::get($latestKey);
@@ -2113,7 +2088,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         $updatedOrders = $activeSyncInfo['stats']['updated'] ?? 0;
         $errorCount = 0;
         $errorDetails = [];
-
+        
         // Safely get error count and details
         if (isset($activeSyncInfo['stats']['errors'])) {
             if (is_array($activeSyncInfo['stats']['errors'])) {
@@ -2127,13 +2102,13 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 Cache::put($activeCacheKey, $activeSyncInfo, now()->addHour());
             }
         }
-
+        
         $isInProgress = $activeSyncInfo['in_progress'] ?? false;
-
+        
         // Create appropriate message based on sync state
         $message = 'Đồng bộ đã hoàn tất.';
         $syncDate = '';
-
+        
         if (isset($activeSyncInfo['date']) && !empty($activeSyncInfo['date'])) {
             try {
                 // Check if date is a timestamp range or a normal date
@@ -2145,7 +2120,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                         $endTime = Carbon::createFromTimestamp($parts[1])->format('d/m/Y H:i');
                         $syncDate = "từ {$startTime} đến {$endTime}";
                     } else {
-                        $syncDate = $activeSyncInfo['date'];
+                        $syncDate = $activeSyncInfo['date']; 
                     }
                 } else {
                     // Normal date
@@ -2155,18 +2130,18 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $syncDate = $activeSyncInfo['date']; // Use as-is if not a valid date
             }
         }
-
+        
         if ($isInProgress) {
-            $message = $syncDate ?
+            $message = $syncDate ? 
                 "Đang đồng bộ dữ liệu {$syncDate}. Trang {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']}..." :
                 "Đang đồng bộ. Trang {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']}...";
         } else if ($progress >= 100) {
-            $message = $syncDate ?
-                "Đồng bộ dữ liệu {$syncDate} đã hoàn tất." :
+            $message = $syncDate ? 
+                "Đồng bộ dữ liệu {$syncDate} đã hoàn tất." : 
                 'Đồng bộ đã hoàn tất.';
         } else if ($activeSyncInfo['page'] > 0) {
-            $message = $syncDate ?
-                "Đã xử lý {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']} trang cho {$syncDate}. Đồng bộ tạm dừng." :
+            $message = $syncDate ? 
+                "Đã xử lý {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']} trang cho {$syncDate}. Đồng bộ tạm dừng." : 
                 "Đã xử lý {$activeSyncInfo['page']}/{$activeSyncInfo['total_pages']} trang. Đồng bộ tạm dừng.";
         }
 
@@ -2174,7 +2149,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         $elapsedTime = null;
         $startTime = null;
         $elapsedSeconds = 0;
-
+        
         if (!empty($activeSyncInfo['start_time'])) {
             try {
                 $startTime = Carbon::parse($activeSyncInfo['start_time']);
@@ -2186,7 +2161,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $elapsedSeconds = 0;
             }
         }
-
+        
         // Calculate estimated time remaining if in progress
         $estimatedTimeRemaining = null;
         if ($isInProgress && $progress > 0 && $elapsedSeconds > 0) {
@@ -2194,7 +2169,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $secondsPerPercent = $elapsedSeconds / $progress;
             // Calculate remaining seconds
             $remainingSeconds = $secondsPerPercent * (100 - $progress);
-
+            
             if ($remainingSeconds < 60) {
                 $estimatedTimeRemaining = "dưới 1 phút";
             } else if ($remainingSeconds < 3600) {
@@ -2212,14 +2187,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'total_processed' => intval($newOrders) + intval($updatedOrders),
             'total_expected' => intval($activeSyncInfo['stats']['total_entries'] ?? ($newOrders + $updatedOrders)),
         ];
-
+        
         // Calculate processing rate (orders per minute) if we have elapsed time
         $processingRate = null;
         if ($elapsedSeconds > 0) {
             $totalProcessed = $orderStats['total_processed'];
             $processingRate = round(($totalProcessed / $elapsedSeconds) * 60, 1);
         }
-
+        
         // Add detailed progress info about current processing
         $detailedProgress = [
             'current_page' => $activeSyncInfo['page'] ?? 0,
@@ -2232,7 +2207,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'estimated_time_remaining' => $estimatedTimeRemaining,
             'timestamp' => now()->toIso8601String()
         ];
-
+        
         // Get specific details about any failed order processing
         $failedOrderDetails = [];
         if (!empty($errorDetails)) {
@@ -2324,7 +2299,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
             ini_set('memory_limit', '1024M');
-
+            
             $this->authorize('sync-pancake');
 
             // Lấy cấu hình API
@@ -2484,9 +2459,9 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
             ini_set('memory_limit', '1024M');
-
+            
             $this->authorize('sync-pancake');
-
+        
             // First check if this is actually a date-specific sync that should be redirected
             if ($request->has('sync_type') && $request->input('sync_type') === 'date' && $request->has('date')) {
                 Log::info('Redirecting date sync request to syncOrdersByDateManual', [
@@ -2494,7 +2469,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     'startDateTime' => $request->input('startDateTime'),
                     'endDateTime' => $request->input('endDateTime')
                 ]);
-
+              
                 return $this->syncOrdersByDateManual($request);
             }
 
@@ -2516,7 +2491,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             // Create a unique cache key for this sync session
             $cacheKey = 'pancake_sync_all_' . now()->timestamp;
-
+            
             // Add to date keys list for tracking
             $dateKeys = Cache::get('pancake_sync_date_keys', []);
             if (!in_array($cacheKey, $dateKeys)) {
@@ -2613,7 +2588,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             // Get total pages and entries
             $totalPages = $responseData['total_pages'] ?? 1;
             $totalEntries = $responseData['total'] ?? count($orders);
-
+            
             // Check response metadata format
             if (isset($responseData['meta'])) {
                 $meta = $responseData['meta'];
@@ -2624,7 +2599,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $totalEntries = $meta['total'];
                 }
             }
-
+            
             // Determine if there are more pages
             $hasMorePages = true;
             if (empty($orders)) {
@@ -2636,7 +2611,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             } else if (count($orders) < $apiParams['page_size']) {
                 $hasMorePages = false;
             }
-
+            
             // Store sync progress in cache
             Cache::put($cacheKey, [
                 'in_progress' => $hasMorePages, // Set to true only if there are more pages
@@ -2656,11 +2631,11 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             // Log first page completion
             Log::info("Completed first page sync 1/{$totalPages}", [
-                'created' => $statsFirstPage['created'],
+                'created' => $statsFirstPage['created'], 
                 'updated' => $statsFirstPage['updated'],
                 'has_more_pages' => $hasMorePages
             ]);
-
+            
             // Continue if more pages exist
             $nextPage = $hasMorePages ? 2 : null;
 
@@ -2709,96 +2684,96 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             foreach ($itemData['components'] as $component) {
                 if (!empty($component['variation_info'])) {
                     $variationInfo = $component['variation_info'];
-
+                    
                     // Get product name from variation_info
                     $orderItem->product_name = $component['name'] ?? $itemData['name'] ?? 'Unknown Product';
-
+                    
                     // Get product code from variation_id
                     $orderItem->code = $component['variation_id'] ?? $itemData['code'] ?? null;
-
+                    
                     // Get price from variation_info
                     $orderItem->price = $component['retail_price'] ?? $itemData['price'] ?? 0;
-
+                    
                     // Get quantity from component
                     $orderItem->quantity = $component['quantity'] ?? $itemData['quantity'] ?? 1;
-
+                    
                     // Store component_id and variation_id if columns exist
                     if (Schema::hasColumn('order_items', 'pancake_component_id')) {
                         $orderItem->pancake_component_id = $component['component_id'] ?? null;
                     }
-
+                    
                     if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
                         $orderItem->pancake_variant_id = $component['variation_id'] ?? null;
                     }
-
+                    
                     if (Schema::hasColumn('order_items', 'pancake_product_id')) {
                         $orderItem->pancake_product_id = $variationInfo['product_id'] ?? null;
                     }
-
+                    
                     // Store variation details
                     if (Schema::hasColumn('order_items', 'variation_details')) {
                         $orderItem->variation_details = $variationInfo['detail'] ?? null;
                     }
-
+                    
                     // Store the full variation_info in product_info
                     $orderItem->product_info = array_merge($itemData, [
                         'processed_component' => $component,
                         'processed_variation_info' => $variationInfo
                     ]);
-
+                    
                     // Only process the first component for now
                     // If multiple components needed, would need to create multiple OrderItems or handle differently
                     break;
                 }
             }
-        }
+        } 
         // Handle direct variation_info format without components (new Pancake format)
         else if (!empty($itemData['variation_info'])) {
             $variationInfo = $itemData['variation_info'];
-
+            
             // Get product name from variation_info
             $orderItem->product_name = $variationInfo['name'] ?? $itemData['name'] ?? 'Unknown Product';
-
+            
             // Get product code from various possible sources
             $orderItem->code = $variationInfo['display_id'] ?? $variationInfo['barcode'] ?? $itemData['variation_id'] ?? null;
-
+            
             // Set price from variation_info
             $orderItem->price = $variationInfo['retail_price'] ?? $itemData['price'] ?? 0;
-
+            
             // Set quantity
             $orderItem->quantity = $itemData['quantity'] ?? 1;
-
+            
             // Set weight if available
             $orderItem->weight = $variationInfo['weight'] ?? $itemData['weight'] ?? 0;
-
+            
             // Set name field
             $orderItem->name = $variationInfo['name'] ?? $itemData['name'] ?? null;
-
+            
             // Store IDs if columns exist
             if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
                 $orderItem->pancake_variant_id = $itemData['variation_id'] ?? $itemData['id'] ?? null;
             }
-
+            
             if (Schema::hasColumn('order_items', 'pancake_product_id')) {
                 $orderItem->pancake_product_id = $itemData['product_id'] ?? null;
             }
-
+            
             // Set barcode if column exists
             if (Schema::hasColumn('order_items', 'barcode')) {
                 $orderItem->barcode = $variationInfo['barcode'] ?? null;
             }
-
+            
             // Store variation details
             if (Schema::hasColumn('order_items', 'variation_details')) {
                 $orderItem->variation_details = $variationInfo['detail'] ?? null;
             }
-
+            
             // Store the complete item data in product_info field
             $orderItem->product_info = $itemData;
         }
         else {
             // Handle traditional item format or direct format without variation_info or components
-
+            
             // Set product name
             $orderItem->product_name = $itemData['name'] ?? 'Unknown Product';
 
@@ -2821,11 +2796,11 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
                 $orderItem->pancake_variant_id = $itemData['variation_id'] ?? $itemData['variant_id'] ?? $itemData['id'] ?? null;
             }
-
+            
             if (Schema::hasColumn('order_items', 'pancake_product_id')) {
                 $orderItem->pancake_product_id = $itemData['product_id'] ?? null;
             }
-
+            
             if (Schema::hasColumn('order_items', 'pancake_variation_id')) {
                 $orderItem->pancake_variation_id = $itemData['variation_id'] ?? $itemData['sku'] ?? null;
             }
@@ -2854,16 +2829,16 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         // Increase execution time limit to 2 hours and memory limit to 1GB
         set_time_limit(7200);
         ini_set('memory_limit', '1024M');
-
+        
         // Create a request with the date to reuse the existing method
         $request = new \Illuminate\Http\Request();
         $request->merge(['date' => $date->format('Y-m-d')]);
-
+        
         try {
             // Call the existing implementation
-
+            
             $result = $this->syncOrdersByDateManual($request);
-
+            
             // Convert response to array format expected by the command
             if ($result->getStatusCode() === 200) {
                 $data = json_decode($result->getContent(), true);
@@ -2883,7 +2858,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-
+            
             return [
                 'success' => false,
                 'message' => 'Đã xảy ra lỗi: ' . $e->getMessage(),
@@ -2911,7 +2886,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             '4' => 'Đã nhận hàng',
             '5' => 'Đã huỷ',
             '6' => 'Hoàn hàng',
-
+            
             // String status values - lowercase for case insensitive comparison
             'moi' => 'Chờ xác nhận',
             'xac_nhan' => 'Chờ lấy hàng',
@@ -2919,7 +2894,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'da_giao_hang' => 'Đã nhận hàng',
             'huy' => 'Đã huỷ',
             'hoan' => 'Hoàn hàng',
-
+            
             // Additional known text statuses
             'mới' => 'Chờ xác nhận',
             'chờ xác nhận' => 'Chờ xác nhận',
@@ -2933,17 +2908,17 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'huỷ' => 'Đã huỷ',
             'hoàn hàng' => 'Hoàn hàng'
         ];
-
+        
         // Convert status to string and lowercase for consistency
         $status = is_string($pancakeStatus) ? strtolower($pancakeStatus) : (string)$pancakeStatus;
-
+        
         // Return mapped status if found, otherwise default to "Chờ xác nhận"
         return $statusMap[$status] ?? 'Chờ xác nhận';
     }
 
     /**
      * Create a new order from Pancake data - alias method for createOrderFromPancakeData
-     *
+     * 
      * @param array $orderData Order data from Pancake API
      * @return \App\Models\Order|null
      */
