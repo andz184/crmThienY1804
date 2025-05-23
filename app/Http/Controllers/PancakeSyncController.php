@@ -23,7 +23,6 @@ use Illuminate\Support\Facades\Schema;
 use App\Models\Province;
 use App\Models\District;
 use App\Models\Ward;
-use App\Models\PancakeCategory; // Added this line
 
 class PancakeSyncController extends Controller
 {
@@ -2858,39 +2857,6 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $orderItem->product_info = $itemData;
         }
 
-        // Original fields (or fallback if components don't provide them)
-        $orderItem->pancake_product_id = $itemData['product_id'] ?? $itemData['id'] ?? null; // product_id or id
-        $orderItem->pancake_variation_id = $itemData['variation_id'] ?? $itemData['variant_id'] ?? null; // variation_id or variant_id
-
-        $orderItem->name = $itemData['name'] ?? 'N/A';
-        $orderItem->sku = $itemData['sku'] ?? null;
-        $orderItem->quantity = $itemData['quantity'] ?? 1;
-        $orderItem->price = $itemData['price'] ?? 0;
-        $orderItem->discount_price = $itemData['discount_price'] ?? null; // Price after discount
-        $orderItem->original_price = $itemData['original_price'] ?? $itemData['price'] ?? 0; // Price before discount
-
-        if (Schema::hasColumn('order_items', 'product_info')) {
-            $orderItem->product_info = $itemData; // Store the whole item data for reference
-        }
-        if (Schema::hasColumn('order_items', 'weight')) {
-            $orderItem->weight = $itemData['weight'] ?? 0;
-        }
-        if (Schema::hasColumn('order_items', 'image_url')) {
-             $orderItem->image_url = $itemData['image'] ?? ($itemData['images'][0] ?? null);
-        }
-
-        // Additional fields if they exist in the itemData and columns exist
-        $optionalFields = [
-            'options_text', 'barcode', 'wholesale_price', 'cost_price',
-            'variation_name', 'variation_sku', 'product_name'
-            // 'category_ids' will be part of product_info
-        ];
-
-        foreach ($optionalFields as $field) {
-            if (isset($itemData[$field]) && Schema::hasColumn('order_items', $field)) {
-                $orderItem->{$field} = $itemData[$field];
-            }
-        }
         return $orderItem;
     }
 
@@ -3004,13 +2970,8 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         return $this->createOrderFromPancakeData($orderData);
     }
 
-    /**
-     * Synchronize product categories from Pancake
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
-    public function syncCategories(Request $request)
+
+public function syncCategories(Request $request)
     {
         try {
             // Increase execution time limit and memory limit
@@ -3187,5 +3148,8 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             }
         }
     }
+
+
 }
+
 
