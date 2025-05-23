@@ -167,7 +167,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <div class="form-group">
-                                        <label for="user_id">Nhân viên Sale <span class="text-danger">*</span></label>
+                                        <label for="user_id">Nhân viên Sale (Xử lý chính) <span class="text-danger">*</span></label>
                                         <select name="user_id" id="user_id" class="form-control select2 @error('user_id') is-invalid @enderror" required>
                                             <option value="">-- Chọn nhân viên --</option>
                                             @foreach($users as $id => $name)
@@ -175,6 +175,20 @@
                                             @endforeach
                                         </select>
                                         @error('user_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="assigning_seller_id">Nhân viên Sale được gán (Pancake)</label>
+                                        <select name="assigning_seller_id" id="assigning_seller_id" class="form-control select2 @error('assigning_seller_id') is-invalid @enderror">
+                                            <option value="">-- Không gán --</option>
+                                            @if(isset($assignableUsersList))
+                                                @foreach($assignableUsersList as $id => $name)
+                                                    <option value="{{ $id }}" {{ old('assigning_seller_id') == $id ? 'selected' : '' }}>{{ $name }}</option>
+                                                @endforeach
+                                            @endif
+                                        </select>
+                                        @error('assigning_seller_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                 </div>
                             </div>

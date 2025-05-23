@@ -9,6 +9,8 @@ use App\Models\DailyRevenueAggregate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB; // Import DB facade
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon; // Ensure Carbon is imported
 
 class DashboardController extends Controller
 {
@@ -19,51 +21,60 @@ class DashboardController extends Controller
         $user = Auth::user();
         $stats = [];
 
-        $year = now()->year;
-        $month = now()->month;
-        $today = now()->toDateString();
+        $today = Carbon::today();
+        $currentMonthStart = Carbon::now()->startOfMonth();
+        $currentMonthEnd = Carbon::now()->endOfMonth();
 
-        // Cache key cho các chỉ số cơ bản - Tăng cache lên 15 phút (900 giây)
-        $cacheKeyBase = 'dashboard_base_stats_v2_' . $user->id . '_' . implode('_', $user->getRoleNames()->toArray()) . "_{$today}";
-        $stats = Cache::remember($cacheKeyBase, 900, function() use ($user, $year, $month, $today) {
-            $stats = [];
-            $teamMemberIds = collect(); // Initialize teamMemberIds
+        // Updated cache key for pancake_status logic
+        $cacheKeyBase = 'dashboard_pancake_stats_v1_' . $user->id . '_' . implode('_', $user->getRoleNames()->toArray()) . "_{$today->toDateString()}";
+        
+        $stats = Cache::remember($cacheKeyBase, 900, function() use ($user, $today, $currentMonthStart, $currentMonthEnd) {
+            $statsData = [];
+            
+            // Define Pancake revenue-eligible statuses
+            $revenuePancakeStatuses = [
+                Order::PANCAKE_STATUS_DELIVERED,
+                Order::PANCAKE_STATUS_DONE,
+                Order::PANCAKE_STATUS_COMPLETED
+            ];
 
-            // Base query for daily aggregates
-            $dailyAggQuery = DailyRevenueAggregate::query();
+            // Base Order Query using pancake_status
+            $orderQuery = Order::query()->whereIn('pancake_status', $revenuePancakeStatuses);
 
             if ($user->hasRole('manager')) {
                 $teamId = $user->manages_team_id;
                 if ($teamId) {
-                    $teamMemberIds = DB::table('users')->where('team_id', $teamId)->pluck('id');
-                    $dailyAggQuery->whereIn('user_id', $teamMemberIds);
+                    $teamMemberIds = User::where('team_id', $teamId)->pluck('id');
+                    $orderQuery->whereIn('user_id', $teamMemberIds);
                 } else {
-                    // Manager not managing any team, so revenue/orders will be 0
-                    $dailyAggQuery->whereRaw('1 = 0'); // No results
+                    $orderQuery->whereRaw('1 = 0'); // No results if manager has no team
                 }
             } elseif ($user->hasRole('staff')) {
-                $dailyAggQuery->where('user_id', $user->id);
-            } // Admin/Super Admin sees all, so no user_id filter on base query unless specified
+                $orderQuery->where('user_id', $user->id);
+            }
+            // Admin/Super Admin sees all by default
 
-            // 1. Doanh thu tháng này (from daily_revenue_aggregates)
-            $monthlyQuery = (clone $dailyAggQuery)
-                ->whereYear('aggregation_date', $year)
-                ->whereMonth('aggregation_date', $month);
-            $stats['monthly_revenue'] = $monthlyQuery->sum('total_revenue');
+            // 1. Doanh thu tháng này (Pancake status)
+            // Assuming updated_at reflects the date when pancake_status reached a final state
+            $statsData['monthly_revenue'] = (clone $orderQuery)
+                ->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd]) 
+                ->sum('total_value');
 
-            // 2. Doanh thu hôm nay (from daily_revenue_aggregates)
-            $todayAggQuery = (clone $dailyAggQuery)->whereDate('aggregation_date', $today);
-            $stats['today_revenue'] = $todayAggQuery->sum('total_revenue');
+            // 2. Doanh thu hôm nay (Pancake status)
+            $statsData['today_revenue'] = (clone $orderQuery)
+                ->whereDate('updated_at', $today) 
+                ->sum('total_value');
 
-            // 3. Số đơn hoàn thành hôm nay (from daily_revenue_aggregates)
-            // Need to clone again for a fresh query if $todayAggQuery was modified or to be safe
-            $stats['today_completed_orders'] = (clone $dailyAggQuery)->whereDate('aggregation_date', $today)->sum('completed_orders_count');
+            // 3. Số đơn hoàn thành hôm nay (Pancake status)
+            $statsData['today_completed_orders'] = (clone $orderQuery)
+                ->whereDate('updated_at', $today) 
+                ->count();
 
             // Format numbers
-            $stats['monthly_revenue_formatted'] = number_format($stats['monthly_revenue'] ?? 0, 0, ',', '.');
-            $stats['today_revenue_formatted'] = number_format($stats['today_revenue'] ?? 0, 0, ',', '.');
+            $statsData['monthly_revenue_formatted'] = number_format($statsData['monthly_revenue'] ?? 0, 0, ',', '.');
+            $statsData['today_revenue_formatted'] = number_format($statsData['today_revenue'] ?? 0, 0, ',', '.');
 
-            return $stats;
+            return $statsData;
         });
 
         // --- Prepare Data for Filter Dropdowns ---
@@ -94,316 +105,116 @@ class DashboardController extends Controller
         $this->authorize('dashboard.view');
         /** @var \App\Models\User $user */
         $user = Auth::user();
-        $startDate = $request->input('start_date');
-        $endDate = $request->input('end_date');
-        $saleId = $request->input('sale_id');
-        $managerId = $request->input('manager_id');
+        $startDateInput = $request->input('start_date');
+        $endDateInput = $request->input('end_date');
 
-        // Validate and sanitize dates (keep the existing logic)
-        $maxDays = 90;
+        Log::info('getChartData: Fetching dynamic revenue data based on pancake_status.', [
+            'user_id' => $user->id,
+            'start_date_input' => $startDateInput,
+            'end_date_input' => $endDateInput
+        ]);
+
+        $maxDays = 365; // Allow up to a year for date range
         try {
-            $start = $startDate ? \Carbon\Carbon::parse($startDate)->startOfDay() : now()->subDays(29)->startOfDay();
-            $end = $endDate ? \Carbon\Carbon::parse($endDate)->endOfDay() : now()->endOfDay();
-            $now = now()->endOfDay();
-            if ($end->greaterThan($now)) {
-                $end = $now;
-            }
-            if ($start->greaterThan($end)) {
-                $start = $end->copy()->subDays(29);
-            }
-            if ($start->diffInDays($end) > $maxDays) {
-                $start = $end->copy()->subDays($maxDays);
-            }
+            $start = $startDateInput ? \Carbon\Carbon::parse($startDateInput)->startOfDay() : now()->subDays(29)->startOfDay();
+            $end = $endDateInput ? \Carbon\Carbon::parse($endDateInput)->endOfDay() : now()->endOfDay();
+            
+            if ($end->greaterThan(now()->endOfDay())) $end = now()->endOfDay(); // Cap end date to today
+            if ($start->greaterThan($end)) $start = $end->copy()->subDays(29)->startOfDay(); // Ensure start is before end
+            if ($start->diffInDays($end) > $maxDays) $start = $end->copy()->subDays($maxDays)->startOfDay(); // Limit range
+
         } catch (\Exception $e) {
+            Log::error('getChartData: Date parsing error', ['exception' => $e]);
             $start = now()->subDays(29)->startOfDay();
             $end = now()->endOfDay();
         }
 
+        Log::info('getChartData: Date range calculated', ['start' => $start->toDateString(), 'end' => $end->toDateString()]);
+
         try {
-            // Cache key based on filters - Tăng cache lên 15 phút (900 giây)
-            // Add _v2 or similar to cache key if logic changes significantly
-            $cacheKey = 'dashboard_charts_v2_' . $user->id . '_' . md5(json_encode([$start->toDateString(), $end->toDateString(), $saleId, $managerId]));
-            $data = Cache::remember($cacheKey, 900, function() use ($user, $start, $end, $saleId, $managerId) {
+            $cacheKey = 'dashboard_simple_revenue_pancake_v2_' . $user->id . '_' . implode('_', $user->getRoleNames()->toArray()) . '_' . md5($start->toDateString() . $end->toDateString());
+            
+            $data = Cache::remember($cacheKey, 300, function() use ($user, $start, $end) {
 
-                $targetUserIds = collect(); // Collection to hold user IDs for filtering queries
-                $isSpecificFilterApplied = false; // Flag to check if saleId or managerId (by admin) is applied
+                $revenuePancakeStatuses = [
+                    Order::PANCAKE_STATUS_DELIVERED,
+                    Order::PANCAKE_STATUS_DONE,
+                    Order::PANCAKE_STATUS_COMPLETED
+                ];
 
-                if ($user->hasRole(['admin', 'super-admin'])) {
-                    if ($managerId) {
-                        $managerTeamMemberIds = User::where('team_id', function($query) use ($managerId) {
-                                                    $query->select('manages_team_id')->from('users')->where('id', $managerId)->limit(1);
-                                                })
-                                                ->whereHas('roles', fn($q) => $q->where('name', 'staff'))
-                                                ->pluck('id');
-                        if ($managerTeamMemberIds->isNotEmpty()) {
-                            $targetUserIds = $managerTeamMemberIds;
-                        }
-                        $isSpecificFilterApplied = true; // Manager filter by admin is a specific view
-                    }
-                    if ($saleId) { // If a sale is also specified, it takes precedence or filters within manager's team
-                        if ($targetUserIds->isNotEmpty()) { // Manager was selected, check if saleId is in their team
-                            if (!$targetUserIds->contains($saleId)) {
-                                $targetUserIds = collect(); // Invalid saleId for the selected manager's team, show no data
-                            } else {
-                                $targetUserIds = collect([$saleId]); // Valid saleId within manager's team
-                            }
-                        } else { // No manager selected, or manager had no team, just use saleId
-                            $targetUserIds = collect([$saleId]);
-                        }
-                        $isSpecificFilterApplied = true; // Sale filter is a specific view
-                    }
-                } elseif ($user->hasRole('manager')) {
+                $orderQuery = Order::query()
+                    ->whereIn('pancake_status', $revenuePancakeStatuses)
+                    ->whereBetween('updated_at', [$start, $end]); // Assuming updated_at is when status changed to final
+
+                // Apply scoping based on user role
+                if ($user->hasRole('manager')) {
                     $teamId = $user->manages_team_id;
                     if ($teamId) {
-                        $targetUserIds = User::where('team_id', $teamId)
-                                             ->whereHas('roles', fn($q) => $q->where('name', 'staff'))
-                                             ->pluck('id');
-                        if ($saleId && $targetUserIds->contains($saleId)) { // Manager filters by a specific staff in their team
-                            $targetUserIds = collect([$saleId]);
-                            $isSpecificFilterApplied = true;
-                        } elseif ($saleId) { // Manager selected a sale_id not in their team
-                            $targetUserIds = collect(); // Show no data
-                            $isSpecificFilterApplied = true;
-                        }
-                        // If no saleId, $targetUserIds remains all staff in the manager's team
+                        $teamMemberIds = User::where('team_id', $teamId)->pluck('id');
+                        $orderQuery->whereIn('user_id', $teamMemberIds);
+                    } else {
+                        $orderQuery->whereRaw('1 = 0'); // Manager with no team sees no data
                     }
                 } elseif ($user->hasRole('staff')) {
-                    $targetUserIds = collect([$user->id]);
-                    $isSpecificFilterApplied = true; // Staff view is always specific to themselves
+                    $orderQuery->where('user_id', $user->id);
                 }
+                // Admin/Super Admin sees all data (no further user_id scoping needed here)
 
-                // --- Base query for DailyRevenueAggregate ---
-                $aggQuery = DailyRevenueAggregate::query()
-                    ->whereBetween('aggregation_date', [$start, $end]);
-
-                // --- Base query for Order Status (original orders table) ---
-                $orderStatusBaseQuery = DB::table('orders')
-                                        ->whereBetween('created_at', [$start, $end]);
-
-                if ($isSpecificFilterApplied) {
-                    if ($targetUserIds->isNotEmpty()) {
-                        $aggQuery->whereIn('user_id', $targetUserIds);
-                        $orderStatusBaseQuery->whereIn('user_id', $targetUserIds);
-                    } else {
-                        // If a specific filter was applied but resulted in no target users (e.g., manager with no team, invalid saleId)
-                        $aggQuery->whereRaw('1 = 0'); // Force no results
-                        $orderStatusBaseQuery->whereRaw('1 = 0');
-                    }
-                } elseif (!$user->hasRole(['admin', 'super-admin'])) {
-                    // This case handles when a manager or staff is logged in, and no specific $saleId was chosen by the manager.
-                    // The $targetUserIds are already set to their team or self.
-                    // This ensures manager sees their team, staff sees self, if no specific filter applied by them.
-                    if ($targetUserIds->isNotEmpty()) {
-                         $aggQuery->whereIn('user_id', $targetUserIds);
-                         $orderStatusBaseQuery->whereIn('user_id', $targetUserIds);
-                    }
-                }
-                // If it's an Admin/Super-Admin and no specific filter ($saleId or $managerId) is applied, queries remain un-scoped by user_id (global view)
-
-                // --- 1. Revenue by Day (Line Chart) from DailyRevenueAggregate ---
-                $revenueByDayAgg = (clone $aggQuery)
-                    ->selectRaw('aggregation_date, SUM(total_revenue) as revenue')
-                    ->groupBy('aggregation_date')
-                    ->orderBy('aggregation_date', 'asc')
-                    ->pluck('revenue', 'aggregation_date');
-
-                $dateRange = \Carbon\CarbonPeriod::create($start, $end);
+                // 1. Revenue by Day (Pancake Status)
+                $revenueByDaySource = (clone $orderQuery)
+                    ->selectRaw('DATE(updated_at) as order_date, SUM(total_value) as revenue')
+                    ->groupBy('order_date')
+                    ->orderBy('order_date', 'asc')
+                    ->pluck('revenue', 'order_date');
+                
                 $revenueDailyLabels = [];
                 $revenueDailyData = [];
-                foreach ($dateRange as $date) {
-                    $formattedDate = $date->format('Y-m-d');
-                    $revenueDailyLabels[] = $date->format('d/m');
-                    // Access revenue directly from the plucked collection, ensuring date is Carbon object or string
-                    $revenueDailyData[] = isset($revenueByDayAgg[$formattedDate]) ? (float)$revenueByDayAgg[$formattedDate] : 0;
+                $currentDate = $start->copy();
+                while ($currentDate <= $end) {
+                    $formattedDate = $currentDate->format('Y-m-d');
+                    $revenueDailyLabels[] = $currentDate->format('d/m');
+                    $revenueDailyData[] = (float)($revenueByDaySource[$formattedDate] ?? 0);
+                    $currentDate->addDay();
                 }
-
-                // --- 2. Revenue by Month (Bar Chart) from DailyRevenueAggregate ---
-                $revenueByMonthAgg = (clone $aggQuery)
-                    ->selectRaw('DATE_FORMAT(aggregation_date, \'%Y-%m\') as month_year, SUM(total_revenue) as revenue')
-                    ->groupBy('month_year')
-                    ->orderBy('month_year', 'asc')
-                    ->pluck('revenue', 'month_year');
-
-                $revenueMonthlyLabels = [];
-                $revenueMonthlyData = [];
-                $period = \Carbon\CarbonPeriod::create($start->copy()->startOfMonth(), '1 month', $end->copy()->endOfMonth());
-                foreach ($period as $date) {
-                    $monthYearKey = $date->format('Y-m');
-                    $revenueMonthlyLabels[] = $date->format('m/Y');
-                    $revenueMonthlyData[] = isset($revenueByMonthAgg[$monthYearKey]) ? (float)$revenueByMonthAgg[$monthYearKey] : 0;
-                }
-
-                // --- 3. Order Status (Doughnut Chart) - This remains the same, queries 'orders' table ---
-                $ordersByStatusQuery = (clone $orderStatusBaseQuery)
-                    ->selectRaw('status, COUNT(id) as count')
-                    ->groupBy('status')
-                    ->pluck('count', 'status');
-
-                $allStatuses = [
-                    Order::STATUS_MOI, Order::STATUS_CAN_XU_LY, Order::STATUS_CHO_HANG,
-                    Order::STATUS_DA_DAT_HANG, Order::STATUS_CHO_CHUYEN_HANG, Order::STATUS_DA_GUI_HANG,
-                    Order::STATUS_DA_NHAN, Order::STATUS_DA_NHAN_DOI, Order::STATUS_DA_THU_TIEN,
-                    Order::STATUS_DA_HOAN, Order::STATUS_DA_HUY, Order::STATUS_XOA_GAN_DAY
+                Log::info('getChartData: Revenue by Day calculated from DB', ['count' => count($revenueDailyData)]);
+                
+                return [
+                    'revenueDailyLabels' => $revenueDailyLabels, 
+                    'revenueDailyData' => $revenueDailyData,
+                    // Return empty structures for other charts to prevent JS errors
+                    'revenueMonthlyLabels' => [], 'revenueMonthlyData' => [],
+                    'orderStatusChart' => ['labels' => [], 'data' => [], 'colors' => []],
+                    'staffRevenueChart' => ['enabled' => false, 'labels' => [], 'data' => []],
+                    'staffSpecificStats' => ['show_staff_specific_stats' => false, 'title_name' => null, 'total_revenue_formatted' => '0', 'total_orders' => 0 ],
                 ];
-                $orderStatusLabels = [];
-                $orderStatusData = [];
-                $tempOrderInstance = new Order();
-                foreach ($allStatuses as $statusKey) {
-                    $tempOrderInstance->status = $statusKey;
-                    $orderStatusLabels[] = $tempOrderInstance->getStatusText();
-                    $orderStatusData[] = $ordersByStatusQuery->get($statusKey, 0);
-                }
-                $statusColors = [ // This mapping should ideally be in Order model or a config
-                    Order::STATUS_MOI => '#007bff', Order::STATUS_CAN_XU_LY => '#ffc107',
-                    Order::STATUS_CHO_HANG => '#17a2b8', Order::STATUS_DA_DAT_HANG => '#6f42c1',
-                    Order::STATUS_CHO_CHUYEN_HANG => '#17a2b8', Order::STATUS_DA_GUI_HANG => '#6610f2',
-                    Order::STATUS_DA_NHAN => '#28a745', Order::STATUS_DA_NHAN_DOI => '#28a745',
-                    Order::STATUS_DA_THU_TIEN => '#20c997', Order::STATUS_DA_HOAN => '#6c757d',
-                    Order::STATUS_DA_HUY => '#dc3545', Order::STATUS_XOA_GAN_DAY => '#343a40',
-                    'completed' => '#00a65a', 'pending'   => '#f39c12', 'assigned'  => '#ff851b',
-                    'calling'   => '#00c0ef', 'failed'    => '#dd4b39', 'no_answer' => '#777',
-                    'canceled'  => '#d2d6de',
-                ];
-                $orderStatusBackgroundColors = [];
-                foreach ($allStatuses as $statusKey) {
-                    $orderStatusBackgroundColors[] = $statusColors[$statusKey] ?? '#adb5bd';
-                }
-                if (empty($orderStatusData) || !array_filter($orderStatusData)) {
-                    $orderStatusLabels = []; $orderStatusData = []; $orderStatusBackgroundColors = [];
-                }
-
-                // --- 4. Revenue by Staff (Bar Chart) - Conditional Display ---
-                $staffRevenueDetails = [
-                    'labels' => [],
-                    'data' => [],
-                    'should_display' => false,
-                ];
-
-                $isFilteredBySale = !empty($saleId);
-                $isFilteredByManager = !empty($managerId);
-                // User is manager, viewing their own team, and no overriding admin filters for a specific sale/other manager
-                $isManagerViewingOwnTeamGeneral = $user->hasRole('manager') && $user->manages_team_id && !$isFilteredBySale && !$isFilteredByManager;
-
-                // Determine if this chart should be displayed based on filters
-                if ($isFilteredBySale || $isFilteredByManager || $isManagerViewingOwnTeamGeneral) {
-                    $staffRevenueDetails['should_display'] = true;
-                }
-
-                if ($staffRevenueDetails['should_display']) {
-                    // $aggQuery is already filtered by date, the logged-in user's role (admin, manager, staff),
-                    // and specific filters like saleId or managerId.
-                    // Now, we group its results by user_id to get per-staff revenue.
-                    $revenueByStaffQuery = (clone $aggQuery)
-                        ->join('users', 'daily_revenue_aggregates.user_id', '=', 'users.id')
-                        ->select(
-                            'users.name as staff_name',
-                            'daily_revenue_aggregates.user_id',
-                            DB::raw('SUM(daily_revenue_aggregates.total_revenue) as revenue')
-                        )
-                        ->groupBy('daily_revenue_aggregates.user_id', 'users.name')
-                        ->orderByDesc('revenue')
-                        ->get();
-
-                    if (!$revenueByStaffQuery->isEmpty()) {
-                        $staffRevenueDetails['labels'] = $revenueByStaffQuery->pluck('staff_name')->all();
-                        $staffRevenueDetails['data'] = $revenueByStaffQuery->pluck('revenue')->map(fn($val) => (float)$val)->all();
-                        // Keep should_display as true because we found data under the filter conditions
-                    } else {
-                        // If no data was found:
-                        // - If it was a specific $saleId filter, it means that sale had 0 revenue. Still display (empty or 0 chart).
-                        // - Otherwise (manager filter or manager view yielded no staff with revenue), hide the chart.
-                        if (!$isFilteredBySale) {
-                            $staffRevenueDetails['should_display'] = false;
-                        }
-                    }
-                }
-
-                $responseArray = [
-                    'revenueDaily' => [
-                        'labels' => $revenueDailyLabels,
-                        'data' => $revenueDailyData,
-                    ],
-                    'revenueMonthly' => [
-                        'labels' => $revenueMonthlyLabels,
-                        'data' => $revenueMonthlyData,
-                    ],
-                    'orderStatusPie' => [
-                        'labels' => $orderStatusLabels,
-                        'data' => $orderStatusData,
-                        'colors' => $orderStatusBackgroundColors
-                    ],
-                    'staffRevenueDetails' => $staffRevenueDetails,
-                ];
-
-                // --- Staff Specific Stat Boxes Data (Revised for custom date range) ---
-                $responseArray['staff_specific_stats'] = [
-                    'show' => false,
-                    'entity_name' => '',
-                    'period_label' => '',
-                    'total_revenue_formatted' => '0',
-                    'total_completed_orders' => 0,
-                ];
-
-                $potentialTargetUserIds = collect();
-                $entityNameForStats = '';
-                $canShowSpecificStats = false;
-
-                // This section is primarily for Super Admin or Manager viewing specific staff in custom range
-                if ($saleId) {
-                    $selectedStaffUser = User::find($saleId);
-                    if ($selectedStaffUser && $selectedStaffUser->hasRole('staff')) {
-                        // Super Admin can see any staff. Manager can see staff in their team.
-                        if ($user->hasRole(['admin', 'super-admin']) ||
-                            ($user->hasRole('manager') && $user->manages_team_id && $selectedStaffUser->team_id == $user->manages_team_id)) {
-                            $potentialTargetUserIds->push($selectedStaffUser->id);
-                            $entityNameForStats = $selectedStaffUser->name;
-                            $canShowSpecificStats = true;
-                        }
-                    }
-                } elseif ($managerId && $user->hasRole(['admin', 'super-admin'])) {
-                    // Only Super Admin can use manager_id filter for these specific stat boxes for a whole team.
-                    $manager = User::find($managerId);
-                    if ($manager && $manager->manages_team_id) {
-                        $teamMemberIds = User::where('team_id', $manager->manages_team_id)
-                                             ->whereHas('roles', fn($q) => $q->where('name', 'staff'))
-                                             ->pluck('id');
-                        if ($teamMemberIds->isNotEmpty()) {
-                            $potentialTargetUserIds = $teamMemberIds;
-                            $entityNameForStats = "Nhóm của " . $manager->name;
-                            $canShowSpecificStats = true;
-                        }
-                    }
-                }
-
-                if ($canShowSpecificStats && $potentialTargetUserIds->isNotEmpty()) {
-                    $statsQuery = DailyRevenueAggregate::query()
-                                    ->whereBetween('aggregation_date', [$start, $end]) // Use selected date range ($start, $end from outer scope)
-                                    ->whereIn('user_id', $potentialTargetUserIds);
-
-                    $totalRevenueInRange = $statsQuery->sum('total_revenue');
-                    $totalOrdersInRange = (clone $statsQuery)->sum('completed_orders_count'); // Clone for fresh sum
-
-                    $responseArray['staff_specific_stats']['show'] = true;
-                    $responseArray['staff_specific_stats']['entity_name'] = $entityNameForStats;
-
-                    $periodLabel = $start->format('d/m/Y');
-                    if (!$start->isSameDay($end)) {
-                        $periodLabel .= ' - ' . $end->format('d/m/Y');
-                    }
-                    $responseArray['staff_specific_stats']['period_label'] = $periodLabel;
-                    $responseArray['staff_specific_stats']['total_revenue_formatted'] = number_format($totalRevenueInRange ?? 0, 0, ',', '.');
-                    $responseArray['staff_specific_stats']['total_completed_orders'] = $totalOrdersInRange ?? 0;
-                }
-
-                return $responseArray; // Ensure the modified array is returned
             });
             return response()->json($data);
-        } catch (\Exception $e) {
-            logger()->error('Dashboard Chart Error: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json([
-                'error' => 'Lỗi tải dữ liệu biểu đồ. Vui lòng thử lại.',
-            ], 500);
+        } catch (\Throwable $e) { // Changed to Throwable to catch more error types
+            Log::error("Dashboard Chart Data (Simplified Dynamic): " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+                'user_id' => $user->id
+            ]);
+            return response()->json(['error' => 'Could not load chart data. Error: ' . $e->getMessage()], 500);
         }
+    }
+
+    // Helper function to map status class to a color for Chart.js
+    private function getStatusColor(string $statusClass): string
+    {
+        // Map AdminLTE badge classes to hex colors for Chart.js
+        return match ($statusClass) {
+            'badge-primary' => '#007bff',
+            'badge-warning' => '#ffc107',
+            'badge-info' => '#17a2b8',
+            'badge-purple' => '#6f42c1',
+            'badge-indigo' => '#6610f2',
+            'badge-success' => '#28a745',
+            'badge-secondary' => '#6c757d',
+            'badge-danger' => '#dc3545',
+            'badge-dark' => '#343a40',
+            'badge-light' => '#f8f9fa', // Consider a border for light colors on light backgrounds
+            default => '#6c757d', // Default to secondary for unknown classes
+        };
     }
 
     /**

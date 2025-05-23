@@ -197,6 +197,11 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
             ->name('sync.skipped-employees')
             ->middleware(['auth', 'can:settings.manage']);
 
+        // New route for syncing categories
+        Route::post('pancake-sync/categories', [\App\Http\Controllers\PancakeSyncController::class, 'syncCategories'])
+            ->name('sync.categories')
+            ->middleware(['auth', 'can:settings.manage']);
+
         // Activity Logs - Remove duplicate route definitions and consolidate here
         Route::middleware(['auth'])
             ->group(function () {
@@ -309,6 +314,9 @@ Route::middleware(['auth'])->prefix('reports')->name('reports.')->group(function
     // Tính lại doanh thu phiên live
     Route::get('/recalculate-live-revenue', [App\Http\Controllers\ReportController::class, 'recalculateLiveRevenue'])
         ->name('recalculate_live_revenue');
+
+    Route::get('overall-revenue', [ReportController::class, 'overallRevenueSummaryPage'])->name('overall_revenue_summary');
+    Route::get('overall-revenue/chart-data', [ReportController::class, 'getOverallRevenueChartData'])->name('overall_revenue_summary.chart_data');
 });
 
 // Sales Staff Management

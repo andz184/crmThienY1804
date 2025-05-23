@@ -159,6 +159,29 @@
                     </div>
 
                     <div class="row mt-4">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header bg-warning text-dark">
+                                    <h5 class="card-title mb-0">Đồng bộ Danh mục Sản phẩm</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p>Đồng bộ danh mục sản phẩm từ Pancake vào hệ thống.</p>
+                                    <form id="syncCategoriesForm" action="{{ route('admin.sync.categories') }}" method="POST">
+                                        @csrf
+                                        <button type="submit" class="btn btn-warning" id="syncCategoriesBtn">
+                                            <i class="fas fa-tags"></i> Đồng bộ Danh mục
+                                        </button>
+                                    </form>
+                                    <div class="progress mt-3 d-none" id="categorySyncProgress">
+                                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+                                    </div>
+                                    <div id="categorySyncResult" class="mt-2"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mt-4">
                         <div class="col-md-12">
                             <div class="card">
                                 <div class="card-header bg-info text-white">
@@ -852,7 +875,66 @@
                     `);
                 }
             });
-        }
+        });
+
+        // Sync Categories
+        $('#syncCategoriesForm').on('submit', function(e) {
+            e.preventDefault();
+            const form = $(this);
+            const button = $('#syncCategoriesBtn');
+            const progress = $('#categorySyncProgress');
+            const progressBar = progress.find('.progress-bar');
+            const resultDiv = $('#categorySyncResult');
+
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đồng bộ...');
+            progress.removeClass('d-none');
+            progressBar.css('width', '0%').attr('aria-valuenow', 0).text('0%');
+            resultDiv.html('<p class="text-info">Đang xử lý yêu cầu đồng bộ danh mục...</p>');
+
+            $.ajax({
+                url: form.attr('action'),
+                type: 'POST',
+                data: form.serialize(),
+                dataType: 'json',
+                success: function(response) {
+                    progressBar.css('width', '100%').attr('aria-valuenow', 100).text('100%');
+                    if (response.success) {
+                        resultDiv.html('<p class="alert alert-success">' + response.message + '</p>');
+                        if (response.stats) {
+                            let statsHtml = '<ul class="list-group mt-2">';
+                            statsHtml += '<li class="list-group-item">Tổng danh mục lấy về: ' + response.stats.total_fetched + '</li>';
+                            statsHtml += '<li class="list-group-item text-success">Tạo mới: ' + response.stats.created + '</li>';
+                            statsHtml += '<li class="list-group-item text-info">Cập nhật: ' + response.stats.updated + '</li>';
+                            statsHtml += '<li class="list-group-item text-danger">Lỗi: ' + response.stats.errors + '</li>';
+                            if(response.stats.error_messages && response.stats.error_messages.length > 0){
+                                statsHtml += '<li class="list-group-item text-danger">Chi tiết lỗi: <ul>';
+                                response.stats.error_messages.forEach(function(msg) {
+                                    statsHtml += '<li>' + msg + '</li>';
+                                });
+                                statsHtml += '</ul></li>';
+                            }
+                            statsHtml += '</ul>';
+                            resultDiv.append(statsHtml);
+                        }
+                    } else {
+                        resultDiv.html('<p class="alert alert-danger">' + response.message + '</p>');
+                        progressBar.addClass('bg-danger');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    progressBar.css('width', '100%').attr('aria-valuenow', 100).addClass('bg-danger').text('Lỗi');
+                    let errorMsg = 'Lỗi AJAX: ' + error;
+                    if (xhr.responseJSON && xhr.responseJSON.message) {
+                        errorMsg = xhr.responseJSON.message;
+                    }
+                    resultDiv.html('<p class="alert alert-danger">' + errorMsg + '</p>');
+                },
+                complete: function() {
+                    button.prop('disabled', false).html('<i class="fas fa-tags"></i> Đồng bộ Danh mục');
+                    // setTimeout(function(){ progress.addClass('d-none'); }, 3000);
+                }
+            });
+        });
     });
 </script>
 @endsection

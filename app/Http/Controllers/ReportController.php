@@ -12,6 +12,9 @@ use App\Models\LiveSessionReport;
 use App\Models\Order;
 use App\Models\PancakeShop;
 use Illuminate\Support\Facades\Log;
+use App\Models\User;
+use Illuminate\Support\Facades\Cache;
+use App\Models\DailyRevenueAggregate;
 use Carbon\CarbonPeriod;
 
 class ReportController extends Controller
@@ -83,10 +86,153 @@ class ReportController extends Controller
     /**
      * Hiển thị trang báo cáo theo nhóm hàng hóa
      */
-    public function productGroupsPage()
+    public function productGroupsPage(Request $request)
     {
         $this->authorize('reports.product_groups');
-        return view('reports.product_groups');
+
+        // Date filtering
+        $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : Carbon::now()->startOfMonth()->startOfDay();
+        $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : Carbon::now()->endOfDay();
+
+        if ($request->filled('date_range')) {
+            $dateParts = explode(' - ', $request->input('date_range'));
+            if (count($dateParts) === 2) {
+                try {
+                    $startDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[0]))->startOfDay();
+                    $endDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[1]))->endOfDay();
+                } catch (\Exception $e) {
+                    Log::error('ReportController@productGroupsPage: Invalid date_range format. Value: ' . $request->input('date_range') . ' Error: ' . $e->getMessage());
+                    // Fallback to default if parsing fails
+                    $startDate = Carbon::now()->startOfMonth()->startOfDay();
+                    $endDate = Carbon::now()->endOfDay();
+                }
+            }
+        }
+
+        Log::info("ReportController@productGroupsPage: Processing report for date range: {$startDate->toDateTimeString()} to {$endDate->toDateTimeString()}");
+
+        // Fetch orders with items within the date range
+        // We need to filter orders based on their creation date, and then process their items.
+        $orders = Order::whereBetween('created_at', [$startDate, $endDate])
+            ->whereNull('deleted_at') // Exclude deleted orders
+            ->where(function ($query) { // Exclude cancelled orders (example status, adjust as needed)
+                $query->where('status', '!=', Order::STATUS_DA_HUY)
+                      ->orWhereNull('status');
+            })
+            ->with(['items']) // Eager load items
+            ->get();
+
+        Log::info("ReportController@productGroupsPage: Found " . $orders->count() . " orders for the period.");
+
+        $categoryData = [];
+        // Fetch Pancake categories, mapping pancake_id to name
+        $categoryMap = \App\Models\PancakeCategory::pluck('name', 'pancake_id')->all(); 
+
+        foreach ($orders as $order) {
+            $orderCategoriesProcessed = []; // To count each category once per order for order count metric
+
+            foreach ($order->items as $item) {
+                if (!empty($item->product_info)) {
+                    $productInfo = null;
+                    if (is_string($item->product_info)) {
+                        $productInfo = json_decode($item->product_info, true);
+                    } elseif (is_array($item->product_info) || is_object($item->product_info)) {
+                        $productInfo = (array) $item->product_info; // Cast to array if it's an object
+                    }
+
+                    if (!$productInfo) {
+                        Log::warning("ReportController@productGroupsPage: Failed to process product_info for item ID {$item->id}. product_info was: ", [$item->product_info]);
+                        continue;
+                    }
+
+                    $itemCategoryIds = [];
+
+                    // Extract category_ids, checking various possible structures due to past sync logic
+                    if (isset($productInfo['variation_info']['category_ids']) && is_array($productInfo['variation_info']['category_ids'])) {
+                        $itemCategoryIds = $productInfo['variation_info']['category_ids'];
+                    } elseif (isset($productInfo['category_ids']) && is_array($productInfo['category_ids'])) { // Direct category_ids in product_info
+                        $itemCategoryIds = $productInfo['category_ids'];
+                    } elseif (isset($productInfo['processed_variation_info']['category_ids']) && is_array($productInfo['processed_variation_info']['category_ids'])) { // From components logic
+                        $itemCategoryIds = $productInfo['processed_variation_info']['category_ids'];
+                    }
+
+
+                    foreach ($itemCategoryIds as $categoryId) {
+                        // $categoryId from product_info is the pancake_id
+                        if (!isset($categoryMap[$categoryId])) {
+                            Log::warning("ReportController@productGroupsPage: Pancake Category ID {$categoryId} not found in categoryMap for item ID {$item->id}, product_info: " . json_encode($item->product_info));
+                            continue; // Skip if category ID doesn't exist in our map
+                        }
+                        $categoryName = $categoryMap[$categoryId];
+
+                        // Use $categoryId (which is pancake_id) as the key for $categoryData
+                        if (!isset($categoryData[$categoryId])) {
+                            $categoryData[$categoryId] = [
+                                'id' => $categoryId, // Store pancake_id as 'id' for consistency in the view perhaps, or use a different key
+                                'name' => $categoryName,
+                                'total_revenue' => 0,
+                                'total_orders' => 0,
+                                'total_quantity_sold' => 0,
+                            ];
+                        }
+
+                        // Aggregate data
+                        // Revenue is item price * quantity for this item
+                        $categoryData[$categoryId]['total_revenue'] += ($item->price * $item->quantity);
+                        $categoryData[$categoryId]['total_quantity_sold'] += $item->quantity;
+
+                        // Increment order count for this category if this is the first item from this category for this order
+                        if (!isset($orderCategoriesProcessed[$categoryId])) {
+                            $categoryData[$categoryId]['total_orders']++;
+                            $orderCategoriesProcessed[$categoryId] = true;
+                        }
+                    }
+                } else {
+                    Log::debug("ReportController@productGroupsPage: Item ID {$item->id} in order ID {$order->id} has empty product_info.");
+                }
+            }
+        }
+        
+        // Sort by revenue by default (descending)
+        uasort($categoryData, function ($a, $b) {
+            return $b['total_revenue'] <=> $a['total_revenue'];
+        });
+
+        Log::info("ReportController@productGroupsPage: Processed " . count($categoryData) . " categories.");
+
+        // Prepare data for charts
+        $chartCategoryNames = [];
+        $chartRevenueData = [];
+        $chartOrderCountData = [];
+        $chartQuantityData = [];
+
+        foreach ($categoryData as $cat) {
+            $chartCategoryNames[] = $cat['name'];
+            $chartRevenueData[] = $cat['total_revenue'];
+            $chartOrderCountData[] = $cat['total_orders'];
+            $chartQuantityData[] = $cat['total_quantity_sold'];
+        }
+        
+        // Overall summary stats
+        $totalRevenueAllGroups = array_sum(array_column($categoryData, 'total_revenue'));
+        $totalOrdersAllGroups = array_sum(array_column($categoryData, 'total_orders')); // This might double count if an order has items from multiple groups.
+                                                                                        // A more accurate total order count for "orders with any product group item" would be $orders->count() if every order had an item with a category.
+                                                                                        // For now, sum of category orders might be what user expects for "total orders touching groups".
+        $totalQuantityAllGroups = array_sum(array_column($categoryData, 'total_quantity_sold'));
+
+
+        return view('reports.product_groups', compact(
+            'startDate',
+            'endDate',
+            'categoryData', // For the table
+            'chartCategoryNames',
+            'chartRevenueData',
+            'chartOrderCountData',
+            'chartQuantityData',
+            'totalRevenueAllGroups',
+            'totalOrdersAllGroups',
+            'totalQuantityAllGroups'
+        ));
     }
 
     /**
@@ -98,45 +244,121 @@ class ReportController extends Controller
         $this->authorize('reports.campaigns');
 
         // Date filtering
-        $startDate = $request->input('start_date', now()->startOfMonth()->format('Y-m-d'));
-        $endDate = $request->input('end_date', now()->format('Y-m-d'));
+        $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : now()->startOfMonth()->startOfDay();
+        $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : now()->endOfDay();
+        
+        if ($request->filled('date_range')) {
+            $dateParts = explode(' - ', $request->input('date_range'));
+            if (count($dateParts) === 2) {
+                try {
+                    $startDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[0]))->startOfDay();
+                    $endDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[1]))->endOfDay();
+                } catch (\Exception $e) {
+                    Log::error('ReportController@campaignsPage: Invalid date_range format.', ['value' => $request->input('date_range'), 'error' => $e->getMessage()]);
+                    // Keep default if parsing fails
+                }
+            }
+        }
 
-        // Build query with date range
-        $query = DB::table('orders')
-            ->select(
-                'post_id',
-                DB::raw('COUNT(*) as total_orders'),
-                DB::raw('SUM(total_value) as total_revenue'),
-                DB::raw('AVG(total_value) as average_order_value')
-            )
-            ->whereNotNull('post_id')
-            ->where('status', '!=', Order::STATUS_DA_HUY)
+        // Base query for orders within the date range and with a post_id
+        $ordersQuery = Order::whereNotNull('post_id')
+            ->where('status', '!=', Order::STATUS_DA_HUY) // Exclude cancelled orders
             ->whereNull('deleted_at')
             ->whereBetween('created_at', [$startDate, $endDate])
-            ->groupBy('post_id')
-            ->orderByDesc('total_revenue');
+            ->with(['items']); // Eager load items
 
         // Shop filtering
         if ($request->filled('pancake_shop_id')) {
-            $query->where('pancake_shop_id', $request->input('pancake_shop_id'));
+            $ordersQuery->where('pancake_shop_id', $request->input('pancake_shop_id'));
         }
 
         // Page filtering
         if ($request->filled('pancake_page_id')) {
-            $query->where('pancake_page_id', $request->input('pancake_page_id'));
+            $ordersQuery->where('pancake_page_id', $request->input('pancake_page_id'));
         }
 
-        // Get the campaigns
-        $campaigns = $query->get();
+        $ordersForCampaigns = $ordersQuery->get();
 
-        // Get shops and pages for filter
+        // Group orders by post_id
+        $campaignsData = [];
+        foreach ($ordersForCampaigns as $order) {
+            $postId = $order->post_id;
+            if (!isset($campaignsData[$postId])) {
+                $campaignsData[$postId] = [
+                    'post_id' => $postId,
+                    'total_orders' => 0,
+                    'total_revenue' => 0,
+                    'products' => [],
+                    'product_summary' => [] // For aggregated product stats
+                ];
+            }
+            $campaignsData[$postId]['total_orders']++;
+            $campaignsData[$postId]['total_revenue'] += $order->total_value;
+
+            foreach ($order->items as $item) {
+                $productName = $item->product_name ?? ($item->name ?? 'Không xác định');
+                $productId = $item->pancake_product_id ?? $item->sku ?? $productName; // Unique key for product
+
+                if (!isset($campaignsData[$postId]['product_summary'][$productId])) {
+                    $campaignsData[$postId]['product_summary'][$productId] = [
+                        'name' => $productName,
+                        'sku' => $item->sku,
+                        'quantity' => 0,
+                        'revenue' => 0
+                    ];
+                }
+                $campaignsData[$postId]['product_summary'][$productId]['quantity'] += $item->quantity;
+                $campaignsData[$postId]['product_summary'][$productId]['revenue'] += ($item->price * $item->quantity);
+            }
+        }
+        
+        // Process product summaries and get top N for each campaign
+        $topNProducts = 3; // Show top 3 products per campaign
+        foreach ($campaignsData as $postId => &$campaign) { // Use reference to modify directly
+            // Sort products by revenue (descending)
+            uasort($campaign['product_summary'], function ($a, $b) {
+                return $b['revenue'] <=> $a['revenue'];
+            });
+            // Get top N products
+            $campaign['products'] = array_slice($campaign['product_summary'], 0, $topNProducts, true);
+            $campaign['average_order_value'] = $campaign['total_orders'] > 0 ? $campaign['total_revenue'] / $campaign['total_orders'] : 0;
+            // unset($campaign['product_summary']); // Optionally remove the full summary to save memory if not needed elsewhere
+        }
+        unset($campaign); // Unset reference
+
+        // Sort campaigns by total revenue (descending)
+        uasort($campaignsData, function ($a, $b) {
+            return $b['total_revenue'] <=> $a['total_revenue'];
+        });
+
         $shops = PancakeShop::orderBy('name')->get();
+        $pages = []; // Will be loaded by AJAX or pre-filled if a shop is selected
+
+        if ($request->filled('pancake_shop_id')) {
+            $selectedShopId = $request->input('pancake_shop_id');
+            $selectedShop = PancakeShop::find($selectedShopId);
+            if ($selectedShop) {
+                $pages = $selectedShop->pages()->orderBy('name')->get();
+            }
+        }
+        
+        // Data for Campaign Performance Overview Chart
+        $chartCampaignLabels = [];
+        $chartCampaignRevenue = [];
+        foreach($campaignsData as $campaign) {
+            $chartCampaignLabels[] = $campaign['post_id']; // Or a more descriptive name if available
+            $chartCampaignRevenue[] = $campaign['total_revenue'];
+        }
+
 
         return view('reports.campaigns', compact(
-            'campaigns',
+            'campaignsData',
             'startDate',
             'endDate',
-            'shops'
+            'shops',
+            'pages', // Pass pages for the selected shop
+            'chartCampaignLabels',
+            'chartCampaignRevenue'
         ));
     }
 
@@ -198,6 +420,12 @@ class ReportController extends Controller
             $allPotentialLiveOrders = Order::query()
                 ->whereNotNull('notes')
                 ->where('notes', 'LIKE', '%LIVE%')
+                // Add a buffer to the date range to catch orders where notes might be added later
+                // or session date slightly differs from created_at.
+                ->whereBetween('created_at', [
+                    $filterPeriodStart->copy()->subDays(7)->startOfDay(),
+                    $filterPeriodEnd->copy()->addDays(7)->endOfDay()
+                ])
                 // ->where('created_at', '>=', Carbon::now()->subYears(2)) // Example: Limit to orders created in last 2 years for performance
                 ->with(['items']) // Eager load items
                 ->get();
@@ -2124,5 +2352,223 @@ class ReportController extends Controller
                 'message' => 'Có lỗi xảy ra khi lấy chi tiết đơn hàng: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function overallRevenueSummaryPage(Request $request)
+    {
+        $this->authorize('dashboard.view'); // Assuming similar permission as dashboard
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        $stats = [];
+
+        $year = now()->year;
+        $month = now()->month;
+        $today = now()->toDateString();
+
+        // Initial Stats (Similar to DashboardController@index)
+        $cacheKeyBase = 'report_overall_revenue_base_stats_v1_' . $user->id . '_' . implode('_', $user->getRoleNames()->toArray()) . "_{$today}";
+        $stats = Cache::remember($cacheKeyBase, 300, function() use ($user, $year, $month, $today) {
+            $currentStats = [];
+            $baseDailyAggQuery = DailyRevenueAggregate::query();
+            $targetUserIds = $this->getTargetUserIdsForQuery($user); // Helper to get user IDs based on role
+
+            if ($targetUserIds === false) { // No access / manager with no team
+                 $baseDailyAggQuery->whereRaw('1 = 0');
+            } elseif (is_array($targetUserIds) && !empty($targetUserIds)) {
+                $baseDailyAggQuery->whereIn('user_id', $targetUserIds);
+            } // if null, admin/super-admin sees all
+
+            $currentStats['monthly_revenue'] = (clone $baseDailyAggQuery)->whereYear('aggregation_date', $year)->whereMonth('aggregation_date', $month)->sum('total_revenue');
+            $currentStats['today_revenue'] = (clone $baseDailyAggQuery)->whereDate('aggregation_date', $today)->sum('total_revenue');
+            $currentStats['today_completed_orders'] = (clone $baseDailyAggQuery)->whereDate('aggregation_date', $today)->sum('completed_orders_count');
+            
+            $currentStats['monthly_revenue_formatted'] = number_format($currentStats['monthly_revenue'] ?? 0, 0, ',', '.');
+            $currentStats['today_revenue_formatted'] = number_format($currentStats['today_revenue'] ?? 0, 0, ',', '.');
+
+            return $currentStats;
+        });
+
+        // Prepare Data for Filter Dropdowns (Similar to DashboardController@index)
+        $filterableStaff = collect();
+        $filterableManagers = collect();
+        // ... (Keep existing filterable staff/manager logic from DashboardController or adapt as needed) ...
+        if ($user->hasRole(['admin', 'super-admin'])) {
+            $filterableStaff = User::whereHas('roles', fn($q) => $q->where('name', 'staff'))->orderBy('name')->pluck('name', 'id');
+            $filterableManagers = User::whereNotNull('manages_team_id')
+                                      ->whereHas('roles', fn($q) => $q->where('name', 'manager'))
+                                      ->orderBy('name')
+                                      ->pluck('name', 'id');
+        } elseif ($user->hasRole('manager') && $user->manages_team_id) {
+            $filterableStaff = User::where('team_id', $user->manages_team_id)
+                                   ->whereHas('roles', fn($q) => $q->where('name', 'staff'))
+                                   ->orderBy('name')
+                                   ->pluck('name', 'id');
+        }
+
+        // Initial chart data (for page load)
+        // We pass a simple request object with default date range to getOverallRevenueChartData method's core logic
+        $initialChartRequest = new Request([
+            // Default to last 30 days or current month for initial view
+            'start_date' => now()->subDays(29)->format('Y-m-d'), 
+            'end_date' => now()->format('Y-m-d')
+        ]);
+        $initialChartDataResponse = $this->getOverallRevenueChartData($initialChartRequest, true); // Pass true to indicate internal call
+        $initialChartData = json_decode($initialChartDataResponse->getContent(), true)['data'] ?? [];
+
+        return view('reports.overall_revenue_summary', compact(
+            'stats', 
+            'filterableStaff', 
+            'filterableManagers',
+            'initialChartData' // Pass initial chart data to the view
+        ));
+    }
+
+    private function getTargetUserIdsForQuery(User $user, $saleId = null, $managerId = null)
+    {
+        $targetUserIds = null; // null means all (for admin/super-admin with no filter)
+        $isSpecificFilterApplied = false;
+
+        if ($user->hasRole(['admin', 'super-admin'])) {
+            if ($managerId) {
+                $managedTeamId = User::where('id', $managerId)->whereNotNull('manages_team_id')->value('manages_team_id');
+                if ($managedTeamId) {
+                    $targetUserIds = User::where('team_id', $managedTeamId)
+                                        ->whereHas('roles', fn($q) => $q->where('name', 'staff'))
+                                        ->pluck('id')->toArray();
+                } else {
+                    $targetUserIds = []; // Manager selected but manages no team
+                }
+                $isSpecificFilterApplied = true;
+            }
+            if ($saleId) {
+                if ($isSpecificFilterApplied && !empty($targetUserIds)) { // Manager was selected, filter sale within manager's team
+                    if (!in_array($saleId, $targetUserIds)) {
+                        $targetUserIds = []; // Invalid saleId for selected manager's team
+                    }
+                    else { $targetUserIds = [$saleId]; }
+                } else { // No manager selected or manager had no team, just use saleId
+                    $targetUserIds = [$saleId];
+                }
+                $isSpecificFilterApplied = true;
+            }
+            // If no specific filter, $targetUserIds remains null for admin (all users)
+        } elseif ($user->hasRole('manager')) {
+            $teamId = $user->manages_team_id;
+            if ($teamId) {
+                $targetUserIds = User::where('team_id', $teamId)
+                                     ->whereHas('roles', fn($q) => $q->where('name', 'staff'))
+                                     ->pluck('id')->toArray();
+                if ($saleId && in_array($saleId, $targetUserIds)) {
+                    $targetUserIds = [$saleId];
+                    $isSpecificFilterApplied = true;
+                } elseif ($saleId) { // Manager selected a sale_id not in their team
+                    return false; // Indicate no access / empty results
+                }
+            } else {
+                return false; // Manager with no team
+            }
+        } elseif ($user->hasRole('staff')) {
+            $targetUserIds = [$user->id];
+            $isSpecificFilterApplied = true;
+        }
+        
+        // If a specific filter was applied (e.g. saleId, managerId) and it resulted in an empty $targetUserIds array, it means no data should be shown.
+        if($isSpecificFilterApplied && empty($targetUserIds)) return false;
+
+        return $targetUserIds; // null, array of IDs, or false
+    }
+
+    public function getOverallRevenueChartData(Request $request, $isInternalCall = false)
+    {
+        if (!$isInternalCall) { // Only authorize if called via HTTP
+            $this->authorize('dashboard.view');
+        }
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+        $startDateInput = $request->input('start_date');
+        $endDateInput = $request->input('end_date');
+        $saleId = $request->input('sale_id');
+        $managerId = $request->input('manager_id');
+
+        $maxDays = 90;
+        try {
+            $start = $startDateInput ? Carbon::parse($startDateInput)->startOfDay() : now()->subDays(29)->startOfDay();
+            $end = $endDateInput ? Carbon::parse($endDateInput)->endOfDay() : now()->endOfDay();
+            if ($end->greaterThan(now()->endOfDay())) $end = now()->endOfDay();
+            if ($start->greaterThan($end)) $start = $end->copy()->subDays(29)->startOfDay();
+            if ($start->diffInDays($end) > $maxDays) $start = $end->copy()->subDays($maxDays)->startOfDay();
+        } catch (\Exception $e) {
+            $start = now()->subDays(29)->startOfDay();
+            $end = now()->endOfDay();
+            Log::error('Error parsing dates in getOverallRevenueChartData', ['error' => $e->getMessage()]);
+        }
+
+        $cacheKey = 'report_overall_revenue_charts_v1_' . $user->id . '_' . md5(json_encode([$start->toDateString(), $end->toDateString(), $saleId, $managerId]));
+        $chartData = Cache::remember($cacheKey, 300, function() use ($user, $start, $end, $saleId, $managerId) {
+            
+            $targetUserIds = $this->getTargetUserIdsForQuery($user, $saleId, $managerId);
+
+            $aggQueryBase = DailyRevenueAggregate::query()->whereBetween('aggregation_date', [$start, $end]);
+            $orderStatusBaseQuery = DB::table('orders')->whereBetween('created_at', [$start, $end]);
+
+            if ($targetUserIds === false) { // No access scenario
+                $aggQueryBase->whereRaw('1 = 0');
+                $orderStatusBaseQuery->whereRaw('1 = 0');
+            } elseif (is_array($targetUserIds) && !empty($targetUserIds)) {
+                $aggQueryBase->whereIn('user_id', $targetUserIds);
+                $orderStatusBaseQuery->whereIn('user_id', $targetUserIds);
+            } // If $targetUserIds is null (admin/super-admin with no filter), no user_id scoping is applied for global view.
+
+            // Revenue by Day
+            $revenueByDayAgg = (clone $aggQueryBase)
+                ->selectRaw('aggregation_date, SUM(total_revenue) as revenue')
+                ->groupBy('aggregation_date')
+                ->orderBy('aggregation_date', 'asc')
+                ->pluck('revenue', 'aggregation_date');
+            $dateRange = CarbonPeriod::create($start, $end);
+            $revenueDailyLabels = []; $revenueDailyData = [];
+            foreach ($dateRange as $date) {
+                $formattedDate = $date->format('Y-m-d');
+                $revenueDailyLabels[] = $date->format('d/m');
+                $revenueDailyData[] = $revenueByDayAgg[$formattedDate] ?? 0;
+            }
+
+            // Revenue by Month
+            $revenueByMonthAgg = (clone $aggQueryBase)
+                ->selectRaw('DATE_FORMAT(aggregation_date, \'%Y-%m\') as month_year, SUM(total_revenue) as revenue')
+                ->groupBy('month_year')
+                ->orderBy('month_year', 'asc')
+                ->pluck('revenue', 'month_year');
+            $revenueMonthlyLabels = []; $revenueMonthlyData = [];
+            $monthPeriod = CarbonPeriod::create($start->copy()->startOfMonth(), '1 month', $end->copy()->endOfMonth());
+            foreach ($monthPeriod as $date) {
+                $monthYearKey = $date->format('Y-m');
+                $revenueMonthlyLabels[] = $date->format('m/Y');
+                $revenueMonthlyData[] = $revenueByMonthAgg[$monthYearKey] ?? 0;
+            }
+
+            // Order Status
+            $ordersByStatusRaw = (clone $orderStatusBaseQuery)
+                ->selectRaw('status, COUNT(id) as count')
+                ->groupBy('status')
+                ->pluck('count', 'status');
+            $allOrderStatuses = Order::getAllStatuses(); // Assuming this gives a map like ['moi' => 'Mới', ...]
+            $orderStatusLabels = []; $orderStatusData = [];
+            foreach ($allOrderStatuses as $statusKey => $statusName) {
+                $orderStatusLabels[] = $statusName;
+                $orderStatusData[] = $ordersByStatusRaw[$statusKey] ?? 0;
+            }
+
+            return [
+                'revenueDailyLabels' => $revenueDailyLabels,
+                'revenueDailyData' => $revenueDailyData,
+                'revenueMonthlyLabels' => $revenueMonthlyLabels,
+                'revenueMonthlyData' => $revenueMonthlyData,
+                'orderStatusLabels' => $orderStatusLabels,
+                'orderStatusData' => $orderStatusData,
+            ];
+        });
+
+        return response()->json(['success' => true, 'data' => $chartData]);
     }
 }

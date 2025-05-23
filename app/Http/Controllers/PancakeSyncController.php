@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Schema;
 use App\Models\Province;
 use App\Models\District;
 use App\Models\Ward;
+use App\Models\PancakeCategory; // Added this line
 
 class PancakeSyncController extends Controller
 {
@@ -2857,6 +2858,39 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $orderItem->product_info = $itemData;
         }
 
+        // Original fields (or fallback if components don't provide them)
+        $orderItem->pancake_product_id = $itemData['product_id'] ?? $itemData['id'] ?? null; // product_id or id
+        $orderItem->pancake_variation_id = $itemData['variation_id'] ?? $itemData['variant_id'] ?? null; // variation_id or variant_id
+
+        $orderItem->name = $itemData['name'] ?? 'N/A';
+        $orderItem->sku = $itemData['sku'] ?? null;
+        $orderItem->quantity = $itemData['quantity'] ?? 1;
+        $orderItem->price = $itemData['price'] ?? 0;
+        $orderItem->discount_price = $itemData['discount_price'] ?? null; // Price after discount
+        $orderItem->original_price = $itemData['original_price'] ?? $itemData['price'] ?? 0; // Price before discount
+
+        if (Schema::hasColumn('order_items', 'product_info')) {
+            $orderItem->product_info = $itemData; // Store the whole item data for reference
+        }
+        if (Schema::hasColumn('order_items', 'weight')) {
+            $orderItem->weight = $itemData['weight'] ?? 0;
+        }
+        if (Schema::hasColumn('order_items', 'image_url')) {
+             $orderItem->image_url = $itemData['image'] ?? ($itemData['images'][0] ?? null);
+        }
+
+        // Additional fields if they exist in the itemData and columns exist
+        $optionalFields = [
+            'options_text', 'barcode', 'wholesale_price', 'cost_price',
+            'variation_name', 'variation_sku', 'product_name'
+            // 'category_ids' will be part of product_info
+        ];
+
+        foreach ($optionalFields as $field) {
+            if (isset($itemData[$field]) && Schema::hasColumn('order_items', $field)) {
+                $orderItem->{$field} = $itemData[$field];
+            }
+        }
         return $orderItem;
     }
 
@@ -2968,6 +3002,190 @@ private function updateOrderFromPancake(Order $order, array $orderData)
     protected function createOrderFromPancake(array $orderData)
     {
         return $this->createOrderFromPancakeData($orderData);
+    }
+
+    /**
+     * Synchronize product categories from Pancake
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function syncCategories(Request $request)
+    {
+        try {
+            // Increase execution time limit and memory limit
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
+
+            $this->authorize('pancake.sync.categories'); // Updated permission
+
+            // Get API configuration
+            $apiKey = WebsiteSetting::where('key', 'pancake_api_key')->first()->value ?? config('pancake.api_key');
+            $shopId = WebsiteSetting::where('key', 'pancake_shop_id')->first()->value ?? config('pancake.shop_id');
+            $baseUrl = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1'), '/');
+
+            if (empty($apiKey) || empty($shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake.'
+                ], 400);
+            }
+
+            $stats = [
+                'created' => 0,
+                'updated' => 0,
+                'errors' => 0,
+                'total_fetched' => 0,
+                'error_messages' => []
+            ];
+
+            $url = "{$baseUrl}/shops/{$shopId}/categories";
+            
+            Log::info('Attempting to sync Pancake categories.', ['url' => $url, 'shop_id' => $shopId]);
+
+            $response = Http::timeout(120)->get($url, ['api_key' => $apiKey]);
+
+            if (!$response->successful()) {
+                $errorMessage = $response->json()['message'] ?? $response->body();
+                Log::error('Pancake API call for categories failed.', [
+                    'status_code' => $response->status(),
+                    'error' => $errorMessage,
+                    'url' => $url
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => "Lỗi API Pancake: " . $errorMessage
+                ], $response->status());
+            }
+
+            $categoriesData = $response->json();
+            $topLevelCategories = [];
+
+            // Determine the actual array of categories from the response
+            if (isset($categoriesData['data']) && is_array($categoriesData['data'])) {
+                $topLevelCategories = $categoriesData['data'];
+            } elseif (is_array($categoriesData)) {
+                // Check if the root itself is an array of category objects
+                // A simple check could be if the first element has an 'id' and ('text' or 'name')
+                if (!empty($categoriesData) && isset($categoriesData[0]['id']) && (isset($categoriesData[0]['text']) || isset($categoriesData[0]['name']))) {
+                     $topLevelCategories = $categoriesData;
+                } else {
+                     Log::warning('Pancake categories API response is an array but not in the expected format of category objects.', ['response_sample' => array_slice($categoriesData, 0, 1)]);
+                }
+            } else {
+                Log::error('Unexpected Pancake categories API response structure. Not an array or recognized object.', ['response_type' => gettype($categoriesData)]);
+            }
+
+            if (empty($topLevelCategories)) {
+                 Log::info('No top-level categories found or unexpected API response structure.', ['raw_response' => $categoriesData]);
+                 return response()->json([
+                    'success' => true, // Still a success, just no data
+                    'message' => 'Không tìm thấy danh mục nào từ Pancake hoặc định dạng API không đúng.',
+                    'stats' => $stats 
+                ]);
+            }
+            
+            DB::beginTransaction();
+            try {
+                foreach ($topLevelCategories as $categoryData) {
+                    if(is_array($categoryData)) { 
+                        $this->processPancakeCategoryRecursive($categoryData, null, $stats);
+                    } else {
+                        Log::warning('Top level category data is not an array, skipping.', ['category_data' => $categoryData]);
+                        $stats['errors']++;
+                        $stats['error_messages'][] = 'Dữ liệu danh mục cấp cao không hợp lệ.';
+                    }
+                }
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error saving Pancake categories to database.', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Lỗi khi lưu danh mục vào cơ sở dữ liệu: ' . $e->getMessage()
+                ], 500);
+            }
+
+            Log::info('Pancake categories synchronized successfully.', ['stats' => $stats]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Đồng bộ danh mục hoàn tất. Tạo mới: {$stats['created']}, Cập nhật: {$stats['updated']}, Lỗi: {$stats['errors']}",
+                'stats' => $stats
+            ]);
+
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            Log::warning('Unauthorized attempt to sync Pancake categories.', ['user_id' => Auth::id()]);
+            return response()->json(['success' => false, 'message' => 'Bạn không có quyền thực hiện hành động này.'], 403);
+        } catch (\Exception $e) {
+            Log::error('Error syncing Pancake categories.', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Đã xảy ra lỗi trong quá trình đồng bộ danh mục: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Recursively processes a Pancake category and its children.
+     *
+     * @param array $categoryData The category data from Pancake API.
+     * @param string|null $parentIdPancake The Pancake ID of the parent category.
+     * @param array &$stats Statistics array to be updated.
+     * @return void
+     */
+    private function processPancakeCategoryRecursive(array $categoryData, ?string $parentIdPancake, array &$stats)
+    {
+        if (empty($categoryData['id'])) {
+            Log::warning('Skipping category due to missing ID.', ['category_data_name' => $categoryData['text'] ?? 'N/A', 'parent_id' => $parentIdPancake]);
+            $stats['errors']++;
+            $stats['error_messages'][] = 'Bỏ qua danh mục do thiếu ID: ' . ($categoryData['text'] ?? 'Không có tên');
+            return;
+        }
+
+        $pancakeId = (string)$categoryData['id']; 
+        $name = $categoryData['text'] ?? ($categoryData['name'] ?? 'N/A'); // 'text' or 'name' for category name
+
+        $pancakeCategory = PancakeCategory::updateOrCreate(
+            ['pancake_id' => $pancakeId],
+            [
+                'name' => $name,
+                'pancake_parent_id' => $parentIdPancake,
+                'level' => $categoryData['level'] ?? null, 
+                'status' => $categoryData['status'] ?? null,
+                'description' => $categoryData['description'] ?? null,
+                'image_url' => $categoryData['image_url'] ?? null,
+                'api_response' => $categoryData, 
+            ]
+        );
+
+        $stats['total_fetched']++; 
+
+        if ($pancakeCategory->wasRecentlyCreated) {
+            $stats['created']++;
+        } else {
+            if ($pancakeCategory->wasChanged()) {
+                $stats['updated']++;
+            }
+        }
+
+        if (!empty($categoryData['nodes']) && is_array($categoryData['nodes'])) {
+            foreach ($categoryData['nodes'] as $childNode) {
+                if (is_array($childNode)) {
+                     $this->processPancakeCategoryRecursive($childNode, $pancakeId, $stats); 
+                } else {
+                    Log::warning('Child node is not an array, skipping.', ['parent_id' => $pancakeId, 'child_node_type' => gettype($childNode)]);
+                    $stats['errors']++;
+                    $stats['error_messages'][] = 'Dữ liệu nút con không hợp lệ cho danh mục: ' . $name . ' (ID: ' . $pancakeId . ')';
+                }
+            }
+        }
     }
 }
 

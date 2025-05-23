@@ -23,6 +23,7 @@ use Illuminate\Validation\Rule; // Added for Rule::in
 use App\Models\OrderWarehouseView;
 use Illuminate\Support\Str;
 use App\Models\ActivityLog;
+use App\Models\PancakeStaff; // Add this use statement at the top
 
 class OrderController extends Controller
 {
@@ -363,6 +364,11 @@ class OrderController extends Controller
             }
         }
 
+        $assignableUsersList = User::whereNotNull('pancake_uuid')
+                                    ->where('pancake_uuid', '!=', '')
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id');
+
         return view('orders.create', [
             'users' => $users,
             'provinces' => $provinces,
@@ -371,6 +377,7 @@ class OrderController extends Controller
             'shippingProviders' => $shippingProviders,
             'pancakeShops' => $pancakeShops,
             'pancakePages' => $pancakePages,
+            'assignableUsersList' => $assignableUsersList,
         ]);
     }
 
@@ -392,6 +399,7 @@ class OrderController extends Controller
             'notes' => 'nullable|string',
             'additional_notes' => 'nullable|string',
             'user_id' => 'required|exists:users,id',
+            'assigning_seller_id' => 'nullable|exists:users,id',
             'warehouse_id' => 'required|exists:warehouses,id',
             'status' => ['required', 'string', Rule::in($this->validStatuses)],
             'province_code' => 'nullable|string',
@@ -430,6 +438,18 @@ class OrderController extends Controller
         // Add shipping fee to total value
         $totalValue += $validatedData['shipping_fee'] ?? 0;
 
+        $assigningSellerId = $validatedData['assigning_seller_id'] ?? null;
+        $assigningSellerName = null;
+        if ($assigningSellerId) {
+            $seller = User::find($assigningSellerId);
+            if ($seller) {
+                $assigningSellerName = $seller->name;
+            } else {
+                // This case should ideally not happen due to 'exists' validation
+                $assigningSellerId = null; 
+            }
+        }
+
         $order = Order::create([
             'order_code' => $request->input('order_code', 'ORD-' . time() . rand(1000, 9999)),
             'customer_name' => $validatedData['customer_name'],
@@ -445,6 +465,8 @@ class OrderController extends Controller
             'total_value' => $totalValue, // Set the calculated total
             'status' => $validatedData['status'],
             'user_id' => $validatedData['user_id'],
+            'assigning_seller_id' => $assigningSellerId,
+            'assigning_seller_name' => $assigningSellerName,
             'created_by' => Auth::id(),
             'province_code' => $validatedData['province_code'] ?? null,
             'district_code' => $validatedData['district_code'] ?? null,
@@ -490,7 +512,7 @@ class OrderController extends Controller
      */
     public function edit(Order $order)
     {
-        $this->authorize('orders.edit');
+        $this->authorize('orders.edit', $order);
 
         $users = User::whereHas('roles', function ($query) {
             $query->whereIn('name', ['staff', 'manager']);
@@ -532,6 +554,11 @@ class OrderController extends Controller
             }
         }
 
+        $assignableUsersList = User::whereNotNull('pancake_uuid')
+                                     ->where('pancake_uuid', '!=', '')
+                                     ->orderBy('name')
+                                     ->pluck('name', 'id');
+
         return view('orders.edit', [
             'order' => $order,
             'users' => $users,
@@ -543,6 +570,7 @@ class OrderController extends Controller
             'shippingProviders' => $shippingProviders,
             'pancakeShops' => $pancakeShops,
             'pancakePages' => $pancakePages,
+            'assignableUsersList' => $assignableUsersList,
         ]);
     }
 
@@ -567,6 +595,7 @@ class OrderController extends Controller
             'ward_code' => 'nullable|string',
             'street_address' => 'nullable|string',
             'user_id' => 'required|exists:users,id',
+            'assigning_seller_id' => 'nullable|exists:users,id',
             'status' => ['required', 'string', Rule::in($this->validStatuses)],
             'items' => 'required|array|min:1',
             'items.*.code' => 'required|string',
@@ -593,6 +622,23 @@ class OrderController extends Controller
                 $orderData['warehouse_id'] = $request->warehouse_id;
                 $orderData['warehouse_code'] = $warehouse->code;
                 $orderData['pancake_warehouse_id'] = $warehouse->pancake_id ?? null;
+            }
+
+            // Handle assigning_seller_id and assigning_seller_name
+            if ($request->filled('assigning_seller_id')) {
+                $seller = User::find($request->assigning_seller_id);
+                if ($seller) {
+                    $orderData['assigning_seller_id'] = $seller->id;
+                    $orderData['assigning_seller_name'] = $seller->name;
+                } else {
+                    // Validation 'exists:users,id' should prevent this mostly.
+                    $orderData['assigning_seller_id'] = null;
+                    $orderData['assigning_seller_name'] = null;
+                }
+            } else {
+                // If assigning_seller_id is not provided or empty, clear both fields
+                $orderData['assigning_seller_id'] = null;
+                $orderData['assigning_seller_name'] = null;
             }
 
             // Handle shipping provider pancake IDs
@@ -664,10 +710,11 @@ class OrderController extends Controller
     public function assign(Order $order)
     {
         $this->authorize('teams.assign');
-        $users = \App\Models\User::whereHas('roles', function($q) {
-            $q->whereIn('name', ['staff', 'manager']);
-        })->pluck('name', 'id');
-        return view('orders.assign', compact('order', 'users'));
+        $assignableUsersList = User::whereNotNull('pancake_uuid')
+                                    ->where('pancake_uuid', '!=', '')
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id');
+        return view('orders.assign', compact('order', 'assignableUsersList'));
     }
 
     /**
@@ -712,26 +759,37 @@ class OrderController extends Controller
         // Sử dụng quyền 'teams.assign' thay vì 'orders.edit'
         $this->authorize('teams.assign');
 
-        // Validate chỉ user_id
+        // Validate assigning_seller_id against users table
         $validated = $request->validate([
-            'user_id' => 'required|exists:users,id', // Bắt buộc phải có user để gán
+            'assigning_seller_id' => 'required|exists:users,id',
         ]);
 
         // Lấy dữ liệu cũ để log
         $old = $order->toArray();
 
-        // Cập nhật chỉ user_id và status (chuyển về 'assigned' nếu đang là 'pending')
-        $updateData = ['user_id' => $validated['user_id']];
-        if ($order->status === 'pending') {
-            $updateData['status'] = 'assigned';
+        $assigningSellerId = $validated['assigning_seller_id'];
+        $assigningSellerName = null;
+        $seller = User::find($assigningSellerId);
+
+        if ($seller) {
+            $assigningSellerName = $seller->name;
+        } else {
+            // This case should ideally not happen due to 'exists:users,id' validation
+            return redirect()->route('orders.index')->with('error', 'Không tìm thấy nhân viên đã chọn.');
         }
+
+        $updateData = [
+            'assigning_seller_id' => $assigningSellerId,
+            'assigning_seller_name' => $assigningSellerName,
+        ];
+
         $order->update($updateData);
 
         // Ghi log thay đổi assignment
-        LogHelper::log('assign_order', $order, $old, $order->fresh()->toArray());
+        LogHelper::log('assign_seller', $order, $old, $order->fresh()->toArray());
 
         // Trả về trang danh sách với thông báo thành công
-        return redirect()->route('orders.index')->with('success', 'Đã gán đơn hàng thành công!');
+        return redirect()->route('orders.index')->with('success', 'Đã gán nhân viên sale cho đơn hàng thành công!');
     }
 
     // Add the new method here

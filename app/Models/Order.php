@@ -323,11 +323,12 @@ class Order extends Model
     }
 
     /**
-     * Get the Pancake staff member who is assigned to this order.
+     * Get the Pancake staff member assigned to the order.
+     * This uses assigning_seller_id (which stores PancakeStaff->pancake_id) to link.
      */
     public function assignedStaff(): BelongsTo
     {
-        return $this->belongsTo(PancakeStaff::class, 'assigning_seller_id', 'pancake_id');
+        return $this->belongsTo(User::class, 'assigning_seller_id');
     }
 
     public function activities()

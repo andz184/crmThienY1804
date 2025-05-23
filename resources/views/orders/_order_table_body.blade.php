@@ -37,7 +37,9 @@
         {{-- For now, I'll comment it out as it's not in the main index.blade.php header --}}
         {{-- <td>{{ Str::limit($order->product_info, 50) }}</td> --}}
         @canany(['view orders', 'view team orders'])
-            <td>{{ $order->user->name ?? 'Chưa gán' }}</td>
+            <td>
+                {{ $order->assignedStaff->name ?? $order->assigning_seller_name ?? 'Chưa gán' }}
+            </td>
         @endcanany
         <td> {{-- Trạng thái Pancake --}}
             @if($order->pancake_status)
@@ -100,7 +102,7 @@
                 @endif
             </div>
         </td>
-        <td>{{ $order->created_at->format('d/m/Y H:i') }}</td>
+        <td>{{ optional($order->pancake_inserted_at)->format('d/m/Y H:i') }}</td>
         <td>
             <a href="{{ route('orders.show', $order) }}" class="btn btn-info btn-xs" title="Xem chi tiết"><i class="fas fa-eye fa-fw"></i></a>
             @can('calls.manage')

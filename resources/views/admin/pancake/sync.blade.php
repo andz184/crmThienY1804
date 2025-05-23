@@ -61,6 +61,26 @@
         </div>
     </div>
 
+    {{-- New Card for Category Sync --}}
+    <div class="card card-outline card-warning mb-3">
+        <div class="card-header">
+            <h3 class="card-title">Đồng bộ Danh mục Sản phẩm</h3>
+        </div>
+        <div class="card-body">
+            <p>Nhấn nút bên dưới để đồng bộ danh sách danh mục sản phẩm từ Pancake API về hệ thống.</p>
+            <p>Dữ liệu sẽ được cập nhật hoặc tạo mới dựa trên Pancake Category ID.</p>
+            
+            {{-- You might want to display last sync time for categories here too, if you store it --}}
+            {{-- <p class="text-muted">Lần đồng bộ cuối: ...</p> --}}
+
+            <button id="syncCategoriesButton" class="btn btn-warning mb-3">
+                <i class="fas fa-tags"></i> Đồng bộ Danh mục
+            </button>
+
+            <div id="syncCategoriesStatus" class="mt-3"></div> {{-- For displaying status/progress/results --}}
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-md-6">
             <div class="card">
@@ -431,6 +451,64 @@
                             syncEmployeesStatusDiv.innerHTML = '<div class="alert alert-danger">Lỗi kết nối hoặc lỗi xử lý yêu cầu đồng bộ nhân viên.</div>';
                         });
                     }
+                });
+            });
+        }
+
+        // Category sync functionality
+        const syncCategoriesButton = document.getElementById('syncCategoriesButton');
+        const syncCategoriesStatusDiv = document.getElementById('syncCategoriesStatus');
+
+        if (syncCategoriesButton) {
+            syncCategoriesButton.addEventListener('click', function() {
+                syncCategoriesButton.disabled = true;
+                syncCategoriesButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang đồng bộ...';
+                syncCategoriesStatusDiv.innerHTML = '<div class="alert alert-info">Đang gửi yêu cầu đồng bộ danh mục...</div>';
+
+                fetch('{{ route("admin.sync.categories") }}', { // Ensure this route name is correct
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                    }
+                    // body: JSON.stringify({}) // No specific body needed for this sync unless API requires params
+                })
+                .then(response => response.json())
+                .then(data => {
+                    syncCategoriesButton.disabled = false;
+                    syncCategoriesButton.innerHTML = '<i class="fas fa-tags"></i> Đồng bộ Danh mục';
+                    if (data.success) {
+                        let message = data.message || 'Đồng bộ danh mục thành công.';
+                        if (data.stats) {
+                            message += `<br>Tạo mới: ${data.stats.created}, Cập nhật: ${data.stats.updated}, Lỗi: ${data.stats.errors}.`;
+                        }
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Thành công!',
+                            html: message,
+                        });
+                        syncCategoriesStatusDiv.innerHTML = `<div class="alert alert-success">${message}</div>`;
+                        // Optionally, reload the page or update relevant parts if categories are displayed elsewhere
+                        // location.reload(); 
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Lỗi đồng bộ danh mục!',
+                            text: data.message || 'Có lỗi xảy ra trong quá trình đồng bộ danh mục.',
+                        });
+                        syncCategoriesStatusDiv.innerHTML = `<div class="alert alert-danger">Lỗi: ${data.message || 'Unknown error'}</div>`;
+                    }
+                })
+                .catch(error => {
+                    syncCategoriesButton.disabled = false;
+                    syncCategoriesButton.innerHTML = '<i class="fas fa-tags"></i> Đồng bộ Danh mục';
+                    console.error('Category Sync Error:', error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Lỗi kết nối!',
+                        text: 'Không thể kết nối hoặc có lỗi xảy ra khi đồng bộ danh mục.',
+                    });
+                    syncCategoriesStatusDiv.innerHTML = '<div class="alert alert-danger">Lỗi kết nối hoặc lỗi xử lý yêu cầu đồng bộ danh mục.</div>';
                 });
             });
         }
