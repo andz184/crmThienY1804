@@ -54,6 +54,8 @@ Route::prefix('reports')->group(function () {
     // Báo cáo phiên live
     Route::get('live-session', [ReportController::class, 'getLiveSessionReport']);
     Route::get('live-session-detail', [ReportController::class, 'getLiveSessionDetail']);
+    Route::get('live-session-export', [ReportController::class, 'exportLiveSessionReport']);
+    Route::get('check-live-notes', [ReportController::class, 'checkNotesPatterns']);
 
     // Báo cáo thanh toán
     Route::get('payment', [ReportController::class, 'getPaymentReport']);

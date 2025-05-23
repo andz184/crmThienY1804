@@ -33,7 +33,7 @@
                             <h3 class="card-title">Thông tin khách hàng & Địa chỉ</h3>
                         </div>
                         <div class="card-body">
-                            <div class="form-group">
+                            {{-- <div class="form-group">
                                 <label for="customer_name">Tên khách hàng <span class="text-danger">*</span></label>
                                 <input type="text" name="customer_name" id="customer_name" class="form-control @error('customer_name') is-invalid @enderror" required value="{{ old('customer_name', $order->customer_name) }}">
                                 @error('customer_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
@@ -48,7 +48,7 @@
                                 <input type="email" name="customer_email" id="customer_email" class="form-control @error('customer_email') is-invalid @enderror" value="{{ old('customer_email', $order->customer_email) }}">
                                 @error('customer_email') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
-                            <hr>
+                            <hr> --}}
                             <h5>Thông tin hóa đơn</h5>
                             <div class="form-group">
                                 <label for="bill_full_name">Tên trên hóa đơn (Pancake)</label>

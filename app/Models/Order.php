@@ -364,13 +364,13 @@ class Order extends Model
         if (!$this->pancake_status) {
             return 'badge-light';
         }
-        
+
         // Try to get the color from the database first
         $status = PancakeOrderStatus::where('status_code', $this->pancake_status)->first();
         if ($status && $status->color) {
             return 'badge-' . $status->color;
         }
-        
+
         // Fall back to the hardcoded mapping if not found
         return match ($this->pancake_status) {
             self::PANCAKE_STATUS_PENDING => 'badge-warning',
@@ -392,13 +392,13 @@ class Order extends Model
         if (!$this->pancake_status) {
             return 'Không có';
         }
-        
+
         // Try to get the name from the database first
         $status = PancakeOrderStatus::where('status_code', $this->pancake_status)->first();
         if ($status) {
             return $status->name;
         }
-        
+
         // Fall back to the hardcoded mapping if not found
         return match ($this->pancake_status) {
             self::PANCAKE_STATUS_PENDING => 'Chờ xử lý',

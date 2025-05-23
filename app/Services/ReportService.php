@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\CampaignReport;
 use App\Models\ProductGroupReport;
-use App\Models\LiveSessionReport;
 use App\Models\CustomerOrderReport;
 use App\Models\PaymentReport;
 use App\Models\Order;
@@ -179,74 +178,6 @@ class ReportService
         }
 
         return $query->get();
-    }
-
-    /**
-     * Lấy báo cáo phiên live
-     *
-     * @param Carbon|null $startDate
-     * @param Carbon|null $endDate
-     * @param array|null $userIds
-     * @return \Illuminate\Database\Eloquent\Collection
-     */
-    public function getLiveSessionReport($startDate = null, $endDate = null, $userIds = null)
-    {
-        $query = LiveSessionReport::query();
-
-        if ($startDate) {
-            $query->where('start_time', '>=', $startDate);
-        }
-
-        if ($endDate) {
-            $query->where('end_time', '<=', $endDate);
-        }
-
-        // Lọc theo user_id nếu được chỉ định
-        if ($userIds !== null) {
-            $query->whereIn('user_id', $userIds);
-        }
-
-        return $query->get();
-    }
-
-    /**
-     * Lấy chi tiết phiên live
-     *
-     * @param int $sessionId
-     * @return array
-     */
-    public function getLiveSessionDetail($sessionId)
-    {
-        $session = LiveSessionReport::find($sessionId);
-
-        if (!$session) {
-            return [];
-        }
-
-        // Lấy thông tin chi tiết về phiên live
-        $orders = Order::where('live_session_id', $sessionId)
-            ->with(['items', 'customer', 'user'])
-            ->get();
-
-        $productsData = DB::table('orders')
-            ->join('order_items', 'orders.id', '=', 'order_items.order_id')
-            ->join('products', 'order_items.product_id', '=', 'products.id')
-            ->where('orders.live_session_id', $sessionId)
-            ->select(
-                'products.id',
-                'products.name',
-                DB::raw('SUM(order_items.quantity) as total_quantity'),
-                DB::raw('SUM(order_items.price * order_items.quantity) as total_revenue')
-            )
-            ->groupBy('products.id', 'products.name')
-            ->orderByDesc('total_quantity')
-            ->get();
-
-        return [
-            'session' => $session,
-            'orders' => $orders,
-            'products' => $productsData
-        ];
     }
 
     /**
@@ -683,5 +614,18 @@ class ReportService
         }
 
         return $results;
+    }
+
+    /**
+     * Lấy danh sách sản phẩm của một nhóm sản phẩm
+     *
+     * @return \Illuminate\Database\Eloquent\Collection
+     */
+    public function getProductsByGroup($groupName)
+    {
+        return DB::table('products')
+            ->where('group_name', $groupName)
+            ->select('id', 'name', 'sku', 'price')
+            ->get();
     }
 }

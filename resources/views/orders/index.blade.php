@@ -286,8 +286,8 @@
                         @canany(['view orders', 'view team orders'])
                             <th style="min-width: 120px;">Sale</th>
                         @endcanany
-                        <th style="min-width: 150px;">Trạng thái CRM</th>
-                        <th style="min-width: 150px;">Trạng thái Pancake</th>
+                        <th style="min-width: 150px;">Trạng thái đơn hàng</th>
+                        <th style="min-width: 150px;">Trạng thái hệ thống</th>
                         <th style="min-width: 120px;">Ngày tạo</th>
                         <th style="min-width: 160px;">Hành động</th>
                     </tr>

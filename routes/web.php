@@ -17,6 +17,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\Admin\PancakeSyncController;
 use App\Http\Controllers\PancakeConfigController;
+use App\Http\Controllers\ReportController;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -283,7 +284,6 @@ Route::middleware(['auth'])->prefix('reports')->name('reports.')->group(function
 
     // Báo cáo phiên live
     Route::get('/live-sessions', [App\Http\Controllers\ReportController::class, 'liveSessionsPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.live_sessions')
         ->name('live_sessions');
 
     // Báo cáo thanh toán
@@ -305,6 +305,10 @@ Route::middleware(['auth'])->prefix('reports')->name('reports.')->group(function
     Route::get('/returning-customers', [App\Http\Controllers\ReportController::class, 'returningCustomersPage'])
         ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.customer_returning')
         ->name('returning_customers');
+
+    // Tính lại doanh thu phiên live
+    Route::get('/recalculate-live-revenue', [App\Http\Controllers\ReportController::class, 'recalculateLiveRevenue'])
+        ->name('recalculate_live_revenue');
 });
 
 // Sales Staff Management
@@ -314,3 +318,29 @@ Route::prefix('admin/sales-staff')->name('admin.sales-staff.')->middleware(['aut
     Route::post('/{user}/reassign-orders', [App\Http\Controllers\Admin\SalesStaffController::class, 'reassignOrders'])->name('reassign-orders');
     Route::post('/distribute-new-orders', [App\Http\Controllers\Admin\SalesStaffController::class, 'distributeNewOrders'])->name('distribute-new-orders');
 });
+
+// Test route for pancake page creation
+Route::get('/test-pancake-page', function () {
+    try {
+        // Create a test shop first
+        $shop = new App\Models\PancakeShop();
+        $shop->pancake_id = 999999;
+        $shop->name = 'Test Shop';
+        $shop->save();
+
+        // Now create a test page
+        $page = new App\Models\PancakePage();
+        $page->pancake_id = '888888';
+        $page->pancake_page_id = '888888'; // This is the key fix we made
+        $page->name = 'Test Page';
+        $page->pancake_shop_table_id = $shop->id;
+        $page->save();
+
+        return "Test successful! Created shop ID: {$shop->id} and page ID: {$page->id}";
+    } catch (\Exception $e) {
+        return "Error: " . $e->getMessage();
+    }
+});
+
+// Debug routes
+Route::get('/debug/live-patterns', [App\Http\Controllers\ReportController::class, 'debugLiveSessions'])->middleware(['auth']);

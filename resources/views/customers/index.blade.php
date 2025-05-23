@@ -87,11 +87,11 @@
                                     placeholder="Tối thiểu" value="{{ $filters['min_orders'] ?? '' }}">
                                 <div class="input-group-append input-group-prepend">
                                     <span class="input-group-text">đến</span>
-                                </div>
+                </div>
                                 <input type="number" name="max_orders" id="max_orders" class="form-control" 
                                     placeholder="Tối đa" value="{{ $filters['max_orders'] ?? '' }}">
-                            </div>
-                        </div>
+                </div>
+                </div>
                         <div class="form-group">
                             <label>Tổng chi tiêu:</label>
                             <div class="input-group">
@@ -99,26 +99,26 @@
                                     placeholder="Tối thiểu" value="{{ $filters['min_spent'] ?? '' }}">
                                 <div class="input-group-append input-group-prepend">
                                     <span class="input-group-text">đến</span>
-                                </div>
+                </div>
                                 <input type="number" name="max_spent" id="max_spent" class="form-control" 
                                     placeholder="Tối đa" value="{{ $filters['max_spent'] ?? '' }}">
-                            </div>
-                        </div>
-                    </div>
+                </div>
+                </div>
+                </div>
                     <div class="col-md-4">
                         <div class="form-group">
                             <label for="last_order_status">Trạng thái đơn cuối:</label>
                             <select name="last_order_status" id="last_order_status" class="form-control select2">
                                 <option value="">-- Tất cả --</option>
-                                <option value="completed" {{ ($filters['last_order_status'] ?? '') == 'completed' ? 'selected' : '' }}>Hoàn thành</option>
-                                <option value="pending" {{ ($filters['last_order_status'] ?? '') == 'pending' ? 'selected' : '' }}>Chờ xử lý</option>
-                                <option value="assigned" {{ ($filters['last_order_status'] ?? '') == 'assigned' ? 'selected' : '' }}>Đã gán</option>
-                                <option value="calling" {{ ($filters['last_order_status'] ?? '') == 'calling' ? 'selected' : '' }}>Đang gọi</option>
-                                <option value="failed" {{ ($filters['last_order_status'] ?? '') == 'failed' ? 'selected' : '' }}>Thất bại</option>
-                                <option value="canceled" {{ ($filters['last_order_status'] ?? '') == 'canceled' ? 'selected' : '' }}>Đã hủy</option>
-                                <option value="no_answer" {{ ($filters['last_order_status'] ?? '') == 'no_answer' ? 'selected' : '' }}>Không nghe máy</option>
-                            </select>
-                        </div>
+                        <option value="completed" {{ ($filters['last_order_status'] ?? '') == 'completed' ? 'selected' : '' }}>Hoàn thành</option>
+                        <option value="pending" {{ ($filters['last_order_status'] ?? '') == 'pending' ? 'selected' : '' }}>Chờ xử lý</option>
+                        <option value="assigned" {{ ($filters['last_order_status'] ?? '') == 'assigned' ? 'selected' : '' }}>Đã gán</option>
+                        <option value="calling" {{ ($filters['last_order_status'] ?? '') == 'calling' ? 'selected' : '' }}>Đang gọi</option>
+                        <option value="failed" {{ ($filters['last_order_status'] ?? '') == 'failed' ? 'selected' : '' }}>Thất bại</option>
+                        <option value="canceled" {{ ($filters['last_order_status'] ?? '') == 'canceled' ? 'selected' : '' }}>Đã hủy</option>
+                        <option value="no_answer" {{ ($filters['last_order_status'] ?? '') == 'no_answer' ? 'selected' : '' }}>Không nghe máy</option>
+                    </select>
+                </div>
                         <div class="form-group">
                             <label for="tags">Nhãn khách hàng:</label>
                             <select name="tag" id="tags" class="form-control select2">

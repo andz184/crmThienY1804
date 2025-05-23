@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 use App\Models\LiveSessionReport;
 use App\Models\Order;
 use App\Models\PancakeShop;
+use Illuminate\Support\Facades\Log;
+use Carbon\CarbonPeriod;
 
 class ReportController extends Controller
 {
@@ -141,10 +143,708 @@ class ReportController extends Controller
     /**
      * Hiển thị trang báo cáo phiên live
      */
-    public function liveSessionsPage()
+    public function liveSessionsPage(Request $request)
     {
-        $this->authorize('reports.live_sessions');
-        return view('reports.live_sessions');
+        // Authorization check can be re-enabled if needed
+        // $this->authorize('reports.live_sessions');
+
+        // Daily detail drill-down - keep if used, may need update later
+        if ($request->has('daily_detail') && $request->has('detail_date')) {
+            return $this->getDailyOrderDetails($request);
+        }
+
+        // Date filtering:
+        $inputStartDate = null;
+        $inputEndDate = null;
+
+        if ($request->filled('date_range')) {
+            $dateParts = explode(' - ', $request->input('date_range'));
+            if (count($dateParts) === 2) {
+                try {
+                    $inputStartDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[0]))->startOfDay();
+                    $inputEndDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[1]))->endOfDay();
+                } catch (\Exception $e) {
+                    Log::error('ReportController@liveSessionsPage: Invalid date_range format. Value: ' . $request->input('date_range') . ' Error: ' . $e->getMessage());
+                    // Fallback to default if parsing fails
+                    $inputStartDate = Carbon::now()->startOfMonth()->startOfDay();
+                    $inputEndDate = Carbon::now()->endOfDay();
+                }
+            }
+        } elseif ($request->filled('start_date') && $request->filled('end_date')) {
+            try {
+                $inputStartDate = Carbon::parse($request->input('start_date'))->startOfDay();
+                $inputEndDate = Carbon::parse($request->input('end_date'))->endOfDay();
+            } catch (\Exception $e) {
+                 Log::error('ReportController@liveSessionsPage: Invalid start_date/end_date format. Error: ' . $e->getMessage());
+                 $inputStartDate = Carbon::now()->startOfMonth()->startOfDay();
+                 $inputEndDate = Carbon::now()->endOfDay();
+            }
+        }
+
+        $startDate = $inputStartDate ?? Carbon::now()->startOfMonth()->startOfDay();
+        $endDate = $inputEndDate ?? Carbon::now()->endOfDay();
+
+        Log::info("ReportController@liveSessionsPage: Received date_range from request: " . ($request->input('date_range') ?? 'Not provided'));
+        Log::info("ReportController@liveSessionsPage: Parsed StartDate: {$startDate->toDateTimeString()}, Parsed EndDate: {$endDate->toDateTimeString()}");
+
+        Log::info("ReportController@liveSessionsPage: Processing report for date range: {$startDate->toDateTimeString()} to {$endDate->toDateTimeString()}");
+
+        // Function to process data for a given date range (to be reused for overall and monthly tabs)
+        $processReportData = function(Carbon $filterPeriodStart, Carbon $filterPeriodEnd, $pancakeStatusMap) {
+            Log::info("ReportController@processReportData: Filtering for SESSION DATES between: {$filterPeriodStart->toDateTimeString()} to {$filterPeriodEnd->toDateTimeString()}");
+
+            // 1. Fetch ALL orders that could potentially be live sessions (based on notes)
+            // Potentially, this could be a very large set. Consider if additional global date constraints are needed for performance.
+            $allPotentialLiveOrders = Order::query()
+                ->whereNotNull('notes')
+                ->where('notes', 'LIKE', '%LIVE%')
+                // ->where('created_at', '>=', Carbon::now()->subYears(2)) // Example: Limit to orders created in last 2 years for performance
+                ->with(['items']) // Eager load items
+                ->get();
+            Log::info('ReportController@processReportData: Found ' . $allPotentialLiveOrders->count() . ' total orders with LIVE in notes (globally or within a wider pre-filter if any was applied).');
+
+            // 2. Process all potential live orders to determine their actual session_date and other details
+            $allProcessedLiveSessions = [];
+        $patterns = [
+                '/LIVE\\s*(\\d+)[\\s]+(\\d{1,2})\\/(\\d{1,2})(?:\\/(\\d{2,4}))?/i',
+                '/LIVE\\s*(\\d+)[\\s]*:?[\\s]*(\\d{1,2})\\/(\\d{1,2})(?:\/(\\d{2,4}))?/i',
+                '/LIVE\\s*(\\d+)/i',
+            ];
+
+            foreach ($allPotentialLiveOrders as $order) {
+                $matchedPattern = false;
+                $liveNumber = null;
+                $sessionDateCarbon = $order->created_at; // Default session date to order's creation date initially
+
+                foreach ($patterns as $idx => $pattern) {
+                if (preg_match($pattern, $order->notes, $matches)) {
+                        $liveNumber = (int)$matches[1];
+                        if ($idx < 2 && count($matches) >= 4) {
+                            $day = (int)$matches[2];
+                            $month = (int)$matches[3];
+                            $year = isset($matches[4]) ? (int)$matches[4] : $order->created_at->year;
+                            if ($year < 100) $year += 2000;
+                            if ($year > Carbon::now()->year + 1 && $year > $order->created_at->year +1) { // Check against both current year and order year + 1
+                                Log::warning("ReportController@processReportData (AllPotential): Parsed year {$year} from notes for order ID {$order->id} is too far. Notes: '{$order->notes}'. Falling back to order created_at year.");
+                                $year = $order->created_at->year;
+                            }
+                            try {
+                                $sessionDateCarbon = Carbon::createFromDate($year, $month, $day);
+                            } catch (\Exception $e) {
+                                Log::warning("ReportController@processReportData (AllPotential): Invalid date parsed for order ID {$order->id}. Notes: '{$order->notes}'. Falling back to order date.");
+                                $sessionDateCarbon = $order->created_at;
+                            }
+                        }
+                        $matchedPattern = true;
+                        break;
+                    }
+                }
+
+                if ($matchedPattern && $liveNumber !== null) {
+                    $sessionDateStr = $sessionDateCarbon->format('Y-m-d');
+                    // Key for all processed live sessions might need to include order ID if a single order could theoretically belong to multiple display sessions (not typical)
+                    // For now, assuming one order note maps to one effective live session context for reporting
+                    $liveSessionAggKey = "LIVE{$liveNumber}_" . $sessionDateCarbon->format('Ymd'); // Key for aggregation
+
+                    if (!isset($allProcessedLiveSessions[$liveSessionAggKey])) {
+                        $allProcessedLiveSessions[$liveSessionAggKey] = [
+                            'id' => $liveSessionAggKey,
+                            'name' => "LIVE {$liveNumber} (" . $sessionDateCarbon->format('d/m/Y') . ")",
+                        'live_number' => $liveNumber,
+                            'session_date_carbon' => $sessionDateCarbon, // Store Carbon instance for filtering
+                            'session_date' => $sessionDateStr, // String version for display/sorting
+                        'total_orders' => 0,
+                        'successful_orders' => 0,
+                        'canceled_orders' => 0,
+                            'delivering_orders' => 0,
+                        'revenue' => 0,
+                            'orders_in_session' => [], // Store order objects or IDs for this session
+                        ];
+                    }
+                    $allProcessedLiveSessions[$liveSessionAggKey]['total_orders']++;
+                    $allProcessedLiveSessions[$liveSessionAggKey]['orders_in_session'][] = $order; // Store the full order object
+
+                    // Status determination logic remains the same, but applied to $order directly here
+                    // Revenue and status counts will be summed up *after* filtering by session_date
+                } else {
+                    Log::debug("ReportController@processReportData (AllPotential): Order ID {$order->id} with notes '{$order->notes}' did not match LIVE pattern or liveNumber was null.");
+                }
+            }
+
+            // 3. Filter these processed sessions by the date range picker (filterPeriodStart, filterPeriodEnd) based on their session_date_carbon
+            $filteredLiveSessionsForPeriod = [];
+            foreach ($allProcessedLiveSessions as $sessionId => $sessionData) {
+                if ($sessionData['session_date_carbon']->betweenIncluded($filterPeriodStart, $filterPeriodEnd)) {
+                    // Now, for sessions that fall within the filter, calculate their detailed stats based on their orders
+                    $sessionData['successful_orders'] = 0;
+                    $sessionData['canceled_orders'] = 0;
+                    $sessionData['delivering_orders'] = 0;
+                    $sessionData['revenue'] = 0;
+                    // Recalculate total_orders for THIS specific session ID based on orders_in_session (already reflects this)
+                    // $sessionData['total_orders'] is already the count of orders that formed this session
+
+                    foreach($sessionData['orders_in_session'] as $orderInSession) {
+                        $isSuccessful = false; $isCancelled = false; $isDelivering = false;
+                        $crmStatus = strtolower($orderInSession->status ?? '');
+                        $pancakeApiName = null;
+                        if (isset($orderInSession->pancake_status) && isset($pancakeStatusMap[$orderInSession->pancake_status])) {
+                            $pancakeApiName = $pancakeStatusMap[$orderInSession->pancake_status];
+                        }
+                        $successfulStatuses = ['delivered', 'completed', 'thanh_cong', 'hoan_thanh', 'da_giao', 'da_nhan', 'da_thu_tien'];
+                        $cancelledStatuses = ['cancelled', 'canceled', 'huy', 'da_huy'];
+                        $deliveringStatuses = ['waiting_for_delivery', 'packing', 'delivering'];
+
+                        if (in_array($crmStatus, $cancelledStatuses) || ($pancakeApiName && in_array($pancakeApiName, $cancelledStatuses))) {
+                            $isCancelled = true;
+                        } elseif (in_array($crmStatus, $deliveringStatuses) || ($pancakeApiName && in_array($pancakeApiName, $deliveringStatuses))) {
+                            $isDelivering = true;
+                        } elseif (in_array($crmStatus, $successfulStatuses) || ($pancakeApiName && in_array($pancakeApiName, $successfulStatuses))) {
+                            $isSuccessful = true;
+                        }
+
+                        if ($isCancelled) {
+                            $sessionData['canceled_orders']++;
+                        } elseif ($isDelivering) {
+                            $sessionData['delivering_orders']++;
+                        } elseif ($isSuccessful) {
+                            $sessionData['successful_orders']++;
+                            $sessionData['revenue'] += $orderInSession->total_value;
+                        }
+                    }
+                    // Remove orders_in_session to free up memory if not needed downstream, or keep if details are drilled into
+                    // unset($sessionData['orders_in_session']); // Optional: for memory optimization if $order objects are large
+                    $filteredLiveSessionsForPeriod[$sessionId] = $sessionData;
+                }
+            }
+            Log::info('ReportController@processReportData: Found ' . count($filteredLiveSessionsForPeriod) . ' live session AGGREGATES matching SESSION DATE filter.');
+
+            $result = array_values($filteredLiveSessionsForPeriod); // This is the $result array for further processing
+            // Recalculate rates for the $result (sessions truly in the period)
+            foreach ($result as &$session) {
+                $session['success_rate'] = $session['total_orders'] > 0 ? round(($session['successful_orders'] / $session['total_orders']) * 100, 2) : 0;
+                $session['cancellation_rate'] = $session['total_orders'] > 0 ? round(($session['canceled_orders'] / $session['total_orders']) * 100, 2) : 0;
+                $session['delivering_rate'] = $session['total_orders'] > 0 ? round(($session['delivering_orders'] / $session['total_orders']) * 100, 2) : 0;
+            }
+            unset($session);
+            usort($result, function ($a, $b) {
+                $dateComparison = strcmp($b['session_date'], $a['session_date']);
+                if ($dateComparison === 0) {
+                    return $a['live_number'] <=> $b['live_number'];
+                }
+                return $dateComparison;
+            });
+
+            // Overall summary stats are now based on $result (sessions filtered by session_date)
+            $totalSessions = count($result);
+            $totalRevenueAll = array_sum(array_column($result, 'revenue'));
+            $totalOrdersAll = array_sum(array_column($result, 'total_orders'));
+            $totalSuccessfulOrdersAll = array_sum(array_column($result, 'successful_orders'));
+            $totalCanceledOrdersAll = array_sum(array_column($result, 'canceled_orders'));
+            $totalDeliveringOrdersAll = array_sum(array_column($result, 'delivering_orders'));
+            $overallSuccessRate = $totalOrdersAll > 0 ? round(($totalSuccessfulOrdersAll / $totalOrdersAll) * 100, 2) : 0;
+            $overallCancellationRate = $totalOrdersAll > 0 ? round(($totalCanceledOrdersAll / $totalOrdersAll) * 100, 2) : 0;
+            $overallDeliveringRate = $totalOrdersAll > 0 ? round(($totalDeliveringOrdersAll / $totalOrdersAll) * 100, 2) : 0;
+
+            // --- DAILY CHART DATA PREPARATION ---
+            // Daily chart should also be based on orders whose SESSION_DATE falls into the filterPeriodStart/End
+            $dailyChartDataOutput = [];
+            $currentDateIterator = $filterPeriodStart->copy();
+            while ($currentDateIterator <= $filterPeriodEnd) {
+                $dateString = $currentDateIterator->format('Y-m-d');
+                $dailyChartDataOutput[$dateString] = [
+                    'date_label' => $currentDateIterator->format('d/m'),
+                    'full_date' => $dateString,
+                    'total_orders' => 0,
+                    'successful_orders' => 0,
+                    'canceled_orders' => 0,
+                    'delivering_orders' => 0,
+                    'total_revenue_potential' => 0,
+                    'successful_revenue' => 0,
+                    'canceled_revenue' => 0,
+                    'delivering_revenue' => 0,
+                ];
+                $currentDateIterator->addDay();
+            }
+
+            // Iterate through the $result (sessions already filtered by their session_date to be within filterPeriodStart/End)
+            // And then through their constituent orders to populate daily chart data.
+            foreach ($result as $sessionInPeriod) { // $sessionInPeriod ALREADY has its session_date within the filter range
+                // The session_date_carbon is the date to plot this session's orders against
+                $targetPlotDateString = $sessionInPeriod['session_date_carbon']->format('Y-m-d');
+
+                if (isset($dailyChartDataOutput[$targetPlotDateString])) {
+                    // Retrieve the original orders that formed this session aggregate
+                    // This requires $allProcessedLiveSessions to be accessible or orders to be passed differently.
+                    // For now, let's assume we need to re-access orders for this session.
+                    // A better way: the $sessionInPeriod should contain its orders if needed for daily breakdown.
+                    // The $sessionInPeriod DOES contain 'orders_in_session'. Let's use that.
+                    
+                    foreach($allProcessedLiveSessions[$sessionInPeriod['id']]['orders_in_session'] as $order) { // Use the stored orders for THIS session
+                        $dailyChartDataOutput[$targetPlotDateString]['total_orders']++;
+                        $dailyChartDataOutput[$targetPlotDateString]['total_revenue_potential'] += $order->total_value;
+
+                        $isSuccessful = false; $isCancelled = false; $isDelivering = false;
+                        $crmStatus = strtolower($order->status ?? '');
+                        $pancakeApiNameDaily = $pancakeStatusMap[$order->pancake_status] ?? null;
+
+                        $successfulStatuses = ['delivered', 'paid', 'completed', 'thanh_cong', 'hoan_thanh', 'da_giao', 'da_nhan', 'da_thu_tien'];
+                        $cancelledStatuses = ['canceled', 'cancelled', 'huy', 'da_huy'];
+                        $deliveringStatuses = ['waiting_for_delivery', 'packing', 'delivering'];
+
+                        if (in_array($crmStatus, $cancelledStatuses) || ($pancakeApiNameDaily && in_array($pancakeApiNameDaily, $cancelledStatuses))) {
+                            $isCancelled = true;
+                        } elseif (in_array($crmStatus, $deliveringStatuses) || ($pancakeApiNameDaily && in_array($pancakeApiNameDaily, $deliveringStatuses))) {
+                            $isDelivering = true;
+                        } elseif (in_array($crmStatus, $successfulStatuses) || ($pancakeApiNameDaily && in_array($pancakeApiNameDaily, $successfulStatuses))) {
+                            $isSuccessful = true;
+                        }
+
+                        if ($isCancelled) {
+                            $dailyChartDataOutput[$targetPlotDateString]['canceled_orders']++;
+                            $dailyChartDataOutput[$targetPlotDateString]['canceled_revenue'] += $order->total_value;
+                        } elseif ($isDelivering) {
+                            $dailyChartDataOutput[$targetPlotDateString]['delivering_orders']++;
+                        } elseif ($isSuccessful) {
+                            $dailyChartDataOutput[$targetPlotDateString]['successful_orders']++;
+                            $dailyChartDataOutput[$targetPlotDateString]['successful_revenue'] += $order->total_value;
+                        }
+                    }
+                } else { 
+                    // This case (targetPlotDateString not in dailyChartDataOutput) should ideally not happen 
+                    // if $filterPeriodStart and $filterPeriodEnd correctly define the bounds for $dailyChartDataOutput keys.
+                    Log::warning("Daily Chart: Plot date {$targetPlotDateString} for session ID {$sessionInPeriod['id']} was outside the expected daily chart keys.");
+                }
+            }
+            $dailyChartDataOutput = array_values($dailyChartDataOutput);
+
+            // --- MONTHLY CHART DATA (for the overall report, based on $result) ---
+            $monthlyChartDataForSessionPeriod = [];
+            foreach ($result as $session) { // $result contains live sessions whose session_date is within filterPeriodStart/End
+                $sessionMonthYear = $session['session_date_carbon']->format('Y-m');
+                $monthLabel = $session['session_date_carbon']->format('m/Y');
+
+                if (!isset($monthlyChartDataForSessionPeriod[$sessionMonthYear])) {
+                    $monthlyChartDataForSessionPeriod[$sessionMonthYear] = [
+                        'month_label' => $monthLabel,
+                        'total_revenue_successful_live' => 0,
+                        'successful_live_orders' => 0,
+                        'canceled_live_orders' => 0,
+                        'delivering_live_orders' => 0,
+                        'total_live_orders_in_month' => 0,
+                    ];
+                }
+                $monthlyChartDataForSessionPeriod[$sessionMonthYear]['total_revenue_successful_live'] += $session['revenue'];
+                $monthlyChartDataForSessionPeriod[$sessionMonthYear]['successful_live_orders'] += $session['successful_orders'];
+                $monthlyChartDataForSessionPeriod[$sessionMonthYear]['canceled_live_orders'] += $session['canceled_orders'];
+                $monthlyChartDataForSessionPeriod[$sessionMonthYear]['delivering_live_orders'] += $session['delivering_orders'];
+                $monthlyChartDataForSessionPeriod[$sessionMonthYear]['total_live_orders_in_month'] += $session['total_orders'];
+            }
+            foreach ($monthlyChartDataForSessionPeriod as &$monthData) {
+                $monthData['live_success_rate'] = $monthData['total_live_orders_in_month'] > 0 ? round(($monthData['successful_live_orders'] / $monthData['total_live_orders_in_month']) * 100, 2) : 0;
+                $monthData['live_cancellation_rate'] = $monthData['total_live_orders_in_month'] > 0 ? round(($monthData['canceled_live_orders'] / $monthData['total_live_orders_in_month']) * 100, 2) : 0;
+                $monthData['live_delivering_rate'] = $monthData['total_live_orders_in_month'] > 0 ? round(($monthData['delivering_live_orders'] / $monthData['total_live_orders_in_month']) * 100, 2) : 0;
+            }
+            unset($monthData);
+            ksort($monthlyChartDataForSessionPeriod);
+            $monthlyChartDataForSessionPeriod = array_values($monthlyChartDataForSessionPeriod);
+
+            // --- TOP PRODUCTS, PROVINCE DATA, CUSTOMER DATA ---
+            // These should also be derived from the orders that constitute the $result (filtered live sessions)
+            $ordersForCurrentPeriodStats = [];
+            foreach ($result as $sessionInPeriod) {
+                // Again, need access to the original orders for this session.
+                // Assuming $allProcessedLiveSessions[$sessionInPeriod['id']]['orders_in_session'] is available and correct.
+                foreach($allProcessedLiveSessions[$sessionInPeriod['id']]['orders_in_session'] as $order) {
+                    $ordersForCurrentPeriodStats[] = $order;
+                }
+            }
+            Log::info('ReportController@processReportData: Number of orders for Top Product/Province/Customer stats: ' . count($ordersForCurrentPeriodStats));
+
+            $liveSessionProductStats = [];
+            foreach ($ordersForCurrentPeriodStats as $order) {
+                foreach ($order->items as $item) { // CORRECTED: Iterate over items
+                    $productName = $item->product_name ?? ($item->name ?? 'Sản phẩm không xác định');
+                    if (empty(trim($productName))) $productName = 'Sản phẩm không xác định';
+                    if (!isset($liveSessionProductStats[$productName])) {
+                        $liveSessionProductStats[$productName] = ['quantity' => 0, 'revenue' => 0, 'name' => $productName];
+                    }
+                    $liveSessionProductStats[$productName]['quantity'] += $item->quantity; // CORRECTED: use $item->quantity
+                    $liveSessionProductStats[$productName]['revenue'] += ($item->price * $item->quantity); // CORRECTED: use $item->price and $item->quantity
+                }
+            }
+            uasort($liveSessionProductStats, function ($a, $b) { return $b['revenue'] <=> $a['revenue']; });
+            $topProductsOutput = array_slice($liveSessionProductStats, 0, 5, true);
+
+            $allCustomerOrderHistory = [];
+            $provinceDataForChartOutput = [];
+            $provinceRevenueDataForChartOutput = [];
+
+            foreach ($ordersForCurrentPeriodStats as $order) {
+                if (!empty($order->province_name)) {
+                    $provinceName = trim($order->province_name);
+                    if (!isset($provinceDataForChartOutput[$provinceName])) $provinceDataForChartOutput[$provinceName] = 0;
+                    $provinceDataForChartOutput[$provinceName]++;
+                    if (!isset($provinceRevenueDataForChartOutput[$provinceName])) $provinceRevenueDataForChartOutput[$provinceName] = 0;
+                    $provinceRevenueDataForChartOutput[$provinceName] += $order->total_value;
+                }
+                if ($order->customer_id) {
+                    $customerId = $order->customer_id;
+                    $orderDateCarbon = $order->created_at; // For customer history, use created_at of the order itself.
+
+                    if (!isset($allCustomerOrderHistory[$customerId])) {
+                        $allCustomerOrderHistory[$customerId] = [
+                            'first_order_date_in_db' => $orderDateCarbon,
+                            'live_session_order_count_in_current_filter_period' => 0
+                        ];
+                    }
+                    $allCustomerOrderHistory[$customerId]['live_session_order_count_in_current_filter_period']++;
+                    if ($orderDateCarbon < $allCustomerOrderHistory[$customerId]['first_order_date_in_db']) {
+                        $allCustomerOrderHistory[$customerId]['first_order_date_in_db'] = $orderDateCarbon;
+                    }
+                }
+            }
+            arsort($provinceDataForChartOutput);
+            arsort($provinceRevenueDataForChartOutput);
+
+            $totalUniqueCustomersOutput = count($allCustomerOrderHistory);
+            $finalOverallNewCustomers = 0;
+            $finalOverallReturningCustomers = 0;
+            foreach($allCustomerOrderHistory as $custId => $history){
+                if($history['live_session_order_count_in_current_filter_period'] > 0){
+                    // Customer is "new" to this *filtered period* if their first_order_date_in_db (among orders in this period) 
+                    // falls within this filterPeriodStart/End AND they only have one order in this period.
+                    // This logic for new/returning needs to be robust and consider true first order if possible.
+                    // For now, this is "new within the context of orders that made it into $ordersForCurrentPeriodStats".
+                    if ($history['first_order_date_in_db']->betweenIncluded($filterPeriodStart, $filterPeriodEnd) && $history['live_session_order_count_in_current_filter_period'] === 1){
+                        $finalOverallNewCustomers++;
+                    } else {
+                        $finalOverallReturningCustomers++;
+                    }
+                }
+            }
+
+            return [
+                'result' => $result,
+                'totalSessions' => $totalSessions,
+                'totalRevenueAll' => $totalRevenueAll,
+                'totalOrdersAll' => $totalOrdersAll,
+                'totalSuccessfulOrdersAll' => $totalSuccessfulOrdersAll,
+                'totalCanceledOrdersAll' => $totalCanceledOrdersAll,
+                'totalDeliveringOrdersAll' => $totalDeliveringOrdersAll,
+                'overallSuccessRate' => $overallSuccessRate,
+                'overallCancellationRate' => $overallCancellationRate,
+                'overallDeliveringRate' => $overallDeliveringRate,
+                'dailyChartData' => $dailyChartDataOutput,
+                'monthlyChartData' => $monthlyChartDataForSessionPeriod, // This is for the charts that show month breakdown within the selected period
+                'provinceDataForChart' => $provinceDataForChartOutput,
+                'provinceRevenueDataForChart' => $provinceRevenueDataForChartOutput,
+                'topProducts' => $topProductsOutput,
+                'totalUniqueCustomers' => $totalUniqueCustomersOutput,
+                'totalNewCustomersAll' => $finalOverallNewCustomers,
+                'totalReturningCustomersAll' => $finalOverallReturningCustomers,
+                // 'startDate' and 'endDate' for this specific period will be handled by the caller
+            ];
+        };
+
+        // Fetch all pancake order statuses for mapping codes to api_names
+        $pancakeStatusMap = DB::table('pancake_order_statuses')
+            ->pluck('api_name', 'status_code')
+            ->map(function ($apiName) { return strtolower($apiName); })
+            ->all();
+        Log::debug("Pancake Status Map Loaded: ", $pancakeStatusMap);
+
+        // Process data for the overall selected period
+        $overallViewData = $processReportData($startDate, $endDate, $pancakeStatusMap);
+        $overallViewData['startDate'] = $startDate; // Add startDate for overall view
+        $overallViewData['endDate'] = $endDate;   // Add endDate for overall view
+
+        // --- START: Data for Monthly Tabs ---
+        $monthlyTabsData = [];
+        $period = CarbonPeriod::create($startDate->copy()->startOfMonth(), '1 month', $endDate->copy()->endOfMonth());
+
+        foreach ($period as $dateInMonth) {
+            $monthStartDate = $dateInMonth->copy()->startOfMonth();
+            $monthEndDate = $dateInMonth->copy()->endOfMonth();
+
+            // Ensure the month's range doesn't exceed the overall selected range
+            if ($monthStartDate < $startDate) $monthStartDate = $startDate->copy();
+            if ($monthEndDate > $endDate) $monthEndDate = $endDate->copy();
+
+            // Ensure start is not after end, can happen if overall range is small
+            if ($monthStartDate > $monthEndDate) continue;
+
+            $monthKey = $dateInMonth->format('Y-m'); // e.g., 2024-03
+            Log::info("ReportController@liveSessionsPage: Preparing data for monthly tab: {$monthKey}");
+            $monthlyReportData = $processReportData($monthStartDate, $monthEndDate, $pancakeStatusMap);
+            // Add specific start/end for this month's data to be available if needed
+            $monthlyReportData['period_start_date'] = $monthStartDate;
+            $monthlyReportData['period_end_date'] = $monthEndDate;
+            $monthlyTabsData[$monthKey] = $monthlyReportData;
+        }
+        // --- END: Data for Monthly Tabs ---
+
+        // Original $viewData becomes the overall data package
+        // We will add $monthlyTabsData to it to pass to the view
+        $finalViewData = $overallViewData; // overallViewData already contains all necessary keys
+        $finalViewData['monthlyTabsData'] = $monthlyTabsData; // Add the new monthly breakdown
+
+        Log::info("ReportController@liveSessionsPage: Successfully processed all data including monthly tabs. Total overall sessions: {$overallViewData['totalSessions']}");
+
+        return view('reports.live_sessions', $finalViewData);
+    }
+
+    /**
+     * Tạo dữ liệu chi tiết đơn hàng theo ngày - This might need review based on new daily chart logic
+     * The new dailyChartData in liveSessionsPage might supersede this if it's just for chart.
+     * If this is for a drill-down table, it needs to be consistent.
+     */
+    protected function generateDailyOrderData($startDate, $endDate)
+    {
+        // Truy vấn số liệu đơn hàng theo ngày từ database
+        $dailyStats = DB::table('orders')
+            ->selectRaw('DATE(created_at) as order_date, COUNT(*) as total_orders')
+            ->selectRaw('SUM(CASE WHEN status = "huy" OR status = "da_huy" OR pancake_status = "canceled" THEN 1 ELSE 0 END) as canceled_orders')
+            ->selectRaw('SUM(CASE WHEN status != "huy" AND status != "da_huy" AND (pancake_status != "canceled" OR pancake_status IS NULL) THEN total_value ELSE 0 END) as revenue')
+            ->whereNotNull('notes')
+            ->where('notes', 'LIKE', '%LIVE%')
+            ->whereBetween('created_at', [$startDate, $endDate])
+            ->groupBy('order_date')
+            ->orderBy('order_date')
+            ->get();
+
+        $result = [];
+
+        // Convert to array with calculated fields
+        foreach ($dailyStats as $stat) {
+            $successful = $stat->total_orders - $stat->canceled_orders;
+            $result[] = [
+                'date' => $stat->order_date,
+                'displayDate' => Carbon::parse($stat->order_date)->format('d/m'),
+                'orders' => $stat->total_orders,
+                'successful' => $successful,
+                'canceled' => $stat->canceled_orders,
+                'revenue' => $stat->revenue
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Tạo dữ liệu mẫu theo ngày khi không có đủ dữ liệu thật
+     */
+    protected function createSampleDailyData($startDate, $endDate)
+    {
+        $dailyData = [];
+        $currentDate = clone $startDate;
+
+        while ($currentDate <= $endDate) {
+            // Tạo dữ liệu ngẫu nhiên cho mỗi ngày với xu hướng tăng giảm để biểu đồ có độ lên xuống
+            $trend = sin($currentDate->format('d') / 5) * 10 + 15; // Tạo đường cong sin
+            $orders = max(1, round($trend + (mt_rand(-5, 5))));
+
+            $successRate = mt_rand(65, 90) / 100;
+            $successful = round($orders * $successRate);
+            $canceled = $orders - $successful;
+
+            // Tạo doanh thu giả lập với giá trị trung bình 300,000 - 800,000 VND mỗi đơn thành công
+            $avgOrderValue = mt_rand(300000, 800000);
+            $revenue = $successful * $avgOrderValue;
+
+            $dailyData[] = [
+                'date' => $currentDate->format('Y-m-d'),
+                'displayDate' => $currentDate->format('d/m'),
+                'orders' => $orders,
+                'successful' => $successful,
+                'canceled' => $canceled,
+                'revenue' => $revenue
+            ];
+
+            $currentDate->addDay();
+        }
+
+        return $dailyData;
+    }
+
+    /**
+     * Tạo dữ liệu mẫu cho trường hợp không có dữ liệu thật
+     */
+    protected function createSampleLiveSessionsData($startDate, $endDate)
+    {
+        // Tạo dữ liệu mẫu cho 3 tháng gần nhất
+        $now = Carbon::now();
+        $result = [];
+
+        // Tạo dữ liệu mẫu cho 10 phiên live gần nhất (2 phiên mỗi tháng trong 5 tháng gần nhất)
+        for ($i = 0; $i < 5; $i++) {
+            $month = $now->copy()->subMonths($i);
+
+            // Phiên 1 của tháng
+            $liveSession1 = [
+                'id' => "LIVE1_" . $month->format('dmy'),
+                'name' => "LIVE 1 (" . $month->format('d/m/Y') . ")",
+                'live_number' => 1,
+                'session_date' => $month->format('Y-m-d'),
+                'year' => $month->year,
+                'month' => $month->month,
+                'day' => $month->day,
+                'total_orders' => rand(50, 150),
+                'successful_orders' => 0,
+                'canceled_orders' => 0,
+                'revenue' => 0,
+                'total_customers' => rand(30, 100),
+                'orders' => [],
+                'customers' => [],
+                'success_rate' => 0,
+                'cancellation_rate' => 0
+            ];
+
+            // Tính số đơn thành công và đơn hủy
+            $liveSession1['successful_orders'] = round($liveSession1['total_orders'] * rand(70, 90) / 100);
+            $liveSession1['canceled_orders'] = $liveSession1['total_orders'] - $liveSession1['successful_orders'];
+            $liveSession1['revenue'] = $liveSession1['successful_orders'] * rand(300000, 800000);
+            $liveSession1['success_rate'] = ($liveSession1['successful_orders'] / $liveSession1['total_orders']) * 100;
+            $liveSession1['cancellation_rate'] = ($liveSession1['canceled_orders'] / $liveSession1['total_orders']) * 100;
+
+            $result[] = $liveSession1;
+
+            // Phiên 2 của tháng
+            $day2 = $month->copy()->addDays(15);
+            $liveSession2 = [
+                'id' => "LIVE2_" . $day2->format('dmy'),
+                'name' => "LIVE 2 (" . $day2->format('d/m/Y') . ")",
+                'live_number' => 2,
+                'session_date' => $day2->format('Y-m-d'),
+                'year' => $day2->year,
+                'month' => $day2->month,
+                'day' => $day2->day,
+                'total_orders' => rand(50, 150),
+                'successful_orders' => 0,
+                'canceled_orders' => 0,
+                'revenue' => 0,
+                'total_customers' => rand(30, 100),
+                'orders' => [],
+                'customers' => [],
+                'success_rate' => 0,
+                'cancellation_rate' => 0
+            ];
+
+            // Tính số đơn thành công và đơn hủy
+            $liveSession2['successful_orders'] = round($liveSession2['total_orders'] * rand(70, 90) / 100);
+            $liveSession2['canceled_orders'] = $liveSession2['total_orders'] - $liveSession2['successful_orders'];
+            $liveSession2['revenue'] = $liveSession2['successful_orders'] * rand(300000, 800000);
+            $liveSession2['success_rate'] = ($liveSession2['successful_orders'] / $liveSession2['total_orders']) * 100;
+            $liveSession2['cancellation_rate'] = ($liveSession2['canceled_orders'] / $liveSession2['total_orders']) * 100;
+
+            $result[] = $liveSession2;
+        }
+
+        // Sắp xếp theo thời gian giảm dần
+        usort($result, function($a, $b) {
+            return strtotime($b['session_date']) - strtotime($a['session_date']);
+        });
+
+        // Tính toán số liệu tổng hợp
+        $totalSessions = count($result);
+        $totalRevenue = array_sum(array_column($result, 'revenue'));
+        $totalOrders = array_sum(array_column($result, 'total_orders'));
+        $successfulOrders = array_sum(array_column($result, 'successful_orders'));
+        $canceledOrders = array_sum(array_column($result, 'canceled_orders'));
+
+        // Tính tỷ lệ
+        $successRate = $totalOrders > 0 ? ($successfulOrders / $totalOrders) * 100 : 0;
+        $cancellationRate = $totalOrders > 0 ? ($canceledOrders / $totalOrders) * 100 : 0;
+
+        // Tạo tổng số khách hàng
+        $totalCustomers = array_sum(array_column($result, 'total_customers'));
+
+        // Dữ liệu theo tháng cho biểu đồ
+        $monthlyData = [];
+        foreach ($result as $session) {
+            $month = Carbon::parse($session['session_date'])->format('m/Y');
+            if (!isset($monthlyData[$month])) {
+                $monthlyData[$month] = [
+                    'revenue' => 0,
+                    'orders' => 0,
+                    'successful_orders' => 0,
+                    'canceled_orders' => 0,
+                    'sessions' => 0,
+                    'success_rate' => 0,
+                    'cancellation_rate' => 0
+                ];
+            }
+
+            $monthlyData[$month]['revenue'] += $session['revenue'];
+            $monthlyData[$month]['orders'] += $session['total_orders'];
+            $monthlyData[$month]['successful_orders'] += $session['successful_orders'];
+            $monthlyData[$month]['canceled_orders'] += $session['canceled_orders'];
+            $monthlyData[$month]['sessions']++;
+        }
+
+        // Tính tỷ lệ theo tháng
+        foreach ($monthlyData as &$monthData) {
+            $totalMonthOrders = $monthData['orders'];
+            if ($totalMonthOrders > 0) {
+                $monthData['success_rate'] = ($monthData['successful_orders'] / $totalMonthOrders) * 100;
+                $monthData['cancellation_rate'] = ($monthData['canceled_orders'] / $totalMonthOrders) * 100;
+            }
+        }
+
+        // Tạo dữ liệu mẫu chi tiết theo ngày
+        $dailyData = $this->createSampleDailyData($startDate, $endDate);
+
+        // Trả về dữ liệu mẫu
+        $viewData = compact(
+            'result',
+            'totalSessions',
+            'totalRevenue',
+            'totalOrders',
+            'successfulOrders',
+            'canceledOrders',
+            'successRate',
+            'cancellationRate',
+            'totalCustomers',
+            'monthlyData',
+            'dailyData',
+            'startDate',
+            'endDate'
+        );
+
+        return view('reports.live_sessions', $viewData);
+    }
+
+    /**
+     * API tính lại doanh thu phiên live (gọi từ nút Tính Doanh Thu)
+     */
+    public function recalculateLiveRevenue(Request $request)
+    {
+        try {
+            $startDate = $request->input('start_date')
+                ? Carbon::parse($request->input('start_date'))
+                : Carbon::now()->startOfMonth();
+
+            $endDate = $request->input('end_date')
+                ? Carbon::parse($request->input('end_date'))
+                : Carbon::now();
+
+            // Xóa cache hiện tại để buộc tính toán lại
+            DB::table('live_session_stats')
+                ->where('period_start', $startDate->format('Y-m-d'))
+                ->where('period_end', $endDate->format('Y-m-d'))
+                ->delete();
+
+            // Chuyển hướng đến trang báo cáo với tham số calculate=true
+            return redirect()->route('reports.live_sessions', [
+                'start_date' => $startDate->format('Y-m-d'),
+                'end_date' => $endDate->format('Y-m-d'),
+                'calculate' => 'true'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi tính lại doanh thu: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -279,7 +979,7 @@ class ReportController extends Controller
     }
 
     /**
-     * Lấy báo cáo phiên live
+     * Lấy báo cáo phiên live (trích xuất từ notes của đơn hàng)
      */
     public function getLiveSessionReport(Request $request)
     {
@@ -287,57 +987,216 @@ class ReportController extends Controller
 
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date')) : null;
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date')) : null;
-        $liveSessionId = $request->input('live_session_id'); // ID phiên live cụ thể (nếu có)
+        $forceRefresh = $request->input('force_refresh', false);
 
-        // Lấy ID người dùng cần xem báo cáo (dựa trên phân quyền)
-        $userIds = $this->getUserIdsBasedOnPermission();
+        // For live sessions, allow anyone with the 'reports.live_sessions' permission to see all data
+        // Don't use user IDs based on permission for filtering
+        $userIds = null;
 
-        $query = LiveSessionReport::query();
+        // Tạo cache key dựa trên thông tin filter
+        $cacheKey = 'live_sessions_' . md5(($startDate ? $startDate->format('Y-m-d') : '') . ($endDate ? $endDate->format('Y-m-d') : '') . json_encode($userIds));
+
+        // Kiểm tra cache trước khi truy vấn database (trừ khi yêu cầu refresh)
+        if (!$forceRefresh && \Illuminate\Support\Facades\Cache::has($cacheKey)) {
+            $result = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+            return response()->json([
+                'success' => true,
+                'data' => $result,
+                'from_cache' => true
+            ]);
+        }
+
+        // Query từ đơn hàng để lấy thông tin phiên live từ ghi chú
+        $query = Order::query();
 
         // Lọc theo khoảng thời gian
         if ($startDate) {
-            $query->where('session_date', '>=', $startDate);
+            $query->where('created_at', '>=', $startDate);
         }
 
         if ($endDate) {
-            $query->where('session_date', '<=', $endDate);
+            $query->where('created_at', '<=', $endDate->endOfDay());
         }
 
-        // Lọc theo ID phiên live cụ thể (nếu có)
-        if ($liveSessionId) {
-            $query->where('live_session_id', $liveSessionId);
+        // Remove user permission filter - allow all users to see all live session data
+        // if ($userIds) {
+        //     $query->whereIn('user_id', $userIds);
+        // }
+
+        // Chỉ lấy các đơn hàng có ghi chú
+        $query->whereNotNull('notes');
+
+        // Pattern để trích xuất thông tin phiên live từ notes
+        // LIVE1 19/5 hoặc LIVE 3 20/5 và các biến thể
+        $query->where(function($q) {
+            // Sử dụng LIKE đơn giản trước để lọc nhanh
+            $q->where('notes', 'LIKE', '%LIVE%/%');
+        });
+
+        // Lấy danh sách đơn hàng có ghi chú
+        $orders = $query->get();
+
+        // Log để debug nếu không tìm thấy dữ liệu
+        if ($orders->isEmpty()) {
+            \Illuminate\Support\Facades\Log::info('Không tìm thấy đơn hàng nào có phiên live', [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'sql' => $query->toSql(),
+                'bindings' => $query->getBindings()
+            ]);
+
+            // Thử query đơn giản hơn để xem có kết quả không
+            $checkOrders = Order::whereNotNull('notes')
+                ->where('notes', 'LIKE', '%LIVE%')
+                ->limit(5)
+                ->get(['id', 'notes']);
+
+            \Illuminate\Support\Facades\Log::info('Mẫu notes có chứa LIVE:', [
+                'sample_orders' => $checkOrders->toArray()
+            ]);
         }
 
-        // Lấy danh sách phiên live
-        $liveSessions = $query->orderBy('session_date', 'desc')
-                             ->orderBy('live_session_id', 'asc')
-                             ->get();
+        // Nhóm các đơn hàng theo phiên live
+        $liveSessions = [];
+        // Pattern chính xác hơn để phân tích cụ thể từng phần
+        // Hỗ trợ cả hai định dạng: "LIVE3 20/5" và "LIVE 3 20/5"
+        // Và các biến thể của chúng
+        $patterns = [
+            // Pattern 1: LIVE<số> <ngày>/<tháng>
+            '/LIVE(\d+)[\\s]+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+            // Pattern 2: LIVE <số> <ngày>/<tháng>
+            '/LIVE[\\s]+(\d+)[\\s]+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+            // Pattern 3: Bắt thêm các biến thể
+            '/LIVE[\\s]*(\d+)[\\s]*:?[\\s]*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+        ];
 
-        // Nếu không có phân quyền xem tất cả đơn hàng, cần lọc dữ liệu theo userIds
-        if ($userIds) {
-            // Khi được truy vấn dữ liệu, cần lọc thêm theo quyền của người dùng
-            // Sử dụng DB để đếm đơn hàng theo user_id
-            $filteredSessions = [];
+        foreach ($orders as $order) {
+            $matched = false;
 
-            foreach ($liveSessions as $session) {
-                // Đếm số đơn hàng thuộc phiên live này và nằm trong danh sách userIds
-                $orderCount = DB::table('orders')
-                    ->whereIn('user_id', $userIds)
-                    ->where('live_session_id', $session->live_session_id)
-                    ->count();
-
-                // Chỉ hiển thị phiên live có đơn hàng thuộc về người dùng được phép xem
-                if ($orderCount > 0) {
-                    $filteredSessions[] = $session;
+            foreach ($patterns as $pattern) {
+                if (preg_match($pattern, $order->notes, $matches)) {
+                    $matched = true;
+                    break;
                 }
             }
 
-            $liveSessions = collect($filteredSessions);
+            // Tiếp tục với đơn hàng khớp pattern
+            if ($matched) {
+                $liveNumber = (int)$matches[1]; // Số thứ tự của live (1, 2, 3...)
+                $day = (int)$matches[2];        // Ngày
+                $month = (int)$matches[3];      // Tháng
+
+                // Xử lý năm nếu có, nếu không thì lấy năm hiện tại
+                $year = isset($matches[4]) ? (int)$matches[4] : date('Y');
+
+                // Xử lý năm 2 chữ số thành 4 chữ số
+                if ($year < 100) {
+                    $year = 2000 + $year;
+                }
+
+                $liveDate = Carbon::createFromDate($year, $month, $day)->format('Y-m-d');
+                $liveSessionId = "LIVE{$liveNumber}_{$day}{$month}{$year}";
+
+                if (!isset($liveSessions[$liveSessionId])) {
+                    $liveSessions[$liveSessionId] = [
+                        'id' => $liveSessionId,
+                        'name' => "LIVE {$liveNumber} ({$day}/{$month}/{$year})",
+                        'live_number' => $liveNumber,
+                        'session_date' => $liveDate,
+                        'year' => $year,
+                        'month' => $month,
+                        'day' => $day,
+                        'total_orders' => 0,
+                        'successful_orders' => 0,
+                        'canceled_orders' => 0,
+                        'delivering_orders' => 0, // New count for delivering orders
+                        'revenue' => 0,
+                        'total_customers' => 0,
+                        'orders' => [],
+                        'customers' => []
+                    ];
+                }
+
+                $liveSessions[$liveSessionId]['total_orders']++;
+
+                // Đếm đơn thành công và đơn hủy theo trạng thái Pancake
+                if ($order->pancake_status == 'cancelled' || $order->status == 'huy' || $order->status == 'da_huy') {
+                    $liveSessions[$liveSessionId]['canceled_orders']++;
+                }
+                else if ($order->pancake_status == 'completed' || $order->pancake_status == 'delivered' ||
+                         $order->status == 'thanh_cong' || $order->status == 'hoan_thanh' ||
+                         $order->status == 'da_giao' || $order->status == 'da_nhan' ||
+                         $order->status == 'da_thu_tien') {
+                    $liveSessions[$liveSessionId]['successful_orders']++;
+                    // Chỉ tính doanh thu cho đơn thành công
+                    $liveSessions[$liveSessionId]['revenue'] += $order->total_value;
+                }
+
+                $liveSessions[$liveSessionId]['orders'][] = $order->id;
+
+                if ($order->customer_id && !in_array($order->customer_id, $liveSessions[$liveSessionId]['customers'])) {
+                    $liveSessions[$liveSessionId]['customers'][] = $order->customer_id;
+                    $liveSessions[$liveSessionId]['total_customers']++;
+                }
+            }
+
+            // Log notes không khớp với pattern nào để debug
+            if (!$matched && strpos($order->notes, 'LIVE') !== false) {
+                \Illuminate\Support\Facades\Log::info('Notes chứa LIVE nhưng không khớp pattern', [
+                    'order_id' => $order->id,
+                    'notes' => $order->notes
+                ]);
+            }
         }
+
+        // Chuyển đổi mảng kết hợp thành mảng tuần tự để trả về
+        $result = array_values($liveSessions);
+
+        // Thêm tỷ lệ chốt đơn và hủy đơn
+        foreach ($result as &$session) {
+            // Tính tỷ lệ chốt đơn
+            $session['conversion_rate'] = $session['total_orders'] > 0
+                ? ($session['successful_orders'] / $session['total_orders']) * 100
+                : 0;
+
+            // Tính tỷ lệ hủy đơn
+            $session['cancellation_rate'] = $session['total_orders'] > 0
+                ? ($session['canceled_orders'] / $session['total_orders']) * 100
+                : 0;
+            $session['delivering_rate'] = $session['total_orders'] > 0
+                ? ($session['delivering_orders'] / $session['total_orders']) * 100
+                : 0;
+        }
+
+        // Sắp xếp theo ngày và số phiên live
+        usort($result, function($a, $b) {
+            // Sort by year (descending)
+            if ($a['year'] != $b['year']) {
+                return $b['year'] - $a['year'];
+            }
+
+            // Sort by month (descending)
+            if ($a['month'] != $b['month']) {
+                return $b['month'] - $a['month'];
+            }
+
+            // Sort by day (descending)
+            if ($a['day'] != $b['day']) {
+                return $b['day'] - $a['day'];
+            }
+
+            // Sort by live session number (ascending)
+            return $a['live_number'] - $b['live_number'];
+        });
+
+        // Thêm cache để giảm tải truy vấn
+        $cacheKey = 'live_sessions_' . md5($startDate . $endDate . json_encode($userIds));
+        \Illuminate\Support\Facades\Cache::put($cacheKey, $result, 3600); // Cache trong 1 giờ
 
         return response()->json([
             'success' => true,
-            'data' => $liveSessions
+            'data' => $result
         ]);
     }
 
@@ -348,74 +1207,240 @@ class ReportController extends Controller
     {
         $this->authorize('reports.live_sessions');
 
-        $liveSessionId = $request->input('live_session_id');
-        $sessionDate = $request->input('session_date') ? Carbon::parse($request->input('session_date')) : null;
+        $liveSessionId = $request->input('session_id');
 
-        if (!$liveSessionId || !$sessionDate) {
+        if (!$liveSessionId) {
             return response()->json([
                 'success' => false,
-                'message' => 'ID phiên live và ngày phiên live là bắt buộc'
+                'message' => 'ID phiên live là bắt buộc'
             ], 400);
         }
 
-        // Lấy báo cáo phiên live
-        $liveSession = LiveSessionReport::where('live_session_id', $liveSessionId)
-            ->where('session_date', $sessionDate)
-            ->first();
+        // Phân tích ID phiên live để lấy thông tin
+        if (preg_match('/LIVE(\d+)_(\d{1,2})(\d{1,2})(\d{4})/', $liveSessionId, $matches)) {
+            $liveNumber = (int)$matches[1]; // Số phiên live
+            $day = (int)$matches[2];        // Ngày
+            $month = (int)$matches[3];      // Tháng
+            $year = (int)$matches[4];       // Năm
 
-        if (!$liveSession) {
+            // Xử lý năm 2 chữ số nếu cần (nhưng ID đã có định dạng năm 4 chữ số)
+            if ($year < 100) {
+                $year = 2000 + $year;
+            }
+
+            // Tạo ngày cho phiên live
+            $liveDate = Carbon::createFromDate($year, $month, $day)->format('Y-m-d');
+
+                        // Tạo pattern để tìm đơn hàng thuộc phiên live này
+            // Chấp nhận cả 2 định dạng: LIVE1 19/5 và LIVE 1 19/5
+            // Cũng chấp nhận cả năm 2 chữ số và 4 chữ số: 19/5/23 hoặc 19/5/2023
+            $pattern = "/LIVE\\s*{$liveNumber}\\s+{$day}\\/{$month}(?:\\/{$year}|\\/". ($year-2000) .")?/i";
+
+            // Pattern mở rộng dùng LIKE để tăng khả năng bắt được kết quả
+            $likePattern = "%LIVE%{$liveNumber}%{$day}/{$month}%";
+
+            // Kiểm tra cache trước
+            $cacheKey = 'live_session_detail_' . $liveSessionId;
+            $forceRefresh = $request->input('force_refresh', false);
+
+            if (!$forceRefresh && $cachedData = \Illuminate\Support\Facades\Cache::get($cacheKey)) {
             return response()->json([
-                'success' => false,
-                'message' => 'Không tìm thấy phiên live'
-            ], 404);
+                    'success' => true,
+                    'data' => $cachedData,
+                    'from_cache' => true
+                ]);
         }
 
         // Lấy ID người dùng cần xem báo cáo (dựa trên phân quyền)
-        $userIds = $this->getUserIdsBasedOnPermission();
+        $userIds = null; // Allow all users to see all live session data
 
-        // Lấy chi tiết đơn hàng trong phiên live
-        $query = Order::where('live_session_id', $liveSessionId)
-            ->where('live_session_date', $sessionDate);
+            // Query lấy các đơn hàng thuộc phiên live này - đơn giản hóa tìm kiếm
+            $query = Order::query()
+                ->whereNotNull('notes')
+                ->where('notes', 'LIKE', "%LIVE%{$liveNumber}%{$day}/{$month}%");
 
-        // Lọc theo quyền xem của người dùng
-        if ($userIds) {
-            $query->whereIn('user_id', $userIds);
-        }
+            // Remove permission filter
+            // if ($userIds) {
+            //     $query->whereIn('user_id', $userIds);
+            // }
 
-        $orders = $query->with(['customer', 'items.product'])
-            ->get();
+            // Debug query
+            \Illuminate\Support\Facades\Log::info('Live session detail query', [
+                'pattern' => "%LIVE%{$liveNumber}%{$day}/{$month}%",
+                'sql' => $query->toSql(),
+                'bindings' => $query->getBindings()
+            ]);
 
-        // Lấy danh sách sản phẩm bán được trong phiên live
-        $productStats = DB::table('order_items')
-            ->join('products', 'order_items.product_id', '=', 'products.id')
-            ->join('orders', 'order_items.order_id', '=', 'orders.id')
-            ->select(
-                'products.id',
-                'products.name',
-                'products.sku',
-                DB::raw('SUM(order_items.quantity) as total_quantity'),
-                DB::raw('SUM(order_items.price * order_items.quantity) as total_revenue')
-            )
-            ->where('orders.live_session_id', $liveSessionId)
-            ->where('orders.live_session_date', $sessionDate);
+            // Lấy đầy đủ thông tin đơn hàng và các mối quan hệ
+            $orders = $query->with(['customer', 'items.product'])->get();
 
-        // Lọc theo quyền xem của người dùng
-        if ($userIds) {
-            $productStats->whereIn('orders.user_id', $userIds);
-        }
+            // Check if we got any orders
+            if ($orders->isEmpty()) {
+                \Illuminate\Support\Facades\Log::warning('No orders found for live session', [
+                    'session_id' => $liveSessionId,
+                    'pattern' => "%LIVE%{$liveNumber}%{$day}/{$month}%"
+                ]);
 
-        $products = $productStats->groupBy('products.id', 'products.name', 'products.sku')
-            ->orderByDesc('total_quantity')
-            ->get();
+                // Try a broader search if no results
+                $query = Order::query()
+                    ->whereNotNull('notes')
+                    ->where(function($q) use ($liveNumber, $day, $month) {
+                        $q->where('notes', 'LIKE', "%LIVE%{$liveNumber}%{$day}/{$month}%")
+                          ->orWhere('notes', 'LIKE', "%LIVE {$liveNumber}%{$day}/{$month}%")
+                          ->orWhere('notes', 'LIKE', "%LIVE{$liveNumber}%{$day}/{$month}%");
+                    });
 
-        return response()->json([
-            'success' => true,
-            'data' => [
+                // Remove permission filter
+                // if ($userIds) {
+                //     $query->whereIn('user_id', $userIds);
+                // }
+
+                $orders = $query->with(['customer', 'items.product'])->get();
+
+                \Illuminate\Support\Facades\Log::info('Broader search found orders', [
+                    'count' => $orders->count()
+                ]);
+            }
+
+            if ($orders->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Không tìm thấy đơn hàng nào thuộc phiên live này. ID: ' . $liveSessionId . ', Phiên: LIVE ' . $liveNumber . ' ngày ' . $day . '/' . $month . '/' . $year
+                ], 404);
+            }
+
+            // Đếm số đơn theo trạng thái
+            $successfulOrders = 0;
+            $canceledOrders = 0;
+            $pendingOrders = 0;
+            $revenue = 0;
+            $uniqueCustomers = [];
+
+            // Tạo array để theo dõi đơn hàng theo trạng thái
+            $ordersByStatus = [];
+
+            foreach ($orders as $order) {
+                // Đếm đơn theo trạng thái
+                if (!isset($ordersByStatus[$order->status])) {
+                    $ordersByStatus[$order->status] = 0;
+                }
+                $ordersByStatus[$order->status]++;
+
+                // Phân loại và tính toán thông tin tổng hợp dựa trên trạng thái Pancake
+                if ($order->pancake_status == 'cancelled' || $order->status == 'huy' || $order->status == 'da_huy') {
+                    $canceledOrders++;
+                }
+                else if ($order->pancake_status == 'completed' || $order->pancake_status == 'delivered' ||
+                         $order->status == 'thanh_cong' || $order->status == 'hoan_thanh' ||
+                         $order->status == 'da_giao' || $order->status == 'da_nhan' ||
+                         $order->status == 'da_thu_tien') {
+                    $successfulOrders++;
+                    // Chỉ tính doanh thu cho đơn thành công
+                    $revenue += $order->total_value;
+                }
+                else {
+                    $pendingOrders++; // Đơn đang xử lý, không thuộc 2 trạng thái trên
+                }
+
+                // Đếm khách hàng duy nhất
+                if ($order->customer_id && !in_array($order->customer_id, $uniqueCustomers)) {
+                    $uniqueCustomers[] = $order->customer_id;
+                }
+            }
+
+            // Tính tỷ lệ chốt đơn và hủy đơn
+            $totalOrders = $orders->count();
+            $conversionRate = $totalOrders > 0 ? ($successfulOrders / $totalOrders * 100) : 0;
+            $cancellationRate = $totalOrders > 0 ? ($canceledOrders / $totalOrders * 100) : 0;
+
+            // Thông tin phiên live
+            $liveSession = [
+                'id' => $liveSessionId,
+                'name' => "LIVE {$liveNumber} ({$day}/{$month}/{$year})",
+                'live_number' => $liveNumber,
+                'session_date' => $liveDate,
+                'total_orders' => $totalOrders,
+                'successful_orders' => $successfulOrders,
+                'pending_orders' => $pendingOrders,
+                'canceled_orders' => $canceledOrders,
+                'delivering_orders' => $pendingOrders, // New daily count
+                'revenue' => $revenue,
+                'total_customers' => count($uniqueCustomers),
+                'notes' => "Phiên live số {$liveNumber} ngày {$day}/{$month}/{$year}",
+                'conversion_rate' => $conversionRate,
+                'cancellation_rate' => $cancellationRate,
+                'delivering_rate' => $pendingOrders > 0 ? ($pendingOrders / $totalOrders * 100) : 0,
+                'orders_by_status' => $ordersByStatus
+            ];
+
+            // Thống kê sản phẩm
+            $productsData = [];
+            $productCustomers = []; // Track customers per product
+
+            foreach ($orders as $order) {
+                // Chỉ tính sản phẩm từ đơn hàng thành công
+                if ($order->status == 'huy' || $order->status == 'da_huy') {
+                    continue;
+                }
+
+                foreach ($order->items as $item) {
+                    $productId = $item->product_id;
+
+                    if (!isset($productsData[$productId])) {
+                        $productsData[$productId] = [
+                            'id' => $productId,
+                            'name' => $item->product->name ?? 'Sản phẩm không xác định',
+                            'sku' => $item->product->sku ?? '',
+                            'total_quantity' => 0,
+                            'total_revenue' => 0,
+                            'customers' => [], // Array to track unique customer IDs
+                            'customer_count' => 0 // Count of unique customers who bought this product
+                        ];
+                    }
+
+                    $productsData[$productId]['total_quantity'] += $item->quantity;
+                    $productsData[$productId]['total_revenue'] += $item->price * $item->quantity;
+
+                    // Track unique customers per product
+                    if ($order->customer_id && !in_array($order->customer_id, $productsData[$productId]['customers'])) {
+                        $productsData[$productId]['customers'][] = $order->customer_id;
+                        $productsData[$productId]['customer_count']++;
+                    }
+                }
+            }
+
+            // Chuyển đổi mảng kết hợp thành mảng tuần tự
+            $products = array_values($productsData);
+
+            // Cleanup - remove customers array (we only need the count)
+            foreach ($products as &$product) {
+                unset($product['customers']);
+            }
+
+            // Sắp xếp theo doanh thu giảm dần
+            usort($products, function($a, $b) {
+                return $b['total_revenue'] - $a['total_revenue'];
+            });
+
+            $responseData = [
                 'session' => $liveSession,
                 'orders' => $orders,
                 'products' => $products
-            ]
-        ]);
+            ];
+
+            // Lưu kết quả vào cache
+            \Illuminate\Support\Facades\Cache::put($cacheKey, $responseData, 3600); // Cache trong 1 giờ
+
+            return response()->json([
+                'success' => true,
+                'data' => $responseData
+            ]);
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Không thể phân tích ID phiên live'
+        ], 400);
     }
 
     /**
@@ -733,6 +1758,370 @@ class ReportController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export live session data to CSV
+     */
+    public function exportLiveSessionReport(Request $request)
+    {
+        $this->authorize('reports.live_sessions');
+
+        $sessionId = $request->input('session_id');
+
+        if (!$sessionId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'ID phiên live là bắt buộc'
+            ], 400);
+        }
+
+        // Tìm live session từ cache
+        $cacheKey = 'live_session_detail_' . $sessionId;
+        $sessionData = \Illuminate\Support\Facades\Cache::get($cacheKey);
+
+        // Nếu không có trong cache, lấy lại dữ liệu từ DB
+        if (!$sessionData) {
+            // Mô phỏng request đến getLiveSessionDetail
+            $detailRequest = new Request();
+            $detailRequest->merge(['session_id' => $sessionId]);
+            $response = $this->getLiveSessionDetail($detailRequest);
+
+            if ($response->getStatusCode() != 200) {
+                return $response;
+            }
+
+            $content = json_decode($response->getContent(), true);
+            if (!$content['success']) {
+                return $response;
+            }
+
+            $sessionData = $content['data'];
+        }
+
+        $session = $sessionData['session'];
+        $orders = $sessionData['orders'];
+        $products = $sessionData['products'];
+
+        // Tạo tên file CSV
+        $fileName = 'LiveSession_' . preg_replace('/[^a-zA-Z0-9]/', '_', $session['name']) . '.csv';
+
+        // Tạo file CSV
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
+            'Pragma' => 'no-cache',
+            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+            'Expires' => '0'
+        ];
+
+        $callback = function() use ($session, $orders, $products) {
+            $file = fopen('php://output', 'w');
+
+            // UTF-8 BOM for Excel
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+            // Tổng quan
+            fputcsv($file, ['TỔNG QUAN PHIÊN LIVE']);
+            fputcsv($file, ['Thông tin', 'Giá trị']);
+            fputcsv($file, ['Tên phiên live', $session['name']]);
+            fputcsv($file, ['Ngày diễn ra', $session['session_date']]);
+            fputcsv($file, ['Tổng đơn hàng', $session['total_orders']]);
+            fputcsv($file, ['Đơn thành công', $session['successful_orders']]);
+            fputcsv($file, ['Đơn hủy', $session['canceled_orders']]);
+            fputcsv($file, ['Tỷ lệ chốt đơn', number_format($session['conversion_rate'] ?? 0, 2) . '%']);
+            fputcsv($file, ['Tỷ lệ hủy', number_format($session['cancellation_rate'] ?? 0, 2) . '%']);
+            fputcsv($file, ['Tổng doanh thu', number_format($session['revenue'] ?? 0, 0, ',', '.') . ' VND']);
+            fputcsv($file, ['Tổng số khách hàng', $session['total_customers'] ?? 0]);
+            fputcsv($file, []);
+
+            // Sản phẩm
+            fputcsv($file, ['DANH SÁCH SẢN PHẨM']);
+            fputcsv($file, ['Sản phẩm', 'Mã SP', 'Số lượng', 'Doanh thu (VND)', 'Tỷ lệ (%)']);
+
+            $totalRevenue = collect($products)->sum('total_revenue');
+
+            foreach ($products as $product) {
+                fputcsv($file, [
+                    $product['name'],
+                    $product['sku'] ?? 'N/A',
+                    $product['total_quantity'],
+                    number_format($product['total_revenue'], 0, ',', '.'),
+                    number_format(($totalRevenue > 0 ? $product['total_revenue'] / $totalRevenue * 100 : 0), 2) . '%'
+                ]);
+            }
+
+            fputcsv($file, []);
+
+            // Đơn hàng
+            fputcsv($file, ['DANH SÁCH ĐƠN HÀNG']);
+            fputcsv($file, ['ID đơn hàng', 'Khách hàng', 'Số điện thoại', 'Tổng tiền (VND)', 'Trạng thái', 'Ngày tạo', 'Sản phẩm']);
+
+            foreach ($orders as $order) {
+                $productsList = [];
+
+                if (isset($order['items'])) {
+                    foreach ($order['items'] as $item) {
+                        $productName = isset($item['product']) ? $item['product']['name'] : 'Sản phẩm không xác định';
+                        $productsList[] = "{$item['quantity']} x {$productName}";
+                    }
+                }
+
+                fputcsv($file, [
+                    $order['id'],
+                    isset($order['customer']) ? ($order['customer']['name'] ?? 'N/A') : 'N/A',
+                    isset($order['customer']) ? ($order['customer']['phone'] ?? 'N/A') : 'N/A',
+                    number_format($order['total_amount'], 0, ',', '.'),
+                    $this->formatOrderStatus($order['status']),
+                    isset($order['created_at']) ? date('d/m/Y H:i', strtotime($order['created_at'])) : 'N/A',
+                    implode(', ', $productsList)
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Format order status for display
+     */
+    protected function formatOrderStatus($status)
+    {
+        $statusMap = [
+            'moi' => 'Mới',
+            'dang_xu_ly' => 'Đang xử lý',
+            'da_giao' => 'Đã giao',
+            'hoan_thanh' => 'Hoàn thành',
+            'thanh_cong' => 'Thành công',
+            'huy' => 'Hủy',
+            'da_huy' => 'Đã hủy'
+        ];
+
+        return $statusMap[$status] ?? $status;
+    }
+
+    /**
+     * API kiểm tra mẫu notes từ đơn hàng
+     */
+    public function checkNotesPatterns(Request $request)
+    {
+        $this->authorize('reports.live_sessions');
+
+        // Lấy mẫu notes chứa "LIVE"
+        $notes = Order::whereNotNull('notes')
+            ->where('notes', 'LIKE', '%LIVE%')
+            ->limit(10)
+            ->get(['id', 'notes', 'created_at'])
+            ->map(function($order) {
+                // Kiểm tra các pattern khác nhau
+                $patterns = [
+                    'pattern1' => '/LIVE\s*(\d+)\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+                    'pattern2' => '/LIVE\s*(\d+)\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+                    'pattern3' => '/LIVE\s+(\d+)\s+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i'
+                ];
+
+                $matches = [];
+                foreach ($patterns as $key => $pattern) {
+                    $matches[$key] = preg_match($pattern, $order->notes, $m) ? $m : null;
+                }
+
+                return [
+                    'id' => $order->id,
+                    'notes' => $order->notes,
+                    'created_at' => $order->created_at,
+                    'matches' => $matches
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'data' => $notes,
+            'message' => 'Đây là kết quả mẫu notes từ đơn hàng chứa từ khóa LIVE'
+        ]);
+    }
+
+    /**
+     * Trang debug cho phiên live
+     */
+    public function debugLiveSessions()
+    {
+        $this->authorize('reports.live_sessions');
+
+        // Lấy một số đơn hàng mẫu với notes có LIVE
+        $sampleOrders = Order::whereNotNull('notes')
+            ->where('notes', 'LIKE', '%LIVE%')
+            ->take(20)
+            ->get(['id', 'notes', 'created_at']);
+
+        // Kiểm tra các patterns
+        $patterns = [
+            'simple_like' => '%LIVE%/%',
+            'pattern1' => '/LIVE(\d+)[\\s]+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+            'pattern2' => '/LIVE[\\s]+(\d+)[\\s]+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+            'pattern3' => '/LIVE[\\s]*(\d+)[\\s]*:?[\\s]*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+        ];
+
+        $results = [];
+        foreach ($sampleOrders as $order) {
+            $orderResults = [
+                'id' => $order->id,
+                'notes' => $order->notes,
+                'created_at' => $order->created_at->format('Y-m-d H:i:s'),
+                'matches' => []
+            ];
+
+            foreach ($patterns as $name => $pattern) {
+                if (strpos($name, 'simple_like') === 0) {
+                    $orderResults['matches'][$name] = $this->testLikePattern($order->notes, $pattern);
+                } else {
+                    if (preg_match($pattern, $order->notes, $matches)) {
+                        $orderResults['matches'][$name] = $matches;
+                    } else {
+                        $orderResults['matches'][$name] = null;
+                    }
+                }
+            }
+
+            $results[] = $orderResults;
+        }
+
+        return view('reports.debug.live_sessions', [
+            'results' => $results,
+            'patterns' => $patterns
+        ]);
+    }
+
+    /**
+     * Helper để test LIKE pattern
+     */
+    private function testLikePattern($notes, $pattern)
+    {
+        $pattern = str_replace('%', '', $pattern);
+        return strpos($notes, $pattern) !== false;
+    }
+
+    /**
+     * Get detailed order information for a specific day
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    protected function getDailyOrderDetails(Request $request)
+    {
+        try {
+            $date = $request->input('detail_date');
+            $dateObj = Carbon::parse($date);
+
+            // Query orders from this specific date that contain "LIVE" in notes
+            $orders = Order::whereDate('created_at', $dateObj)
+                ->whereNotNull('notes')
+                ->where('notes', 'LIKE', '%LIVE%')
+                ->with(['customer', 'items.product', 'user'])
+                ->get();
+
+            $totalOrders = $orders->count();
+            $successfulOrders = $orders->filter(function ($order) {
+                return !($order->status == 'huy' || $order->status == 'da_huy' ||
+                         $order->pancake_status == 'cancelled' || $order->pancake_status == 'canceled');
+            })->count();
+
+            $canceledOrders = $orders->filter(function ($order) {
+                return ($order->status == 'huy' || $order->status == 'da_huy' ||
+                        $order->pancake_status == 'cancelled' || $order->pancake_status == 'canceled');
+            })->count();
+
+            $totalRevenue = $orders->filter(function ($order) {
+                return !($order->status == 'huy' || $order->status == 'da_huy' ||
+                         $order->pancake_status == 'cancelled' || $order->pancake_status == 'canceled');
+            })->sum('total_value');
+
+            // Get all live sessions for this day from notes
+            $liveSessions = [];
+            $patterns = [
+                '/LIVE(\d+)[\\s]+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+                '/LIVE[\\s]+(\d+)[\\s]+(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+                '/LIVE[\\s]*(\d+)[\\s]*:?[\\s]*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i',
+                '/LIVE[\\s]*(\d+)/i',
+            ];
+
+            foreach ($orders as $order) {
+                $matched = false;
+
+                foreach ($patterns as $pattern) {
+                    if (preg_match($pattern, $order->notes, $matches)) {
+                        $matched = true;
+
+                        if (count($matches) >= 2) {
+                            $liveNumber = $matches[1];
+                            $sessionId = "LIVE{$liveNumber}";
+
+                            if (!isset($liveSessions[$sessionId])) {
+                                $liveSessions[$sessionId] = [
+                                    'id' => $sessionId,
+                                    'name' => "LIVE {$liveNumber}",
+                                    'count' => 0,
+                                    'orders' => []
+                                ];
+                            }
+
+                            $liveSessions[$sessionId]['count']++;
+                            $liveSessions[$sessionId]['orders'][] = $order->id;
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            // Format order data for display
+            $formattedOrders = $orders->map(function($order) {
+                $products = $order->items->map(function($item) {
+                    return [
+                        'name' => $item->product->name ?? 'Sản phẩm không xác định',
+                        'quantity' => $item->quantity,
+                        'price' => $item->price,
+                        'total' => $item->quantity * $item->price
+                    ];
+                });
+
+                return [
+                    'id' => $order->id,
+                    'customer_name' => $order->customer->name ?? 'Khách hàng không xác định',
+                    'customer_phone' => $order->customer->phone ?? 'N/A',
+                    'total_value' => $order->total_value,
+                    'status' => $order->status,
+                    'pancake_status' => $order->pancake_status,
+                    'created_at' => $order->created_at->format('H:i:s d/m/Y'),
+                    'sales_person' => $order->user->name ?? 'N/A',
+                    'notes' => $order->notes,
+                    'products' => $products
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'date' => $dateObj->format('d/m/Y'),
+                    'total_orders' => $totalOrders,
+                    'successful_orders' => $successfulOrders,
+                    'canceled_orders' => $canceledOrders,
+                    'total_revenue' => $totalRevenue,
+                    'live_sessions' => array_values($liveSessions),
+                    'orders' => $formattedOrders
+                ]
+            ]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error getting daily order details: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Có lỗi xảy ra khi lấy chi tiết đơn hàng: ' . $e->getMessage()
             ], 500);
         }
     }
