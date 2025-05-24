@@ -525,6 +525,15 @@ class PancakeSyncController extends Controller
             }
         }
 
+        // Parse live session information from notes
+        if (!empty($orderData['note'])) {
+
+            $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
+            if ($liveSessionInfo) {
+                $order->live_session_info = json_encode($liveSessionInfo);
+            }
+        }
+
         $order->save();
 
         // Tạo các item của đơn hàng với hỗ trợ cấu trúc nâng cao
@@ -1132,6 +1141,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             }
         }
 
+        // Parse and update live session information from notes
+        if (!empty($orderData['note'])) {
+            $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
+            if ($liveSessionInfo) {
+                $order->live_session_info = json_encode($liveSessionInfo);
+            }
+        }
+
         $order->save();
 
         return [
@@ -1414,9 +1431,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             ]);
 
             // Nếu có startDateTime và endDateTime thì dùng luôn (đồng bộ nhóm ngày)
-            $startTimestamp = $request->input('startDateTime');
 
-            $endTimestamp = ''.$request->input('endDateTime').'';
             $dateForCacheKey = null;
             $date = null;
 
@@ -1448,7 +1463,9 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
                     // Set timestamps for the API request
                     // These timestamps will be used to filter orders by created_at in Pancake
+                    $startTimestamp = $request->input('startDateTime');
 
+            $endTimestamp = ''.$request->input('endDateTime').'';
 
                     Log::info('Parsed date for sync', [
                         'input_date' => $dateValue,
@@ -1515,6 +1532,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'page_size' => 100
             ];
 
+            dd($endTimestamp);
             // Add date filtering parameters if provided
             if ($startTimestamp) {
                 $apiParams['startDateTime'] = $startTimestamp;
@@ -3153,6 +3171,46 @@ public function syncCategories(Request $request)
         }
     }
 
+    /**
+     * Parse live session information from order notes
+     *
+     * @param string|null $notes
+     * @return array|null
+     */
+    private function parseLiveSessionInfo(?string $notes): ?array
+    {
+        if (empty($notes)) {
+            return null;
+        }
+
+        // Pattern to match "LIVE X DD/MM" or "LIVE X DD/MM/YY" or "LIVE X DD/MM/YYYY"
+        $pattern = '/LIVE\s*(\d+)\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i';
+
+        if (preg_match($pattern, $notes, $matches)) {
+            $liveNumber = $matches[1];
+            $day = $matches[2];
+            $month = $matches[3];
+            $year = isset($matches[4]) ? $matches[4] : null;
+
+            // If year is not provided or is 2-digit
+            if (!$year) {
+                $year = date('Y');
+            } elseif (strlen($year) == 2) {
+                $year = '20' . $year;
+            }
+
+            // Validate date
+            if (checkdate($month, $day, (int)$year)) {
+                return [
+                    'live_number' => $liveNumber,
+                    'session_date' => sprintf('%s-%02d-%02d', $year, $month, $day),
+                    'original_text' => trim($matches[0])
+                ];
+            }
+        }
+
+        return null;
+    }
 
 }
 

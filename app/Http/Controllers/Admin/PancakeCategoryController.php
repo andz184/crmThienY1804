@@ -19,111 +19,216 @@ class PancakeCategoryController extends Controller
      */
     public function syncCategories(Request $request)
     {
-        $this->authorize('settings.manage'); // Ensure user has permission
-
-        $apiKey = config('pancake.api_key');
-        $shopId = config('pancake.shop_id'); // Assuming categories are shop-specific
-        $baseUri = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1/'), '/');
-
-        if (empty($apiKey) || empty($shopId)) {
-            Log::error('Pancake API key or Shop ID is not configured for category sync.');
-            return redirect()->route('admin.sync.index')->with('error', 'Chưa cấu hình API key hoặc Shop ID của Pancake.');
-        }
-
-        // Determine the API endpoint for categories
-        // Based on common Pancake API patterns, this is a likely endpoint.
-        // Please verify with official documentation if this is incorrect.
-        $endpoint = "{$baseUri}/shops/{$shopId}/categories?api_key={$apiKey}";
-        
-        Log::info("Pancake Category Sync: Fetching categories from {$endpoint}");
-
         try {
-            $response = Http::get($endpoint);
-            $data = $response->json();
+            // Increase execution time limit and memory limit
+            set_time_limit(7200);
+            ini_set('memory_limit', '1024M');
 
-            if (!$response->successful() || !isset($data['success']) || $data['success'] !== true || !isset($data['data'])) {
-                // The actual key for categories might be 'categories', 'list', or 'data'. We're assuming 'data'.
-                Log::error('Pancake Category Sync: Failed to fetch categories or invalid response format.', [
-                    'status' => $response->status(),
-                    'response_body' => $response->body(),
-                    'endpoint' => $endpoint
-                ]);
-                $errorMessage = $data['message'] ?? ('Không thể tải danh mục từ Pancake. Status: ' . $response->status());
-                 if ($response->status() == 404) {
-                    $errorMessage .= ' (Endpoint not found - please verify the API endpoint for categories)';
-                }
-                return redirect()->route('admin.sync.index')->with('error', $errorMessage);
+            $this->authorize('settings.manage');
+
+            // Get API configuration
+            $apiKey = config('pancake.api_key');
+            $shopId = config('pancake.shop_id');
+            $baseUrl = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1'), '/');
+
+            if (empty($apiKey) || empty($shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake.'
+                ], 400);
             }
 
-            $categoriesFromApi = $data['data']; // Assuming the categories are in a 'data' array
-            $syncedCount = 0;
-            $updatedCount = 0;
-            $failedCount = 0;
-            $errors = [];
+            $stats = [
+                'created' => 0,
+                'updated' => 0,
+                'errors' => 0,
+                'total_fetched' => 0,
+                'error_messages' => []
+            ];
+
+            // Updated endpoint to use the correct path for categories
+            $url = "{$baseUrl}/shops/{$shopId}/categories?api_key={$apiKey}";
+
+            Log::info('Attempting to sync Pancake categories.', ['url' => $url, 'shop_id' => $shopId]);
+
+            $response = Http::timeout(120)
+                ->withHeaders([
+                    'Accept' => 'application/json',
+                    'Content-Type' => 'application/json'
+                ])
+                ->get($url);
+
+            if (!$response->successful()) {
+                $errorMessage = $response->json()['message'] ?? $response->body();
+                Log::error('Pancake API call for categories failed.', [
+                    'status_code' => $response->status(),
+                    'error' => $errorMessage,
+                    'url' => $url
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => "Lỗi API Pancake: " . $errorMessage
+                ], $response->status());
+            }
+
+            $categoriesData = $response->json();
+            $categories = [];
+
+            // Handle different possible response formats
+            if (isset($categoriesData['data']) && is_array($categoriesData['data'])) {
+                $categories = $categoriesData['data'];
+            } elseif (isset($categoriesData['categories']) && is_array($categoriesData['categories'])) {
+                $categories = $categoriesData['categories'];
+            } elseif (is_array($categoriesData) && !empty($categoriesData) && isset($categoriesData[0])) {
+                $categories = $categoriesData;
+            }
+
+            if (empty($categories)) {
+                Log::warning('No categories found in Pancake API response', ['response' => $categoriesData]);
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Không tìm thấy danh mục nào từ Pancake.',
+                    'stats' => $stats
+                ]);
+            }
 
             DB::beginTransaction();
-
-            foreach ($categoriesFromApi as $apiCategory) {
-                try {
-                    if (empty($apiCategory['id'])) {
-                        Log::warning('Pancake Category Sync: Category data missing ID, skipping.', ['category_data' => $apiCategory]);
-                        $failedCount++;
-                        $errors[] = 'Một danh mục bị thiếu ID từ API.';
+            try {
+                foreach ($categories as $categoryData) {
+                    if (!isset($categoryData['id'])) {
+                        Log::warning('Category data missing ID, skipping.', ['category_data' => $categoryData]);
+                        $stats['errors']++;
+                        $stats['error_messages'][] = 'Danh mục thiếu ID, bỏ qua.';
                         continue;
                     }
 
-                    // Map API fields to your PancakeCategory model attributes
-                    // Adjust these mappings based on the actual API response structure
-                    $categoryData = [
-                        'name' => $apiCategory['name'] ?? 'N/A',
-                        'pancake_parent_id' => $apiCategory['parent_id'] ?? ($apiCategory['parent']['id'] ?? null), // Pancake might use parent_id or a nested parent object
-                        'level' => $apiCategory['level'] ?? 0,
-                        'status' => $apiCategory['status'] ?? 'active', // Assuming a default status
-                        'description' => $apiCategory['description'] ?? null,
-                        'image_url' => $apiCategory['image_url'] ?? ($apiCategory['icon'] ?? null),
-                        'api_response' => $apiCategory, // Store the full API response for this category
-                    ];
+                    $pancakeId = (string)$categoryData['id'];
+                    $name = $categoryData['name'] ?? $categoryData['text'] ?? null;
 
+                    if (empty($name)) {
+                        Log::warning('Category missing name, skipping.', ['category_id' => $pancakeId]);
+                        $stats['errors']++;
+                        $stats['error_messages'][] = "Danh mục ID {$pancakeId} thiếu tên, bỏ qua.";
+                        continue;
+                    }
+
+                    // Create or update the category
                     $category = PancakeCategory::updateOrCreate(
-                        ['pancake_id' => $apiCategory['id']], // Condition to find existing record
-                        $categoryData                     // Data to create or update
+                        ['pancake_id' => $pancakeId],
+                        [
+                            'name' => $name,
+                            'pancake_parent_id' => $categoryData['parent_id'] ?? null,
+                            'level' => $categoryData['level'] ?? 0,
+                            'status' => $categoryData['status'] ?? 'active',
+                            'description' => $categoryData['description'] ?? null,
+                            'image_url' => $categoryData['image_url'] ?? $categoryData['icon'] ?? null,
+                            'api_response' => $categoryData
+                        ]
                     );
 
                     if ($category->wasRecentlyCreated) {
-                        $syncedCount++;
+                        $stats['created']++;
                     } else if ($category->wasChanged()) {
-                        $updatedCount++;
-                    } else {
-                        // Not created, not updated (already in sync)
+                        $stats['updated']++;
                     }
+                    $stats['total_fetched']++;
 
-                } catch (\Exception $e) {
-                    Log::error('Pancake Category Sync: Error processing category ID ' . ($apiCategory['id'] ?? 'unknown') . ': ' . $e->getMessage(), ['category_data' => $apiCategory]);
-                    $failedCount++;
-                    $errors[] = 'Lỗi xử lý danh mục ID ' . ($apiCategory['id'] ?? 'unknown') . ': ' . $e->getMessage();
-                    // Continue to next category if one fails
+                    // Process child categories if they exist
+                    if (!empty($categoryData['children']) && is_array($categoryData['children'])) {
+                        foreach ($categoryData['children'] as $childCategory) {
+                            $this->processCategoryChild($childCategory, $pancakeId, $stats);
+                        }
+                    }
                 }
-            }
 
-            DB::commit();
-            $successMessage = "Đồng bộ danh mục Pancake thành công! Tạo mới: {$syncedCount}, Cập nhật: {$updatedCount}.";
-            if ($failedCount > 0) {
-                $successMessage .= " Thất bại: {$failedCount}.";
-            }
-            Log::info("Pancake Category Sync: Completed. {$successMessage}", ['errors' => $errors]);
-            return redirect()->route('admin.sync.index')->with('success', $successMessage);
+                DB::commit();
 
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            DB::rollBack();
-            Log::error('Pancake Category Sync: ConnectionException - ' . $e->getMessage(), ['endpoint' => $endpoint]);
-            return redirect()->route('admin.sync.index')->with('error', 'Không thể kết nối đến Pancake API: ' . $e->getMessage());
+                $message = sprintf(
+                    'Đồng bộ thành công. Tạo mới: %d, Cập nhật: %d, Tổng: %d',
+                    $stats['created'],
+                    $stats['updated'],
+                    $stats['total_fetched']
+                );
+
+                if ($stats['errors'] > 0) {
+                    $message .= sprintf(', Lỗi: %d', $stats['errors']);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'stats' => $stats
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error processing categories', [
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Lỗi xử lý danh mục: ' . $e->getMessage()
+                ], 500);
+            }
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Pancake Category Sync: General Exception - ' . $e->getMessage(), [
-                'endpoint' => $endpoint,
+            Log::error('Error in category sync', [
+                'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            return redirect()->route('admin.sync.index')->with('error', 'Lỗi đồng bộ danh mục chung: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi đồng bộ: ' . $e->getMessage()
+            ], 500);
         }
     }
-} 
+
+    private function processCategoryChild($categoryData, $parentId, &$stats)
+    {
+        if (!isset($categoryData['id'])) {
+            Log::warning('Child category missing ID, skipping.', ['parent_id' => $parentId]);
+            $stats['errors']++;
+            $stats['error_messages'][] = "Danh mục con của {$parentId} thiếu ID, bỏ qua.";
+            return;
+        }
+
+        $pancakeId = (string)$categoryData['id'];
+        $name = $categoryData['name'] ?? $categoryData['text'] ?? null;
+
+        if (empty($name)) {
+            Log::warning('Child category missing name, skipping.', ['category_id' => $pancakeId]);
+            $stats['errors']++;
+            $stats['error_messages'][] = "Danh mục con ID {$pancakeId} thiếu tên, bỏ qua.";
+            return;
+        }
+
+        $category = PancakeCategory::updateOrCreate(
+            ['pancake_id' => $pancakeId],
+            [
+                'name' => $name,
+                'pancake_parent_id' => $parentId,
+                'level' => $categoryData['level'] ?? 0,
+                'status' => $categoryData['status'] ?? 'active',
+                'description' => $categoryData['description'] ?? null,
+                'image_url' => $categoryData['image_url'] ?? $categoryData['icon'] ?? null,
+                'api_response' => $categoryData
+            ]
+        );
+
+        if ($category->wasRecentlyCreated) {
+            $stats['created']++;
+        } else if ($category->wasChanged()) {
+            $stats['updated']++;
+        }
+        $stats['total_fetched']++;
+
+        // Recursively process children
+        if (!empty($categoryData['children']) && is_array($categoryData['children'])) {
+            foreach ($categoryData['children'] as $childCategory) {
+                $this->processCategoryChild($childCategory, $pancakeId, $stats);
+            }
+        }
+    }
+}

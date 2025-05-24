@@ -126,7 +126,7 @@ class ReportController extends Controller
 
         $categoryData = [];
         // Fetch Pancake categories, mapping pancake_id to name
-        $categoryMap = \App\Models\PancakeCategory::pluck('name', 'pancake_id')->all(); 
+        $categoryMap = \App\Models\PancakeCategory::pluck('name', 'pancake_id')->all();
 
         foreach ($orders as $order) {
             $orderCategoriesProcessed = []; // To count each category once per order for order count metric
@@ -192,7 +192,7 @@ class ReportController extends Controller
                 }
             }
         }
-        
+
         // Sort by revenue by default (descending)
         uasort($categoryData, function ($a, $b) {
             return $b['total_revenue'] <=> $a['total_revenue'];
@@ -212,7 +212,7 @@ class ReportController extends Controller
             $chartOrderCountData[] = $cat['total_orders'];
             $chartQuantityData[] = $cat['total_quantity_sold'];
         }
-        
+
         // Overall summary stats
         $totalRevenueAllGroups = array_sum(array_column($categoryData, 'total_revenue'));
         $totalOrdersAllGroups = array_sum(array_column($categoryData, 'total_orders')); // This might double count if an order has items from multiple groups.
@@ -246,7 +246,7 @@ class ReportController extends Controller
         // Date filtering
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : now()->startOfMonth()->startOfDay();
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : now()->endOfDay();
-        
+
         if ($request->filled('date_range')) {
             $dateParts = explode(' - ', $request->input('date_range'));
             if (count($dateParts) === 2) {
@@ -311,7 +311,7 @@ class ReportController extends Controller
                 $campaignsData[$postId]['product_summary'][$productId]['revenue'] += ($item->price * $item->quantity);
             }
         }
-        
+
         // Process product summaries and get top N for each campaign
         $topNProducts = 3; // Show top 3 products per campaign
         foreach ($campaignsData as $postId => &$campaign) { // Use reference to modify directly
@@ -341,7 +341,7 @@ class ReportController extends Controller
                 $pages = $selectedShop->pages()->orderBy('name')->get();
             }
         }
-        
+
         // Data for Campaign Performance Overview Chart
         $chartCampaignLabels = [];
         $chartCampaignRevenue = [];
@@ -387,7 +387,6 @@ class ReportController extends Controller
                     $inputEndDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[1]))->endOfDay();
                 } catch (\Exception $e) {
                     Log::error('ReportController@liveSessionsPage: Invalid date_range format. Value: ' . $request->input('date_range') . ' Error: ' . $e->getMessage());
-                    // Fallback to default if parsing fails
                     $inputStartDate = Carbon::now()->startOfMonth()->startOfDay();
                     $inputEndDate = Carbon::now()->endOfDay();
                 }
@@ -397,9 +396,9 @@ class ReportController extends Controller
                 $inputStartDate = Carbon::parse($request->input('start_date'))->startOfDay();
                 $inputEndDate = Carbon::parse($request->input('end_date'))->endOfDay();
             } catch (\Exception $e) {
-                 Log::error('ReportController@liveSessionsPage: Invalid start_date/end_date format. Error: ' . $e->getMessage());
-                 $inputStartDate = Carbon::now()->startOfMonth()->startOfDay();
-                 $inputEndDate = Carbon::now()->endOfDay();
+                Log::error('ReportController@liveSessionsPage: Invalid start_date/end_date format. Error: ' . $e->getMessage());
+                $inputStartDate = Carbon::now()->startOfMonth()->startOfDay();
+                $inputEndDate = Carbon::now()->endOfDay();
             }
         }
 
@@ -411,145 +410,172 @@ class ReportController extends Controller
 
         Log::info("ReportController@liveSessionsPage: Processing report for date range: {$startDate->toDateTimeString()} to {$endDate->toDateTimeString()}");
 
-        // Function to process data for a given date range (to be reused for overall and monthly tabs)
-        $processReportData = function(Carbon $filterPeriodStart, Carbon $filterPeriodEnd, $pancakeStatusMap) {
+        // Function to process data for a given date range
+        $processReportData = function (Carbon $filterPeriodStart, Carbon $filterPeriodEnd, $pancakeStatusMap) use ($request) {
             Log::info("ReportController@processReportData: Filtering for SESSION DATES between: {$filterPeriodStart->toDateTimeString()} to {$filterPeriodEnd->toDateTimeString()}");
 
-            // 1. Fetch ALL orders that could potentially be live sessions (based on notes)
-            // Potentially, this could be a very large set. Consider if additional global date constraints are needed for performance.
+            // 1. Fetch ALL orders that could potentially be live sessions (based on live_session_info)
             $allPotentialLiveOrders = Order::query()
-                ->whereNotNull('notes')
-                ->where('notes', 'LIKE', '%LIVE%')
-                // Fetch orders from a fixed historical window to ensure all potential sessions are considered.
-                // The primary filtering by user-selected date range happens later based on parsed session_date from notes.
-                ->where('created_at', '>=', Carbon::now()->subYears(2)->startOfDay()) // Using a 2-year lookback as an example. Consider making '2' configurable.
-                ->with(['items']) // Eager load items
+                ->whereNotNull('live_session_info')
+                ->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.live_number")) IS NOT NULL')
+                ->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.session_date")) IS NOT NULL')
+                ->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.original_text")) IS NOT NULL')
+                ->where('pancake_inserted_at', '>=', Carbon::now()->subYears(2)->startOfDay())
+                ->with(['items'])
+                ->when($request->has('session_date'), function ($query) use ($request) {
+                    $sessionDate = $request->input('session_date');
+                    return $query->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.session_date")) = ?', [$sessionDate]);
+                })
+                ->when($request->has('live_number'), function ($query) use ($request) {
+                    $liveNumber = $request->input('live_number');
+                    return $query->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.live_number")) = ?', [$liveNumber]);
+                })
+                ->when($request->has('status'), function ($query) use ($request) {
+                    $status = $request->input('status');
+                    return $query->where('status', $status);
+                })
+                ->when($request->has('customer_id'), function ($query) use ($request) {
+                    $customerId = $request->input('customer_id');
+                    return $query->where('customer_id', $customerId);
+                })
+                ->orderBy('pancake_inserted_at', 'desc')
                 ->get();
-            Log::info('ReportController@processReportData: Found ' . $allPotentialLiveOrders->count() . ' total orders with LIVE in notes (globally or within a wider pre-filter if any was applied).');
+
+            Log::info('ReportController@processReportData: Found ' . $allPotentialLiveOrders->count() . ' total orders with valid live_session_info.');
 
             // 2. Process all potential live orders to determine their actual session_date and other details
             $allProcessedLiveSessions = [];
-        $patterns = [
-                '/LIVE\\s*(\\d+)[\\s]+(\\d{1,2})\\/(\\d{1,2})(?:\\/(\\d{2,4}))?/i',
-                '/LIVE\\s*(\\d+)[\\s]*:?[\\s]*(\\d{1,2})\\/(\\d{1,2})(?:\/(\\d{2,4}))?/i',
-                '/LIVE\\s*(\\d+)/i',
-            ];
 
             foreach ($allPotentialLiveOrders as $order) {
-                $matchedPattern = false;
-                $liveNumber = null;
-                $sessionDateCarbon = $order->created_at; // Default session date to order's creation date initially
-
-                foreach ($patterns as $idx => $pattern) {
-                if (preg_match($pattern, $order->notes, $matches)) {
-                        $liveNumber = (int)$matches[1];
-                        if ($idx < 2 && count($matches) >= 4) {
-                            $day = (int)$matches[2];
-                            $month = (int)$matches[3];
-                            $year = isset($matches[4]) ? (int)$matches[4] : $order->created_at->year;
-                            if ($year < 100) $year += 2000;
-                            if ($year > Carbon::now()->year + 1 && $year > $order->created_at->year +1) { // Check against both current year and order year + 1
-                                Log::warning("ReportController@processReportData (AllPotential): Parsed year {$year} from notes for order ID {$order->id} is too far. Notes: '{$order->notes}'. Falling back to order created_at year.");
-                                $year = $order->created_at->year;
-                            }
-                            try {
-                                $sessionDateCarbon = Carbon::createFromDate($year, $month, $day);
-                            } catch (\Exception $e) {
-                                Log::warning("ReportController@processReportData (AllPotential): Invalid date parsed for order ID {$order->id}. Notes: '{$order->notes}'. Falling back to order date.");
-                                $sessionDateCarbon = $order->created_at;
-                            }
-                        }
-                        $matchedPattern = true;
-                        break;
-                    }
+                // Parse live_session_info JSON
+                $liveSessionInfo = json_decode($order->live_session_info, true);
+                if (json_last_error() !== JSON_ERROR_NONE || !isset($liveSessionInfo['live_number'], $liveSessionInfo['session_date'])) {
+                    Log::debug("ReportController@processReportData: Invalid or incomplete live_session_info for order ID {$order->id}. Skipping.");
+                    continue;
                 }
 
-                if ($matchedPattern && $liveNumber !== null) {
-                    $sessionDateStr = $sessionDateCarbon->format('Y-m-d');
-                    // Key for all processed live sessions might need to include order ID if a single order could theoretically belong to multiple display sessions (not typical)
-                    // For now, assuming one order note maps to one effective live session context for reporting
-                    $liveSessionAggKey = "LIVE{$liveNumber}_" . $sessionDateCarbon->format('Ymd'); // Key for aggregation
+                $liveNumber = (int) $liveSessionInfo['live_number'];
+                try {
+                    $sessionDateCarbon = Carbon::parse($liveSessionInfo['session_date']);
+                } catch (\Exception $e) {
+                    Log::warning("ReportController@processReportData: Invalid session_date in live_session_info for order ID {$order->id}. Falling back to pancake_inserted_at.");
+                    $sessionDateCarbon = $order->pancake_inserted_at ? Carbon::parse($order->pancake_inserted_at) : Carbon::now();
+                }
 
-                    if (!isset($allProcessedLiveSessions[$liveSessionAggKey])) {
-                        $allProcessedLiveSessions[$liveSessionAggKey] = [
-                            'id' => $liveSessionAggKey,
-                            'name' => "LIVE {$liveNumber} (" . $sessionDateCarbon->format('d/m/Y') . ")",
+                $sessionDateStr = $sessionDateCarbon->format('Y-m-d');
+                $liveSessionAggKey = "LIVE{$liveNumber}_" . $sessionDateCarbon->format('Ymd');
+
+                if (!isset($allProcessedLiveSessions[$liveSessionAggKey])) {
+                    $allProcessedLiveSessions[$liveSessionAggKey] = [
+                        'id' => $liveSessionAggKey,
+                        'name' => "LIVE {$liveNumber} (" . $sessionDateCarbon->format('d/m/Y') . ")",
                         'live_number' => $liveNumber,
-                            'session_date_carbon' => $sessionDateCarbon, // Store Carbon instance for filtering
-                            'session_date' => $sessionDateStr, // String version for display/sorting
+                        'session_date_carbon' => $sessionDateCarbon,
+                        'session_date' => $sessionDateStr,
                         'total_orders' => 0,
                         'successful_orders' => 0,
                         'canceled_orders' => 0,
-                            'delivering_orders' => 0,
+                        'delivering_orders' => 0,
                         'revenue' => 0,
-                            'orders_in_session' => [], // Store order objects or IDs for this session
+                        'orders_in_session' => [],
+                        'products' => [],
+                        'customers' => []
+                    ];
+                }
+
+                $allProcessedLiveSessions[$liveSessionAggKey]['total_orders']++;
+                $allProcessedLiveSessions[$liveSessionAggKey]['orders_in_session'][] = $order;
+
+                // Process order status and update statistics
+                $isSuccessful = false;
+                $isCancelled = false;
+                $isDelivering = false;
+                $crmStatus = strtolower($order->status ?? '');
+                $pancakeApiName = isset($order->pancake_status, $pancakeStatusMap[$order->pancake_status]) ? $pancakeStatusMap[$order->pancake_status] : null;
+
+                $successfulStatuses = ['delivered', 'completed', 'thanh_cong', 'hoan_thanh', 'da_giao', 'da_nhan', 'da_thu_tien'];
+                $cancelledStatuses = ['cancelled', 'canceled', 'huy', 'da_huy'];
+                $deliveringStatuses = ['waiting_for_delivery', 'packing', 'delivering'];
+
+                if (in_array($crmStatus, $cancelledStatuses) || ($pancakeApiName && in_array($pancakeApiName, $cancelledStatuses))) {
+                    $isCancelled = true;
+                } elseif (in_array($crmStatus, $deliveringStatuses) || ($pancakeApiName && in_array($pancakeApiName, $deliveringStatuses))) {
+                    $isDelivering = true;
+                } elseif (in_array($crmStatus, $successfulStatuses) || ($pancakeApiName && in_array($pancakeApiName, $successfulStatuses))) {
+                    $isSuccessful = true;
+                }
+
+                if ($isCancelled) {
+                    $allProcessedLiveSessions[$liveSessionAggKey]['canceled_orders']++;
+                } elseif ($isDelivering) {
+                    $allProcessedLiveSessions[$liveSessionAggKey]['delivering_orders']++;
+                } elseif ($isSuccessful) {
+                    $allProcessedLiveSessions[$liveSessionAggKey]['successful_orders']++;
+                    $allProcessedLiveSessions[$liveSessionAggKey]['revenue'] += $order->total_value;
+                }
+
+                // Process products for this order
+                foreach ($order->items as $item) {
+                    $productName = $item->product_name ?? ($item->name ?? 'Không xác định');
+                    $productId = $item->pancake_product_id ?? $item->sku ?? $productName;
+
+                    if (!isset($allProcessedLiveSessions[$liveSessionAggKey]['products'][$productId])) {
+                        $allProcessedLiveSessions[$liveSessionAggKey]['products'][$productId] = [
+                            'name' => $productName,
+                            'sku' => $item->sku ?? '',
+                            'quantity' => 0,
+                            'revenue' => 0,
+                            'orders' => 0,
                         ];
                     }
-                    $allProcessedLiveSessions[$liveSessionAggKey]['total_orders']++;
-                    $allProcessedLiveSessions[$liveSessionAggKey]['orders_in_session'][] = $order; // Store the full order object
 
-                    // Status determination logic remains the same, but applied to $order directly here
-                    // Revenue and status counts will be summed up *after* filtering by session_date
-                } else {
-                    Log::debug("ReportController@processReportData (AllPotential): Order ID {$order->id} with notes '{$order->notes}' did not match LIVE pattern or liveNumber was null.");
+                    $allProcessedLiveSessions[$liveSessionAggKey]['products'][$productId]['quantity'] += $item->quantity;
+                    if ($isSuccessful) {
+                        $allProcessedLiveSessions[$liveSessionAggKey]['products'][$productId]['revenue'] += ($item->price * $item->quantity);
+                        $allProcessedLiveSessions[$liveSessionAggKey]['products'][$productId]['orders']++;
+                    }
+                }
+
+                // Process customer data
+                if ($order->customer_id) {
+                    if (!isset($allProcessedLiveSessions[$liveSessionAggKey]['customers'][$order->customer_id])) {
+                        $allProcessedLiveSessions[$liveSessionAggKey]['customers'][$order->customer_id] = [
+                            'id' => $order->customer_id,
+                            'name' => $order->customer->name ?? 'Không xác định',
+                            'phone' => $order->customer->phone ?? '',
+                            'orders' => 0,
+                            'total_spent' => 0,
+                        ];
+                    }
+
+                    $allProcessedLiveSessions[$liveSessionAggKey]['customers'][$order->customer_id]['orders']++;
+                    if ($isSuccessful) {
+                        $allProcessedLiveSessions[$liveSessionAggKey]['customers'][$order->customer_id]['total_spent'] += $order->total_value;
+                    }
                 }
             }
 
-            // 3. Filter these processed sessions by the date range picker (filterPeriodStart, filterPeriodEnd) based on their session_date_carbon
+            // 3. Filter processed sessions by the date range picker based on their session_date_carbon
             $filteredLiveSessionsForPeriod = [];
             foreach ($allProcessedLiveSessions as $sessionId => $sessionData) {
-                if ($sessionData['session_date_carbon']->betweenIncluded($filterPeriodStart, $filterPeriodEnd)) {
-                    // Now, for sessions that fall within the filter, calculate their detailed stats based on their orders
-                    $sessionData['successful_orders'] = 0;
-                    $sessionData['canceled_orders'] = 0;
-                    $sessionData['delivering_orders'] = 0;
-                    $sessionData['revenue'] = 0;
-                    // Recalculate total_orders for THIS specific session ID based on orders_in_session (already reflects this)
-                    // $sessionData['total_orders'] is already the count of orders that formed this session
-
-                    foreach($sessionData['orders_in_session'] as $orderInSession) {
-                        $isSuccessful = false; $isCancelled = false; $isDelivering = false;
-                        $crmStatus = strtolower($orderInSession->status ?? '');
-                        $pancakeApiName = null;
-                        if (isset($orderInSession->pancake_status) && isset($pancakeStatusMap[$orderInSession->pancake_status])) {
-                            $pancakeApiName = $pancakeStatusMap[$orderInSession->pancake_status];
-                        }
-                        $successfulStatuses = ['delivered', 'completed', 'thanh_cong', 'hoan_thanh', 'da_giao', 'da_nhan', 'da_thu_tien'];
-                        $cancelledStatuses = ['cancelled', 'canceled', 'huy', 'da_huy'];
-                        $deliveringStatuses = ['waiting_for_delivery', 'packing', 'delivering'];
-
-                        if (in_array($crmStatus, $cancelledStatuses) || ($pancakeApiName && in_array($pancakeApiName, $cancelledStatuses))) {
-                            $isCancelled = true;
-                        } elseif (in_array($crmStatus, $deliveringStatuses) || ($pancakeApiName && in_array($pancakeApiName, $deliveringStatuses))) {
-                            $isDelivering = true;
-                        } elseif (in_array($crmStatus, $successfulStatuses) || ($pancakeApiName && in_array($pancakeApiName, $successfulStatuses))) {
-                            $isSuccessful = true;
-                        }
-
-                        if ($isCancelled) {
-                            $sessionData['canceled_orders']++;
-                        } elseif ($isDelivering) {
-                            $sessionData['delivering_orders']++;
-                        } elseif ($isSuccessful) {
-                            $sessionData['successful_orders']++;
-                            $sessionData['revenue'] += $orderInSession->total_value;
-                        }
-                    }
-                    // Remove orders_in_session to free up memory if not needed downstream, or keep if details are drilled into
-                    // unset($sessionData['orders_in_session']); // Optional: for memory optimization if $order objects are large
+                if ($sessionData['session_date_carbon'] instanceof Carbon &&
+                    $sessionData['session_date_carbon']->betweenIncluded($filterPeriodStart, $filterPeriodEnd)) {
                     $filteredLiveSessionsForPeriod[$sessionId] = $sessionData;
                 }
             }
+
             Log::info('ReportController@processReportData: Found ' . count($filteredLiveSessionsForPeriod) . ' live session AGGREGATES matching SESSION DATE filter.');
 
-            $result = array_values($filteredLiveSessionsForPeriod); // This is the $result array for further processing
-            // Recalculate rates for the $result (sessions truly in the period)
+            $result = array_values($filteredLiveSessionsForPeriod);
+
+            // Recalculate rates for the $result
             foreach ($result as &$session) {
                 $session['success_rate'] = $session['total_orders'] > 0 ? round(($session['successful_orders'] / $session['total_orders']) * 100, 2) : 0;
                 $session['cancellation_rate'] = $session['total_orders'] > 0 ? round(($session['canceled_orders'] / $session['total_orders']) * 100, 2) : 0;
                 $session['delivering_rate'] = $session['total_orders'] > 0 ? round(($session['delivering_orders'] / $session['total_orders']) * 100, 2) : 0;
             }
             unset($session);
+
             usort($result, function ($a, $b) {
                 $dateComparison = strcmp($b['session_date'], $a['session_date']);
                 if ($dateComparison === 0) {
@@ -558,7 +584,7 @@ class ReportController extends Controller
                 return $dateComparison;
             });
 
-            // Overall summary stats are now based on $result (sessions filtered by session_date)
+            // Overall summary stats
             $totalSessions = count($result);
             $totalRevenueAll = array_sum(array_column($result, 'revenue'));
             $totalOrdersAll = array_sum(array_column($result, 'total_orders'));
@@ -569,8 +595,7 @@ class ReportController extends Controller
             $overallCancellationRate = $totalOrdersAll > 0 ? round(($totalCanceledOrdersAll / $totalOrdersAll) * 100, 2) : 0;
             $overallDeliveringRate = $totalOrdersAll > 0 ? round(($totalDeliveringOrdersAll / $totalOrdersAll) * 100, 2) : 0;
 
-            // --- DAILY CHART DATA PREPARATION ---
-            // Daily chart should also be based on orders whose SESSION_DATE falls into the filterPeriodStart/End
+            // Daily chart data preparation
             $dailyChartDataOutput = [];
             $currentDateIterator = $filterPeriodStart->copy();
             while ($currentDateIterator <= $filterPeriodEnd) {
@@ -590,30 +615,18 @@ class ReportController extends Controller
                 $currentDateIterator->addDay();
             }
 
-            // Iterate through the $result (sessions already filtered by their session_date to be within filterPeriodStart/End)
-            // And then through their constituent orders to populate daily chart data.
-            foreach ($result as $sessionInPeriod) { // $sessionInPeriod ALREADY has its session_date within the filter range
-                // The session_date_carbon is the date to plot this session's orders against
+            foreach ($result as $sessionInPeriod) {
                 $targetPlotDateString = $sessionInPeriod['session_date_carbon']->format('Y-m-d');
-
                 if (isset($dailyChartDataOutput[$targetPlotDateString])) {
-                    // Retrieve the original orders that formed this session aggregate
-                    // This requires $allProcessedLiveSessions to be accessible or orders to be passed differently.
-                    // For now, let's assume we need to re-access orders for this session.
-                    // A better way: the $sessionInPeriod should contain its orders if needed for daily breakdown.
-                    // The $sessionInPeriod DOES contain 'orders_in_session'. Let's use that.
-                    
-                    foreach($allProcessedLiveSessions[$sessionInPeriod['id']]['orders_in_session'] as $order) { // Use the stored orders for THIS session
+                    foreach ($sessionInPeriod['orders_in_session'] as $order) {
                         $dailyChartDataOutput[$targetPlotDateString]['total_orders']++;
                         $dailyChartDataOutput[$targetPlotDateString]['total_revenue_potential'] += $order->total_value;
 
-                        $isSuccessful = false; $isCancelled = false; $isDelivering = false;
+                        $isSuccessful = false;
+                        $isCancelled = false;
+                        $isDelivering = false;
                         $crmStatus = strtolower($order->status ?? '');
-                        $pancakeApiNameDaily = $pancakeStatusMap[$order->pancake_status] ?? null;
-
-                        $successfulStatuses = ['delivered', 'paid', 'completed', 'thanh_cong', 'hoan_thanh', 'da_giao', 'da_nhan', 'da_thu_tien'];
-                        $cancelledStatuses = ['canceled', 'cancelled', 'huy', 'da_huy'];
-                        $deliveringStatuses = ['waiting_for_delivery', 'packing', 'delivering'];
+                        $pancakeApiNameDaily = isset($order->pancake_status, $pancakeStatusMap[$order->pancake_status]) ? $pancakeStatusMap[$order->pancake_status] : null;
 
                         if (in_array($crmStatus, $cancelledStatuses) || ($pancakeApiNameDaily && in_array($pancakeApiNameDaily, $cancelledStatuses))) {
                             $isCancelled = true;
@@ -628,22 +641,19 @@ class ReportController extends Controller
                             $dailyChartDataOutput[$targetPlotDateString]['canceled_revenue'] += $order->total_value;
                         } elseif ($isDelivering) {
                             $dailyChartDataOutput[$targetPlotDateString]['delivering_orders']++;
+                            $dailyChartDataOutput[$targetPlotDateString]['delivering_revenue'] += $order->total_value;
                         } elseif ($isSuccessful) {
                             $dailyChartDataOutput[$targetPlotDateString]['successful_orders']++;
                             $dailyChartDataOutput[$targetPlotDateString]['successful_revenue'] += $order->total_value;
                         }
                     }
-                } else { 
-                    // This case (targetPlotDateString not in dailyChartDataOutput) should ideally not happen 
-                    // if $filterPeriodStart and $filterPeriodEnd correctly define the bounds for $dailyChartDataOutput keys.
-                    Log::warning("Daily Chart: Plot date {$targetPlotDateString} for session ID {$sessionInPeriod['id']} was outside the expected daily chart keys.");
                 }
             }
             $dailyChartDataOutput = array_values($dailyChartDataOutput);
 
-            // --- MONTHLY CHART DATA (for the overall report, based on $result) ---
+            // Monthly chart data
             $monthlyChartDataForSessionPeriod = [];
-            foreach ($result as $session) { // $result contains live sessions whose session_date is within filterPeriodStart/End
+            foreach ($result as $session) {
                 $sessionMonthYear = $session['session_date_carbon']->format('Y-m');
                 $monthLabel = $session['session_date_carbon']->format('m/Y');
 
@@ -672,13 +682,10 @@ class ReportController extends Controller
             ksort($monthlyChartDataForSessionPeriod);
             $monthlyChartDataForSessionPeriod = array_values($monthlyChartDataForSessionPeriod);
 
-            // --- TOP PRODUCTS, PROVINCE DATA, CUSTOMER DATA ---
-            // These should also be derived from the orders that constitute the $result (filtered live sessions)
+            // Top products, province, and customer data
             $ordersForCurrentPeriodStats = [];
             foreach ($result as $sessionInPeriod) {
-                // Again, need access to the original orders for this session.
-                // Assuming $allProcessedLiveSessions[$sessionInPeriod['id']]['orders_in_session'] is available and correct.
-                foreach($allProcessedLiveSessions[$sessionInPeriod['id']]['orders_in_session'] as $order) {
+                foreach ($sessionInPeriod['orders_in_session'] as $order) {
                     $ordersForCurrentPeriodStats[] = $order;
                 }
             }
@@ -686,14 +693,14 @@ class ReportController extends Controller
 
             $liveSessionProductStats = [];
             foreach ($ordersForCurrentPeriodStats as $order) {
-                foreach ($order->items as $item) { // CORRECTED: Iterate over items
+                foreach ($order->items as $item) {
                     $productName = $item->product_name ?? ($item->name ?? 'Sản phẩm không xác định');
                     if (empty(trim($productName))) $productName = 'Sản phẩm không xác định';
                     if (!isset($liveSessionProductStats[$productName])) {
                         $liveSessionProductStats[$productName] = ['quantity' => 0, 'revenue' => 0, 'name' => $productName];
                     }
-                    $liveSessionProductStats[$productName]['quantity'] += $item->quantity; // CORRECTED: use $item->quantity
-                    $liveSessionProductStats[$productName]['revenue'] += ($item->price * $item->quantity); // CORRECTED: use $item->price and $item->quantity
+                    $liveSessionProductStats[$productName]['quantity'] += $item->quantity;
+                    $liveSessionProductStats[$productName]['revenue'] += ($item->price * $item->quantity);
                 }
             }
             uasort($liveSessionProductStats, function ($a, $b) { return $b['revenue'] <=> $a['revenue']; });
@@ -713,17 +720,18 @@ class ReportController extends Controller
                 }
                 if ($order->customer_id) {
                     $customerId = $order->customer_id;
-                    $orderDateCarbon = $order->created_at; // For customer history, use created_at of the order itself.
+                    $orderDateCarbon = $order->pancake_inserted_at;
 
                     if (!isset($allCustomerOrderHistory[$customerId])) {
                         $allCustomerOrderHistory[$customerId] = [
-                            'first_order_date_in_db' => $orderDateCarbon,
+                            'first_order_date_in_db' => Carbon::parse($order->pancake_inserted_at),
                             'live_session_order_count_in_current_filter_period' => 0
                         ];
                     }
                     $allCustomerOrderHistory[$customerId]['live_session_order_count_in_current_filter_period']++;
-                    if ($orderDateCarbon < $allCustomerOrderHistory[$customerId]['first_order_date_in_db']) {
-                        $allCustomerOrderHistory[$customerId]['first_order_date_in_db'] = $orderDateCarbon;
+                    $orderDate = Carbon::parse($order->pancake_inserted_at);
+                    if ($orderDate < $allCustomerOrderHistory[$customerId]['first_order_date_in_db']) {
+                        $allCustomerOrderHistory[$customerId]['first_order_date_in_db'] = $orderDate;
                     }
                 }
             }
@@ -733,18 +741,69 @@ class ReportController extends Controller
             $totalUniqueCustomersOutput = count($allCustomerOrderHistory);
             $finalOverallNewCustomers = 0;
             $finalOverallReturningCustomers = 0;
-            foreach($allCustomerOrderHistory as $custId => $history){
-                if($history['live_session_order_count_in_current_filter_period'] > 0){
-                    // Customer is "new" to this *filtered period* if their first_order_date_in_db (among orders in this period) 
-                    // falls within this filterPeriodStart/End AND they only have one order in this period.
-                    // This logic for new/returning needs to be robust and consider true first order if possible.
-                    // For now, this is "new within the context of orders that made it into $ordersForCurrentPeriodStats".
-                    if ($history['first_order_date_in_db']->betweenIncluded($filterPeriodStart, $filterPeriodEnd) && $history['live_session_order_count_in_current_filter_period'] === 1){
+            foreach ($allCustomerOrderHistory as $custId => $history) {
+                if ($history['live_session_order_count_in_current_filter_period'] > 0) {
+                    if ($history['first_order_date_in_db'] instanceof Carbon &&
+                        $history['first_order_date_in_db']->betweenIncluded($filterPeriodStart, $filterPeriodEnd) &&
+                        $history['live_session_order_count_in_current_filter_period'] === 1) {
                         $finalOverallNewCustomers++;
                     } else {
                         $finalOverallReturningCustomers++;
                     }
                 }
+            }
+
+            // Calculate rates and additional statistics for each session
+            foreach ($allProcessedLiveSessions as &$session) {
+                $session['success_rate'] = $session['total_orders'] > 0 ? round(($session['successful_orders'] / $session['total_orders']) * 100, 2) : 0;
+                $session['cancellation_rate'] = $session['total_orders'] > 0 ? round(($session['canceled_orders'] / $session['total_orders']) * 100, 2) : 0;
+                $session['delivering_rate'] = $session['total_orders'] > 0 ? round(($session['delivering_orders'] / $session['total_orders']) * 100, 2) : 0;
+                $session['average_order_value'] = $session['successful_orders'] > 0 ? round($session['revenue'] / $session['successful_orders'], 2) : 0;
+
+                if (isset($session['products']) && !empty($session['products'])) {
+                    uasort($session['products'], function ($a, $b) {
+                        return $b['revenue'] <=> $a['revenue'];
+                    });
+                    $session['top_products'] = array_slice($session['products'], 0, 5, true);
+                }
+
+                if (isset($session['customers']) && !empty($session['customers'])) {
+                    uasort($session['customers'], function ($a, $b) {
+                        return $b['total_spent'] <=> $a['total_spent'];
+                    });
+                }
+
+                $session['total_customers'] = count($session['customers'] ?? []);
+                $session['repeat_customers'] = count(array_filter($session['customers'] ?? [], function ($customer) {
+                    return $customer['orders'] > 1;
+                }));
+            }
+            unset($session);
+
+            usort($allProcessedLiveSessions, function ($a, $b) {
+                $dateComparison = strcmp($b['session_date'], $a['session_date']);
+                if ($dateComparison === 0) {
+                    return $a['live_number'] <=> $b['live_number'];
+                }
+                return $dateComparison;
+            });
+
+            $overallStats = [
+                'total_sessions' => count($allProcessedLiveSessions),
+                'total_orders' => array_sum(array_column($allProcessedLiveSessions, 'total_orders')),
+                'total_revenue' => array_sum(array_column($allProcessedLiveSessions, 'revenue')),
+                'total_successful_orders' => array_sum(array_column($allProcessedLiveSessions, 'successful_orders')),
+                'total_canceled_orders' => array_sum(array_column($allProcessedLiveSessions, 'canceled_orders')),
+                'total_delivering_orders' => array_sum(array_column($allProcessedLiveSessions, 'delivering_orders')),
+                'average_success_rate' => 0,
+                'average_cancellation_rate' => 0,
+                'average_delivering_rate' => 0,
+            ];
+
+            if ($overallStats['total_orders'] > 0) {
+                $overallStats['average_success_rate'] = round(($overallStats['total_successful_orders'] / $overallStats['total_orders']) * 100, 2);
+                $overallStats['average_cancellation_rate'] = round(($overallStats['total_canceled_orders'] / $overallStats['total_orders']) * 100, 2);
+                $overallStats['average_delivering_rate'] = round(($overallStats['total_delivering_orders'] / $overallStats['total_orders']) * 100, 2);
             }
 
             return [
@@ -759,30 +818,33 @@ class ReportController extends Controller
                 'overallCancellationRate' => $overallCancellationRate,
                 'overallDeliveringRate' => $overallDeliveringRate,
                 'dailyChartData' => $dailyChartDataOutput,
-                'monthlyChartData' => $monthlyChartDataForSessionPeriod, // This is for the charts that show month breakdown within the selected period
+                'monthlyChartData' => $monthlyChartDataForSessionPeriod,
                 'provinceDataForChart' => $provinceDataForChartOutput,
                 'provinceRevenueDataForChart' => $provinceRevenueDataForChartOutput,
                 'topProducts' => $topProductsOutput,
                 'totalUniqueCustomers' => $totalUniqueCustomersOutput,
                 'totalNewCustomersAll' => $finalOverallNewCustomers,
                 'totalReturningCustomersAll' => $finalOverallReturningCustomers,
-                // 'startDate' and 'endDate' for this specific period will be handled by the caller
+                'sessions' => array_values($allProcessedLiveSessions),
+                'overall_stats' => $overallStats,
             ];
         };
 
-        // Fetch all pancake order statuses for mapping codes to api_names
+        // Fetch pancake order statuses
         $pancakeStatusMap = DB::table('pancake_order_statuses')
             ->pluck('api_name', 'status_code')
-            ->map(function ($apiName) { return strtolower($apiName); })
+            ->map(function ($apiName) {
+                return strtolower($apiName);
+            })
             ->all();
         Log::debug("Pancake Status Map Loaded: ", $pancakeStatusMap);
 
         // Process data for the overall selected period
         $overallViewData = $processReportData($startDate, $endDate, $pancakeStatusMap);
-        $overallViewData['startDate'] = $startDate; // Add startDate for overall view
-        $overallViewData['endDate'] = $endDate;   // Add endDate for overall view
+        $overallViewData['startDate'] = $startDate;
+        $overallViewData['endDate'] = $endDate;
 
-        // --- START: Data for Monthly Tabs ---
+        // Data for monthly tabs
         $monthlyTabsData = [];
         $period = CarbonPeriod::create($startDate->copy()->startOfMonth(), '1 month', $endDate->copy()->endOfMonth());
 
@@ -790,27 +852,21 @@ class ReportController extends Controller
             $monthStartDate = $dateInMonth->copy()->startOfMonth();
             $monthEndDate = $dateInMonth->copy()->endOfMonth();
 
-            // Ensure the month's range doesn't exceed the overall selected range
             if ($monthStartDate < $startDate) $monthStartDate = $startDate->copy();
             if ($monthEndDate > $endDate) $monthEndDate = $endDate->copy();
 
-            // Ensure start is not after end, can happen if overall range is small
             if ($monthStartDate > $monthEndDate) continue;
 
-            $monthKey = $dateInMonth->format('Y-m'); // e.g., 2024-03
+            $monthKey = $dateInMonth->format('Y-m');
             Log::info("ReportController@liveSessionsPage: Preparing data for monthly tab: {$monthKey}");
             $monthlyReportData = $processReportData($monthStartDate, $monthEndDate, $pancakeStatusMap);
-            // Add specific start/end for this month's data to be available if needed
             $monthlyReportData['period_start_date'] = $monthStartDate;
             $monthlyReportData['period_end_date'] = $monthEndDate;
             $monthlyTabsData[$monthKey] = $monthlyReportData;
         }
-        // --- END: Data for Monthly Tabs ---
 
-        // Original $viewData becomes the overall data package
-        // We will add $monthlyTabsData to it to pass to the view
-        $finalViewData = $overallViewData; // overallViewData already contains all necessary keys
-        $finalViewData['monthlyTabsData'] = $monthlyTabsData; // Add the new monthly breakdown
+        $finalViewData = $overallViewData;
+        $finalViewData['monthlyTabsData'] = $monthlyTabsData;
 
         Log::info("ReportController@liveSessionsPage: Successfully processed all data including monthly tabs. Total overall sessions: {$overallViewData['totalSessions']}");
 
@@ -2377,7 +2433,7 @@ class ReportController extends Controller
             $currentStats['monthly_revenue'] = (clone $baseDailyAggQuery)->whereYear('aggregation_date', $year)->whereMonth('aggregation_date', $month)->sum('total_revenue');
             $currentStats['today_revenue'] = (clone $baseDailyAggQuery)->whereDate('aggregation_date', $today)->sum('total_revenue');
             $currentStats['today_completed_orders'] = (clone $baseDailyAggQuery)->whereDate('aggregation_date', $today)->sum('completed_orders_count');
-            
+
             $currentStats['monthly_revenue_formatted'] = number_format($currentStats['monthly_revenue'] ?? 0, 0, ',', '.');
             $currentStats['today_revenue_formatted'] = number_format($currentStats['today_revenue'] ?? 0, 0, ',', '.');
 
@@ -2405,15 +2461,15 @@ class ReportController extends Controller
         // We pass a simple request object with default date range to getOverallRevenueChartData method's core logic
         $initialChartRequest = new Request([
             // Default to last 30 days or current month for initial view
-            'start_date' => now()->subDays(29)->format('Y-m-d'), 
+            'start_date' => now()->subDays(29)->format('Y-m-d'),
             'end_date' => now()->format('Y-m-d')
         ]);
         $initialChartDataResponse = $this->getOverallRevenueChartData($initialChartRequest, true); // Pass true to indicate internal call
         $initialChartData = json_decode($initialChartDataResponse->getContent(), true)['data'] ?? [];
 
         return view('reports.overall_revenue_summary', compact(
-            'stats', 
-            'filterableStaff', 
+            'stats',
+            'filterableStaff',
             'filterableManagers',
             'initialChartData' // Pass initial chart data to the view
         ));
@@ -2467,7 +2523,7 @@ class ReportController extends Controller
             $targetUserIds = [$user->id];
             $isSpecificFilterApplied = true;
         }
-        
+
         // If a specific filter was applied (e.g. saleId, managerId) and it resulted in an empty $targetUserIds array, it means no data should be shown.
         if($isSpecificFilterApplied && empty($targetUserIds)) return false;
 
@@ -2501,7 +2557,7 @@ class ReportController extends Controller
 
         $cacheKey = 'report_overall_revenue_charts_v1_' . $user->id . '_' . md5(json_encode([$start->toDateString(), $end->toDateString(), $saleId, $managerId]));
         $chartData = Cache::remember($cacheKey, 300, function() use ($user, $start, $end, $saleId, $managerId) {
-            
+
             $targetUserIds = $this->getTargetUserIdsForQuery($user, $saleId, $managerId);
 
             $aggQueryBase = DailyRevenueAggregate::query()->whereBetween('aggregation_date', [$start, $end]);

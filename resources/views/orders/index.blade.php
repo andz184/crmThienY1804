@@ -1627,4 +1627,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 @stop
-

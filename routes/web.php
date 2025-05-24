@@ -224,29 +224,9 @@ Route::get('/call-window', function () {
 })->name('calls.window');
 
 // Pancake Sync Routes
-Route::middleware(['auth'])->group(function () {
-    Route::post('/pancake/sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'sync'])->name('pancake.sync');
-    Route::get('/pancake/sync/status', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'status'])->name('pancake.sync.status');
-    Route::post('/pancake/sync/cancel', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'cancelSync'])->name('pancake.sync.cancel');
-    Route::post('/customers/sync', [App\Http\Controllers\CustomerController::class, 'syncFromPancake'])->name('customers.sync');
-
-    // New order sync routes
-    Route::post('/pancake/orders/sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'syncOrders'])->name('pancake.orders.sync');
-    Route::post('/pancake/orders/push/bulk', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'bulkPushOrdersToPancake'])->name('pancake.orders.push.bulk');
-    Route::get('/pancake/sync', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'index'])->name('pancake.sync.index');
-
-    // Đồng bộ đơn hàng Pancake theo ngày
-    Route::post('/pancake/orders/sync-by-date', [\App\Http\Controllers\PancakeSyncController::class, 'syncOrdersByDateManual'])->name('pancake.orders.sync-by-date');
-    Route::get('/pancake/orders/sync-result', [\App\Http\Controllers\PancakeSyncController::class, 'checkSyncOrdersResult'])->name('pancake.orders.sync-result');
-    Route::get('/pancake/orders/sync-progress', [\App\Http\Controllers\PancakeSyncController::class, 'getSyncProgress'])->name('pancake.orders.sync-progress');
-
-    // Route đồng bộ đơn hàng từ API bên ngoài
-    Route::post('/pancake/orders/sync-from-api', [\App\Http\Controllers\PancakeSyncController::class, 'syncOrdersFromApi'])->name('pancake.orders.sync-from-api');
-
-    // Route đồng bộ tất cả đơn hàng
-    Route::post('/pancake/orders/sync-all', [\App\Http\Controllers\PancakeSyncController::class, 'syncAllOrders'])->name('pancake.orders.sync-all');
-    Route::get('/pancake/orders/sync-all-progress', [\App\Http\Controllers\PancakeSyncController::class, 'getAllOrdersSyncProgress'])->name('pancake.orders.sync-all-progress');
-    Route::post('/pancake/orders/sync-process-next', [\App\Http\Controllers\PancakeSyncController::class, 'processNextPage'])->name('pancake.orders.sync-process-next');
+Route::middleware(['auth', 'can:settings.manage'])->group(function () {
+    Route::post('admin/sync/orders', [PancakeSyncController::class, 'syncOrders'])->name('admin.sync.orders');
+    Route::get('admin/sync/status/{batchId}', [PancakeSyncController::class, 'getSyncStatus'])->name('admin.sync.status');
 });
 
 Route::get('/pancake-config', [PancakeConfigController::class, 'index'])->name('pancake.config');

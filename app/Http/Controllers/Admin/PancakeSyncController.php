@@ -17,6 +17,8 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Customer;
 use App\Models\User;
+use App\Jobs\ProcessPancakeOrder;
+use App\Jobs\ProcessPancakePages;
 
 class PancakeSyncController extends Controller
 {
@@ -31,7 +33,7 @@ class PancakeSyncController extends Controller
         if (!$lastSyncTime && PancakePage::count() > 0) {
             $lastSyncTime = PancakePage::max('updated_at');
         }
-        
+
         // Get the last time employees were synced (if available)
         $lastEmployeeSyncTime = Cache::get('last_employee_sync_time');
         $employeeCount = User::whereNotNull('pancake_uuid')->count();
@@ -54,7 +56,7 @@ class PancakeSyncController extends Controller
 
         $endpoint = $baseUri . '/shops?api_key=' . $apiKey;
         Log::info('Pancake Sync: Fetching shops from ' . $endpoint);
-        
+
         try {
             $response = Http::get($endpoint);
             $data = $response->json();
@@ -139,7 +141,7 @@ class PancakeSyncController extends Controller
 
             // Check if date parameter is provided
             $syncAllOrders = !$request->has('date');
-            
+
             if (!$syncAllOrders) {
                 $request->validate([
                     'date' => 'required|date_format:Y-m-d',
@@ -218,7 +220,7 @@ class PancakeSyncController extends Controller
                     $formattedDate = null;
                     $startDateTime = null;
                     $endDateTime = null;
-                    
+
                     if (!$syncAllOrders) {
                         $date = Carbon::createFromFormat('Y-m-d', $request->date);
                         $formattedDate = $date->format('Y-m-d');
@@ -226,7 +228,7 @@ class PancakeSyncController extends Controller
                         $startDateTime = $date->startOfDay()->timestamp;
                         $endDateTime = $date->copy()->endOfDay()->timestamp;
                     }
-                    
+
                     Log::info("Bắt đầu đồng bộ đơn hàng Pancake cho {$displayValue}", [
                         'sync_all' => $syncAllOrders,
                         'date' => $formattedDate,
@@ -248,13 +250,13 @@ class PancakeSyncController extends Controller
                             'page' => 1,
                             'per_page' => 1, // Chỉ lấy 1 đơn để xem meta
                         ];
-                        
+
                         // Thêm timestamp params chỉ khi đồng bộ theo ngày
                         if (!$syncAllOrders && $startDateTime && $endDateTime) {
                             $params['startDateTime'] = $startDateTime;
                             $params['endDateTime'] = $endDateTime;
                         }
-                        
+
                         $initialResponse = Http::get("{$baseUrl}/shops/{$shopId}/orders", $params);
 
                         $initialData = $initialResponse->json();
@@ -304,13 +306,13 @@ class PancakeSyncController extends Controller
                                 'page' => $page,
                                 'per_page' => $perPage,
                             ];
-                            
+
                             // Thêm timestamp params chỉ khi đồng bộ theo ngày
                             if (!$syncAllOrders && $startDateTime && $endDateTime) {
                                 $params['startDateTime'] = $startDateTime;
                                 $params['endDateTime'] = $endDateTime;
                             }
-                            
+
                             $response = Http::get("{$baseUrl}/shops/{$shopId}/orders", $params);
 
                             if (!$response->successful()) {
@@ -532,7 +534,7 @@ class PancakeSyncController extends Controller
             if ($request->has('sync_all') && $request->sync_all) {
                 // For all orders sync
                 $latestAllSync = Cache::get('pancake_latest_all_sync_id');
-                
+
                 if (!$latestAllSync) {
                     return response()->json([
                         'success' => false,
@@ -540,18 +542,18 @@ class PancakeSyncController extends Controller
                         'status' => 'pending'
                     ]);
                 }
-                
+
                 $syncIdentifier = $latestAllSync;
             } else {
                 // For date-specific sync
                 $request->validate([
                     'date' => 'required|date_format:Y-m-d',
                 ]);
-                
+
                 $date = $request->date;
                 $syncIdentifier = 'date_' . $date;
             }
-            
+
             $result = Cache::get('pancake_sync_result_' . $syncIdentifier);
 
             if (!$result) {
@@ -591,7 +593,7 @@ class PancakeSyncController extends Controller
             if ($request->has('sync_all') && $request->sync_all) {
                 // For all orders sync
                 $latestAllSync = Cache::get('pancake_latest_all_sync_id');
-                
+
                 if (!$latestAllSync) {
                     // Try to check if sync is in progress
                     if (Cache::has('pancake_sync_in_progress')) {
@@ -606,7 +608,7 @@ class PancakeSyncController extends Controller
                             ]);
                         }
                     }
-                    
+
                     return response()->json([
                         'success' => false,
                         'in_progress' => false,
@@ -615,7 +617,7 @@ class PancakeSyncController extends Controller
                         'sync_all' => true
                     ]);
                 }
-                
+
                 $syncIdentifier = $latestAllSync;
                 $date = null;
             } else {
@@ -623,11 +625,11 @@ class PancakeSyncController extends Controller
                 $request->validate([
                     'date' => 'required|date_format:Y-m-d',
                 ]);
-                
+
                 $date = $request->date;
                 $syncIdentifier = 'date_' . $date;
             }
-            
+
             $progress = Cache::get('pancake_sync_progress_' . $syncIdentifier);
 
             if (!$progress) {
@@ -775,7 +777,7 @@ class PancakeSyncController extends Controller
             $order->assigning_seller_id = $orderData['assigning_seller_id'];
             $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
         }
-        
+
         // Store the original creation timestamp from Pancake if available
         if (!empty($orderData['inserted_at'])) {
             try {
@@ -840,7 +842,7 @@ class PancakeSyncController extends Controller
             $order->assigning_seller_id = $orderData['assigning_seller_id'];
             $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
         }
-        
+
         // Update the original creation timestamp from Pancake if available and not set already
         if (empty($order->pancake_inserted_at) && !empty($orderData['inserted_at'])) {
             try {
@@ -1051,37 +1053,120 @@ class PancakeSyncController extends Controller
     public function syncOrders(Request $request)
     {
         try {
-            $this->authorize('settings.manage');
-
             // Get API configuration
             $apiKey = config('pancake.api_key');
             $shopId = config('pancake.shop_id');
-            $baseUrl = config('pancake.base_uri', 'https://pos.pages.fm/api/v1');
+            $baseUrl = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1'), '/');
 
             if (empty($apiKey) || empty($shopId)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake'
+                    'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake.'
                 ], 400);
             }
 
-            // Use only one specific day instead of a date range
-            $syncDate = $request->input('sync_date', now()->format('Y-m-d'));
-            $date = Carbon::createFromFormat('Y-m-d', $syncDate);
+            // Generate a unique batch ID for this sync
+            $batchId = uniqid('sync_', true);
 
-            // Start the sync process for a single day
-            return $this->syncOrdersByDateManual($request->merge(['date' => $syncDate]));
+            // Initialize sync info in cache
+            $syncInfo = [
+                'batch_id' => $batchId,
+                'start_time' => now()->toDateTimeString(),
+                'status' => 'running',
+                'current_page' => 1,
+                'total_pages' => 0,
+                'stats' => [
+                    'created' => 0,
+                    'updated' => 0,
+                    'failed' => 0
+                ]
+            ];
+            cache()->put("pancake_sync_{$batchId}_info", $syncInfo, now()->addHours(2));
+
+            // Get first page to determine total pages
+            $url = "{$baseUrl}/shops/{$shopId}/orders";
+            $response = Http::timeout(30)->get($url, [
+                'api_key' => $apiKey,
+                'page' => 1,
+                'limit' => 50 // Process 50 orders per page
+            ]);
+
+            if (!$response->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Lỗi kết nối đến Pancake API: ' . ($response->json()['message'] ?? $response->status())
+                ], $response->status());
+            }
+
+            $responseData = $response->json();
+            $totalOrders = $responseData['total'] ?? 0;
+            $totalPages = ceil($totalOrders / 50);
+
+            // Update sync info with total pages
+            $syncInfo['total_pages'] = $totalPages;
+            cache()->put("pancake_sync_{$batchId}_info", $syncInfo, now()->addHours(2));
+
+            // Process first page orders
+            foreach ($responseData['data'] ?? [] as $orderData) {
+                ProcessPancakeOrder::dispatch($orderData, $batchId)->onQueue('pancake-sync');
+            }
+
+            // Dispatch jobs for remaining pages
+            for ($page = 2; $page <= $totalPages; $page++) {
+                ProcessPancakePages::dispatch($page, $apiKey, $shopId, $batchId)->onQueue('pancake-sync');
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Bắt đầu đồng bộ {$totalOrders} đơn hàng",
+                'batch_id' => $batchId,
+                'total_pages' => $totalPages
+            ]);
+
         } catch (\Exception $e) {
-            Log::error('Error starting Pancake order sync', [
+            Log::error('Error starting Pancake sync', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
+                'message' => 'Lỗi khởi tạo đồng bộ: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    public function getSyncStatus(Request $request, string $batchId)
+    {
+        $syncInfo = cache()->get("pancake_sync_{$batchId}_info");
+        $stats = cache()->get("pancake_sync_{$batchId}_stats");
+
+        if (!$syncInfo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không tìm thấy thông tin đồng bộ'
+            ], 404);
+        }
+
+        $isComplete = $syncInfo['status'] === 'completed' ||
+                      ($stats && ($stats['created'] + $stats['updated'] + $stats['failed']) >= $syncInfo['total_pages'] * 50);
+
+        if ($isComplete && $syncInfo['status'] !== 'completed') {
+            $syncInfo['status'] = 'completed';
+            $syncInfo['end_time'] = now()->toDateTimeString();
+            cache()->put("pancake_sync_{$batchId}_info", $syncInfo, now()->addHours(2));
+        }
+
+        return response()->json([
+            'success' => true,
+            'info' => $syncInfo,
+            'stats' => $stats ?? [
+                'created' => 0,
+                'updated' => 0,
+                'failed' => 0
+            ],
+            'is_complete' => $isComplete
+        ]);
     }
 
     /**

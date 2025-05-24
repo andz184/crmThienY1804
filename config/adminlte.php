@@ -384,18 +384,18 @@ return [
             'icon'    => 'fas fa-fw fa-chart-bar',
             'can'     => 'reports.view',
             'submenu' => [
-                [
-                    'text' => 'Tổng Doanh Thu',
-                    'route' => 'reports.total_revenue',
-                    'icon' => 'fas fa-fw fa-chart-line',
-                    'can' => 'reports.total_revenue',
-                ],
-                [
-                    'text' => 'Báo Cáo Chi Tiết',
-                    'route' => 'reports.detail',
-                    'icon' => 'fas fa-fw fa-file-alt',
-                    'can' => 'reports.detailed',
-                ],
+                // [
+                //     'text' => 'Tổng Doanh Thu',
+                //     'route' => 'reports.total_revenue',
+                //     'icon' => 'fas fa-fw fa-chart-line',
+                //     'can' => 'reports.total_revenue',
+                // ],
+                // [
+                //     'text' => 'Báo Cáo Chi Tiết',
+                //     'route' => 'reports.detail',
+                //     'icon' => 'fas fa-fw fa-file-alt',
+                //     'can' => 'reports.detailed',
+                // ],
                 [
                     'text' => 'Theo Nhóm Hàng Hóa',
                     'route' => 'reports.product_groups',
@@ -414,30 +414,30 @@ return [
                     'icon' => 'fas fa-fw fa-video',
                     'can' => 'reports.live_sessions',
                 ],
-                [
-                    'text' => 'Thanh Toán',
-                    'route' => 'reports.payments',
-                    'icon' => 'fas fa-fw fa-money-bill-wave',
-                    'can' => 'reports.view',
-                ],
-                [
-                    'text' => 'Tỉ Lệ Chốt Đơn',
-                    'route' => 'reports.conversion_rates',
-                    'icon' => 'fas fa-fw fa-percentage',
-                    'can' => 'reports.conversion_rates',
-                ],
-                [
-                    'text' => 'Khách Hàng Mới',
-                    'route' => 'reports.new_customers',
-                    'icon' => 'fas fa-fw fa-user-plus',
-                    'can' => 'reports.customer_new',
-                ],
-                [
-                    'text' => 'Khách Hàng Cũ',
-                    'route' => 'reports.returning_customers',
-                    'icon' => 'fas fa-fw fa-user-clock',
-                    'can' => 'reports.customer_returning',
-                ],
+                // [
+                //     'text' => 'Thanh Toán',
+                //     'route' => 'reports.payments',
+                //     'icon' => 'fas fa-fw fa-money-bill-wave',
+                //     'can' => 'reports.view',
+                // ],
+                // [
+                //     'text' => 'Tỉ Lệ Chốt Đơn',
+                //     'route' => 'reports.conversion_rates',
+                //     'icon' => 'fas fa-fw fa-percentage',
+                //     'can' => 'reports.conversion_rates',
+                // ],
+                // [
+                //     'text' => 'Khách Hàng Mới',
+                //     'route' => 'reports.new_customers',
+                //     'icon' => 'fas fa-fw fa-user-plus',
+                //     'can' => 'reports.customer_new',
+                // ],
+                // [
+                //     'text' => 'Khách Hàng Cũ',
+                //     'route' => 'reports.returning_customers',
+                //     'icon' => 'fas fa-fw fa-user-clock',
+                //     'can' => 'reports.customer_returning',
+                // ],
             ],
         ],
         // Settings Link
