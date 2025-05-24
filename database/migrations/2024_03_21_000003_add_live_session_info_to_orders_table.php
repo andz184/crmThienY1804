@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
+class AddLiveSessionInfoToOrdersTable extends Migration
 {
     /**
      * Run the migrations.
@@ -12,8 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            $table->json('live_session_info')->nullable()->after('notes')
-                  ->comment('Structured information about live session parsed from notes');
+            $table->json('live_session_info')->nullable()->comment('Structured information about live session parsed from notes')->after('notes');
         });
     }
 
@@ -26,4 +25,4 @@ return new class extends Migration
             $table->dropColumn('live_session_info');
         });
     }
-};
+}
