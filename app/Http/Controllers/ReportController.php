@@ -420,7 +420,7 @@ class ReportController extends Controller
                 ->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.live_number")) IS NOT NULL')
                 ->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.session_date")) IS NOT NULL')
                 ->whereRaw('JSON_UNQUOTE(JSON_EXTRACT(live_session_info, "$.original_text")) IS NOT NULL')
-                ->where('pancake_inserted_at', '>=', Carbon::now()->subYears(2)->startOfDay())
+                ->where('pancake_inserted_at', '>=', Carbon::now()->subYears(1)->startOfDay())
                 ->with(['items'])
                 ->when($request->has('session_date'), function ($query) use ($request) {
                     $sessionDate = $request->input('session_date');
