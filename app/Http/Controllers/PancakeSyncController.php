@@ -12,6 +12,7 @@ use App\Models\OrderItem;
 use App\Models\Customer;
 use App\Models\PancakeShop;
 use App\Models\PancakePage;
+use App\Models\PancakeCategory;
 use Illuminate\Support\Facades\DB;
 use App\Models\WebsiteSetting;
 use Illuminate\Support\Str;
@@ -23,6 +24,7 @@ use Illuminate\Support\Facades\Schema;
 use App\Models\Province;
 use App\Models\District;
 use App\Models\Ward;
+use App\Models\ProductVariant;
 
 class PancakeSyncController extends Controller
 {
@@ -82,6 +84,39 @@ class PancakeSyncController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Đồng bộ thất bại: ' . $e->getMessage()
+            ], 500);
+        }
+
+        try {
+            $orderData = $this->sanitizeOrderData($data);
+
+            // Check if order exists
+            $order = Order::where('pancake_id', $orderData['pancake_id'])->first();
+
+            if ($order) {
+                $this->updateOrderFromPancake($order, $orderData);
+            } else {
+                $order = $this->createOrderFromPancakeData($orderData);
+            }
+
+            // Variant revenue is now handled in setOrderItemFields
+            foreach ($order->items as $item) {
+                // Each item is already processed in setOrderItemFields
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Order synced successfully',
+                'data' => $order
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('PancakeSyncController@sync: Error syncing order: ' . $e->getMessage());
+            Log::error($e->getTraceAsString());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error syncing order: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -405,6 +440,7 @@ class PancakeSyncController extends Controller
         // Tạo đơn hàng mới
         $order = new \App\Models\Order();
         $order->pancake_order_id = $orderData['id'] ?? null;
+        $order->post_id = $orderData['post_id'] ?? null;
         $order->order_code = $orderData['code'] ?? ('PCK-' . \Illuminate\Support\Str::random(8));
         $order->customer_name = $orderData['customer']['name'] ?? ($customer ? $customer->name : '');
         $order->customer_phone = $orderData['customer']['phone'] ?? ($customer ? $customer->phone : '');
@@ -415,7 +451,7 @@ class PancakeSyncController extends Controller
         $order->internal_status = 'Imported from Pancake';
         $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
         $order->payment_method = $orderData['payment_method'] ?? 'cod';
-        $order->total_value = $orderData['total'] ?? 0;
+        $order->total_value = $orderData['total_price'] ?? 0;
         if (isset($orderData['bill_full_name']) || isset($orderData['bill_phone_number']) || isset($orderData['customer_name']) || isset($orderData['customer_phone']) || isset($orderData['customer_email'])) {
             // Handle flat customer data structure
             $order->bill_full_name = $orderData['bill_full_name'] ?? ($orderData['customer_name'] ?? $order->customer_name);
@@ -527,10 +563,74 @@ class PancakeSyncController extends Controller
 
         // Parse live session information from notes
         if (!empty($orderData['note'])) {
-
             $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
             if ($liveSessionInfo) {
+                // Store only JSON info in orders table
                 $order->live_session_info = json_encode($liveSessionInfo);
+
+                // Save order first to get the ID
+                $order->save();
+
+                // Create live session order record
+                $liveSessionOrder = \App\Models\LiveSessionOrder::create([
+                    'order_id' => $order->id,
+                    'live_session_id' => "LIVE{$liveSessionInfo['live_number']}",
+                    'live_session_date' => \Carbon\Carbon::parse($liveSessionInfo['session_date'])->format('Y-m-d'),
+                    'customer_id' => $order->customer_id,
+                    'customer_name' => $order->customer_name,
+                    'shipping_address' => $order->full_address ?: $order->street_address,
+                    'total_amount' => $order->total_value
+                ]);
+
+                // Create live session order items
+                foreach ($order->items as $item) {
+                    $liveSessionOrder->items()->create([
+                        'product_id' => $item->product_id,
+                        'product_name' => $item->product_name,
+                        'product_sku' => $item->product_sku,
+                        'quantity' => $item->quantity,
+                        'price' => $item->unit_price,
+                        'total' => $item->total_price
+                    ]);
+
+                    // // Update top products statistics
+                    // \App\Models\TopProduct::updateOrCreate(
+                    //     [
+                    //         'product_id' => $item->product_id,
+                    //         'name' => $item->product_name,
+                    //         'live_session_id' => "LIVE{$liveSessionInfo['live_number']}"
+                    //     ],
+                    //     [
+                    //         'quantity' => \DB::raw('quantity + ' . $item->quantity),
+                    //         'revenue' => \DB::raw('revenue + ' . $item->total_price)
+                    //     ]
+                    // );
+                }
+
+                // Update live session revenue statistics
+                $liveSessionRevenue = \App\Models\LiveSessionRevenue::updateFromOrder($order);
+
+                // Update top products in live session revenue
+                if ($liveSessionRevenue) {
+                    $topProducts = $liveSessionRevenue->top_products ?? [];
+                    foreach ($order->items as $item) {
+                        $productKey = $item->product_id . '_' . $item->product_name;
+                        if (!isset($topProducts[$productKey])) {
+                            $topProducts[$productKey] = [
+                                'product_id' => $item->product_id,
+                                'name' => $item->product_name,
+                                'quantity' => 0,
+                                'revenue' => 0
+                            ];
+                        }
+                        $topProducts[$productKey]['quantity'] += $item->quantity;
+                        $topProducts[$productKey]['revenue'] += $item->total_price;
+                    }
+                    $liveSessionRevenue->top_products = $topProducts;
+                    $liveSessionRevenue->save();
+                }
+
+                return;
             }
         }
 
@@ -553,7 +653,7 @@ class PancakeSyncController extends Controller
 
                         Log::info('Created order item from component structure', [
                             'order_id' => $order->id,
-                            'product_name' => $orderItem->product_name,
+                            // 'product_name' => $orderItem->product_name,
                             'quantity' => $orderItem->quantity,
                             'price' => $orderItem->price
                         ]);
@@ -612,6 +712,8 @@ class PancakeSyncController extends Controller
 private function updateOrderFromPancake(Order $order, array $orderData)
 {
     try {
+        DB::beginTransaction();
+
         Log::info('Updating existing order from Pancake data', [
             'order_id' => $order->id,
             'pancake_order_id' => $orderData['id'] ?? 'N/A',
@@ -782,7 +884,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     $page->pancake_id = $orderData['page_id'];
                     $page->pancake_page_id = $orderData['page_id']; // Thêm dòng này để đảm bảo cả pancake_id và pancake_page_id đều được set
                     $page->name = $orderData['page_name'];
-                    $page->pancake_shop_table_id = $order->pancake_shop_id; // Liên kết với shop hiện tại
+                    $page->pancake_shop_table_id = $order->pancake_shop_id; // Liên kết với shop
                     $page->save();
 
                     Log::info('Đã tạo page mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
@@ -858,6 +960,47 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 } else {
                     // Lưu pancake_shipping_provider_id ngay cả khi không tìm thấy provider
                     $order->pancake_shipping_provider_id = $providerId;
+            }
+        }
+
+                    // Update order items and variant revenues
+            if (!empty($orderData['items']) && is_array($orderData['items'])) {
+                // First, mark all existing items for potential deletion
+                $existingItemIds = $order->items->pluck('id')->toArray();
+                $updatedItemIds = [];
+
+                foreach ($orderData['items'] as $itemData) {
+                    // Find or create order item
+                    $orderItem = $order->items()
+                        ->where('pancake_product_id', $itemData['product_id'])
+                        ->first();
+
+                    if (!$orderItem) {
+                        $orderItem = new OrderItem();
+                        $orderItem->order_id = $order->id;
+                    }
+
+                    // Update order item fields and handle variant revenue
+                    $orderItem = $this->setOrderItemFields($orderItem, $itemData);
+                    $updatedItemIds[] = $orderItem->id;
+                }
+
+                // Remove items that no longer exist in the updated data
+                $itemsToDelete = array_diff($existingItemIds, $updatedItemIds);
+                if (!empty($itemsToDelete)) {
+                    // Delete variant revenues for removed items
+                    DB::table('variant_revenues')
+                        ->whereIn('order_item_id', $itemsToDelete)
+                        ->where('order_id', $order->id)
+                        ->delete();
+
+                    // Delete the items themselves
+                    OrderItem::whereIn('id', $itemsToDelete)->delete();
+
+                    Log::info('Removed deleted items and their variant revenues', [
+                        'order_id' => $order->id,
+                        'deleted_item_ids' => $itemsToDelete
+                    ]);
             }
         }
 
@@ -1090,7 +1233,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $page->pancake_id = $pageData['id'];
                 $page->pancake_page_id = $pageData['id']; // Thêm dòng này để đảm bảo cả hai trường đều được set
                 $page->name = $pageData['name'];
-                $page->username = $pageData['username'] ?? null;
+                $page->pancake_shop_table_id = $order->pancake_shop_id; // Liên kết với shop
                 $page->save();
 
                 Log::info('Created new Pancake Page during order update', [
@@ -1434,6 +1577,8 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
             $dateForCacheKey = null;
             $date = null;
+            $startTimestamp = $request->input('startDateTime');
+            $endTimestamp = $request->input('endDateTime');
 
             if ($startTimestamp && $endTimestamp) {
                 Log::info('Using timestamp range for sync', [
@@ -2882,6 +3027,60 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         return $orderItem;
     }
 
+
+    /**
+     * Synchronize orders from Pancake by date
+     * This method is called from the Artisan command
+     *
+     * @param \Carbon\Carbon $date
+     * @return array
+     */
+    public function syncOrdersByDate($date)
+    {
+        // Increase execution time limit to 2 hours and memory limit to 1GB
+        set_time_limit(7200);
+        ini_set('memory_limit', '1024M');
+
+        // Create a request with the date to reuse the existing method
+        $request = new \Illuminate\Http\Request();
+        $request->merge(['date' => $date->format('Y-m-d')]);
+
+        try {
+            // Call the existing implementation
+
+            $result = $this->syncOrdersByDateManual($request);
+
+            // Convert response to array format expected by the command
+            if ($result->getStatusCode() === 200) {
+                $data = json_decode($result->getContent(), true);
+                return $data;
+            } else {
+                return [
+                    'success' => false,
+                    'message' => 'Đồng bộ thất bại với mã lỗi: ' . $result->getStatusCode(),
+                    'total_synced' => 0,
+                    'new_orders' => 0,
+                    'updated_orders' => 0
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('Lỗi trong quá trình đồng bộ đơn hàng theo ngày', [
+                'date' => $date->format('Y-m-d'),
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Đã xảy ra lỗi: ' . $e->getMessage(),
+                'total_synced' => 0,
+                'new_orders' => 0,
+                'updated_orders' => 0
+            ];
+        }
+    }
+
+
     /**
      * Synchronize orders from Pancake by date
      * This method is called from the Artisan command
@@ -3212,5 +3411,9 @@ public function syncCategories(Request $request)
         return null;
     }
 
-}
+    /**
+     * Xử lý doanh thu theo variant và category
+     */
 
+
+}

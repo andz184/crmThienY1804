@@ -74,7 +74,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.detailed', // Báo cáo chi tiết
             'reports.product_groups', // Báo cáo theo nhóm hàng hóa
             'reports.campaigns', // Báo cáo theo chiến dịch (bài post)
-            'reports.live_sessions', // Báo cáo phiên live
+            'reports.live-sessions', // Báo cáo phiên live
             'reports.conversion_rates', // Báo cáo tỉ lệ chốt đơn
             'reports.customer_new', // Báo cáo khách hàng mới (đơn đầu tiên)
             'reports.customer_returning', // Báo cáo khách hàng cũ (đơn thứ 2+)
@@ -116,7 +116,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.detailed',
             'reports.product_groups',
             'reports.campaigns',
-            'reports.live_sessions',
+            'reports.live-sessions',
             'reports.conversion_rates',
             'reports.customer_new',
             'reports.customer_returning',
@@ -138,7 +138,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.detailed',
             'reports.product_groups',
             'reports.campaigns',
-            'reports.live_sessions',
+            'reports.live-sessions',
             'reports.conversion_rates',
             'reports.customer_new',
             'reports.customer_returning',

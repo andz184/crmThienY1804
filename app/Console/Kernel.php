@@ -19,6 +19,7 @@ class Kernel extends ConsoleKernel
         Commands\TestPancakeApi::class,
         Commands\EnsureSuperAdminPermissions::class,
         Commands\SyncPancakeOrdersByDate::class,
+        Commands\RecalculateTopProducts::class,
     ];
 
     /**
@@ -54,6 +55,16 @@ class Kernel extends ConsoleKernel
                 ->withoutOverlapping(30) // Tối đa 30 phút
                 ->runInBackground()
                 ->appendOutputTo(storage_path('logs/pancake-sync.log'));
+
+        // Calculate daily reports at midnight
+        $schedule->command('reports:calculate-daily')
+            ->dailyAt('00:00')
+            ->withoutOverlapping();
+
+        // Recalculate top products daily at 00:30
+        $schedule->command('live:recalculate-products --start="' . now()->subDays(7)->format('Y-m-d') . '"')
+            ->dailyAt('00:30')
+            ->appendOutputTo(storage_path('logs/recalculate-products.log'));
     }
 
     /**

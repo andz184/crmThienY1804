@@ -111,15 +111,14 @@ class ReportController extends Controller
 
         Log::info("ReportController@productGroupsPage: Processing report for date range: {$startDate->toDateTimeString()} to {$endDate->toDateTimeString()}");
 
-        // Fetch orders with items within the date range
-        // We need to filter orders based on their creation date, and then process their items.
+        // Fetch orders with items and variants within the date range
         $orders = Order::whereBetween('created_at', [$startDate, $endDate])
-            ->whereNull('deleted_at') // Exclude deleted orders
-            ->where(function ($query) { // Exclude cancelled orders (example status, adjust as needed)
+            ->whereNull('deleted_at')
+            ->where(function ($query) {
                 $query->where('status', '!=', Order::STATUS_DA_HUY)
                       ->orWhereNull('status');
             })
-            ->with(['items']) // Eager load items
+            ->with(['items.variants'])
             ->get();
 
         Log::info("ReportController@productGroupsPage: Found " . $orders->count() . " orders for the period.");
@@ -132,63 +131,14 @@ class ReportController extends Controller
             $orderCategoriesProcessed = []; // To count each category once per order for order count metric
 
             foreach ($order->items as $item) {
-                if (!empty($item->product_info)) {
-                    $productInfo = null;
-                    if (is_string($item->product_info)) {
-                        $productInfo = json_decode($item->product_info, true);
-                    } elseif (is_array($item->product_info) || is_object($item->product_info)) {
-                        $productInfo = (array) $item->product_info; // Cast to array if it's an object
-                    }
-
-                    if (!$productInfo) {
-                        Log::warning("ReportController@productGroupsPage: Failed to process product_info for item ID {$item->id}. product_info was: ", [$item->product_info]);
-                        continue;
-                    }
-
-                    $itemCategoryIds = [];
-
-                    // Extract category_ids, checking various possible structures due to past sync logic
-                    if (isset($productInfo['variation_info']['category_ids']) && is_array($productInfo['variation_info']['category_ids'])) {
-                        $itemCategoryIds = $productInfo['variation_info']['category_ids'];
-                    } elseif (isset($productInfo['category_ids']) && is_array($productInfo['category_ids'])) { // Direct category_ids in product_info
-                        $itemCategoryIds = $productInfo['category_ids'];
-                    } elseif (isset($productInfo['processed_variation_info']['category_ids']) && is_array($productInfo['processed_variation_info']['category_ids'])) { // From components logic
-                        $itemCategoryIds = $productInfo['processed_variation_info']['category_ids'];
-                    }
-
-
-                    foreach ($itemCategoryIds as $categoryId) {
-                        // $categoryId from product_info is the pancake_id
-                        if (!isset($categoryMap[$categoryId])) {
-                            Log::warning("ReportController@productGroupsPage: Pancake Category ID {$categoryId} not found in categoryMap for item ID {$item->id}, product_info: " . json_encode($item->product_info));
-                            continue; // Skip if category ID doesn't exist in our map
-                        }
-                        $categoryName = $categoryMap[$categoryId];
-
-                        // Use $categoryId (which is pancake_id) as the key for $categoryData
-                        if (!isset($categoryData[$categoryId])) {
-                            $categoryData[$categoryId] = [
-                                'id' => $categoryId, // Store pancake_id as 'id' for consistency in the view perhaps, or use a different key
-                                'name' => $categoryName,
-                                'total_revenue' => 0,
-                                'total_orders' => 0,
-                                'total_quantity_sold' => 0,
-                            ];
-                        }
-
-                        // Aggregate data
-                        // Revenue is item price * quantity for this item
-                        $categoryData[$categoryId]['total_revenue'] += ($item->price * $item->quantity);
-                        $categoryData[$categoryId]['total_quantity_sold'] += $item->quantity;
-
-                        // Increment order count for this category if this is the first item from this category for this order
-                        if (!isset($orderCategoriesProcessed[$categoryId])) {
-                            $categoryData[$categoryId]['total_orders']++;
-                            $orderCategoriesProcessed[$categoryId] = true;
-                        }
+                // Process variants if available
+                if ($item->variants->isNotEmpty()) {
+                    foreach ($item->variants as $variant) {
+                        $this->processVariantForReport($variant, $item, $order, $categoryMap, $categoryData, $orderCategoriesProcessed);
                     }
                 } else {
-                    Log::debug("ReportController@productGroupsPage: Item ID {$item->id} in order ID {$order->id} has empty product_info.");
+                    // Fallback to product_info if no variants
+                    $this->processProductInfoForReport($item, $order, $categoryMap, $categoryData, $orderCategoriesProcessed);
                 }
             }
         }
@@ -200,39 +150,180 @@ class ReportController extends Controller
 
         Log::info("ReportController@productGroupsPage: Processed " . count($categoryData) . " categories.");
 
-        // Prepare data for charts
+        // Get top 10 categories for chart data
+        $topCategories = array_slice($categoryData, 0, 10, true);
+
+        // Prepare data for charts with only top 10 categories
+        $chartData = $this->prepareChartData($topCategories);
+
+        // Overall summary stats (keep all categories for accurate totals)
+        $summaryStats = $this->calculateSummaryStats($categoryData);
+
+        return view('reports.product_groups', array_merge(
+            compact('startDate', 'endDate', 'categoryData'),
+            $chartData,
+            $summaryStats
+        ));
+    }
+
+    /**
+     * Process variant data for reporting
+     */
+    private function processVariantForReport($variant, $item, $order, $categoryMap, &$categoryData, &$orderCategoriesProcessed)
+    {
+        $variantCategoryIds = $variant->category_ids ?? [];
+
+        foreach ($variantCategoryIds as $categoryId) {
+            if (!isset($categoryMap[$categoryId])) {
+                Log::warning("ReportController@processVariantForReport: Category ID {$categoryId} not found for variant {$variant->pancake_variant_id}");
+                continue;
+            }
+
+            if (!isset($categoryData[$categoryId])) {
+                $categoryData[$categoryId] = [
+                    'id' => $categoryId,
+                    'name' => $categoryMap[$categoryId],
+                    'total_revenue' => 0,
+                    'total_orders' => 0,
+                    'total_quantity_sold' => 0,
+                    'variants' => [],
+                ];
+            }
+
+            // Add variant-specific data
+            if (!isset($categoryData[$categoryId]['variants'][$variant->pancake_variant_id])) {
+                $categoryData[$categoryId]['variants'][$variant->pancake_variant_id] = [
+                    'id' => $variant->pancake_variant_id,
+                    'name' => $variant->name,
+                    'sku' => $variant->sku,
+                    'total_quantity' => 0,
+                    'total_revenue' => 0,
+                    'orders_count' => 0,
+                ];
+            }
+
+            $variantData = &$categoryData[$categoryId]['variants'][$variant->pancake_variant_id];
+            $variantData['total_quantity'] += $item->quantity;
+            $variantData['total_revenue'] += ($item->price * $item->quantity);
+            $variantData['orders_count']++;
+
+            // Update category totals
+            $categoryData[$categoryId]['total_revenue'] += ($item->price * $item->quantity);
+            $categoryData[$categoryId]['total_quantity_sold'] += $item->quantity;
+
+            // Increment order count for this category if this is the first item from this category for this order
+            if (!isset($orderCategoriesProcessed[$categoryId])) {
+                $categoryData[$categoryId]['total_orders']++;
+                $orderCategoriesProcessed[$categoryId] = true;
+            }
+        }
+    }
+
+    /**
+     * Process product info for reporting (fallback when no variants)
+     */
+    private function processProductInfoForReport($item, $order, $categoryMap, &$categoryData, &$orderCategoriesProcessed)
+    {
+        if (!empty($item->product_info)) {
+            $productInfo = null;
+            if (is_string($item->product_info)) {
+                $productInfo = json_decode($item->product_info, true);
+            } elseif (is_array($item->product_info) || is_object($item->product_info)) {
+                $productInfo = (array) $item->product_info;
+            }
+
+            if (!$productInfo) {
+                Log::warning("ReportController@processProductInfoForReport: Failed to process product_info for item ID {$item->id}");
+                return;
+            }
+
+            $itemCategoryIds = [];
+            if (isset($productInfo['variation_info']['category_ids']) && is_array($productInfo['variation_info']['category_ids'])) {
+                $itemCategoryIds = $productInfo['variation_info']['category_ids'];
+            } elseif (isset($productInfo['category_ids']) && is_array($productInfo['category_ids'])) {
+                $itemCategoryIds = $productInfo['category_ids'];
+            } elseif (isset($productInfo['processed_variation_info']['category_ids']) && is_array($productInfo['processed_variation_info']['category_ids'])) {
+                $itemCategoryIds = $productInfo['processed_variation_info']['category_ids'];
+            }
+
+            foreach ($itemCategoryIds as $categoryId) {
+                if (!isset($categoryMap[$categoryId])) {
+                    Log::warning("ReportController@processProductInfoForReport: Category ID {$categoryId} not found for item ID {$item->id}");
+                    continue;
+                }
+
+                if (!isset($categoryData[$categoryId])) {
+                    $categoryData[$categoryId] = [
+                        'id' => $categoryId,
+                        'name' => $categoryMap[$categoryId],
+                        'total_revenue' => 0,
+                        'total_orders' => 0,
+                        'total_quantity_sold' => 0,
+                        'variants' => [],
+                    ];
+                }
+
+                $categoryData[$categoryId]['total_revenue'] += ($item->price * $item->quantity);
+                $categoryData[$categoryId]['total_quantity_sold'] += $item->quantity;
+
+                if (!isset($orderCategoriesProcessed[$categoryId])) {
+                    $categoryData[$categoryId]['total_orders']++;
+                    $orderCategoriesProcessed[$categoryId] = true;
+                }
+            }
+        }
+    }
+
+    /**
+     * Prepare chart data from category data
+     */
+    private function prepareChartData($categoryData)
+    {
         $chartCategoryNames = [];
         $chartRevenueData = [];
         $chartOrderCountData = [];
         $chartQuantityData = [];
+        $chartVariantData = [];
 
         foreach ($categoryData as $cat) {
             $chartCategoryNames[] = $cat['name'];
             $chartRevenueData[] = $cat['total_revenue'];
             $chartOrderCountData[] = $cat['total_orders'];
             $chartQuantityData[] = $cat['total_quantity_sold'];
+
+            // Prepare variant data for charts
+            if (!empty($cat['variants'])) {
+                $variantStats = [];
+                foreach ($cat['variants'] as $variant) {
+                    $variantStats[] = [
+                        'name' => $variant['name'],
+                        'revenue' => $variant['total_revenue'],
+                        'quantity' => $variant['total_quantity'],
+                        'orders' => $variant['orders_count'],
+                    ];
+                }
+                $chartVariantData[$cat['name']] = $variantStats;
+            }
         }
 
-        // Overall summary stats
+        return compact('chartCategoryNames', 'chartRevenueData', 'chartOrderCountData', 'chartQuantityData', 'chartVariantData');
+    }
+
+    /**
+     * Calculate summary statistics
+     */
+    private function calculateSummaryStats($categoryData)
+    {
         $totalRevenueAllGroups = array_sum(array_column($categoryData, 'total_revenue'));
-        $totalOrdersAllGroups = array_sum(array_column($categoryData, 'total_orders')); // This might double count if an order has items from multiple groups.
-                                                                                        // A more accurate total order count for "orders with any product group item" would be $orders->count() if every order had an item with a category.
-                                                                                        // For now, sum of category orders might be what user expects for "total orders touching groups".
+        $totalOrdersAllGroups = array_sum(array_column($categoryData, 'total_orders'));
         $totalQuantityAllGroups = array_sum(array_column($categoryData, 'total_quantity_sold'));
+        $totalVariants = 0;
 
+        foreach ($categoryData as $category) {
+            $totalVariants += count($category['variants'] ?? []);
+        }
 
-        return view('reports.product_groups', compact(
-            'startDate',
-            'endDate',
-            'categoryData', // For the table
-            'chartCategoryNames',
-            'chartRevenueData',
-            'chartOrderCountData',
-            'chartQuantityData',
-            'totalRevenueAllGroups',
-            'totalOrdersAllGroups',
-            'totalQuantityAllGroups'
-        ));
+        return compact('totalRevenueAllGroups', 'totalOrdersAllGroups', 'totalQuantityAllGroups', 'totalVariants');
     }
 
     /**
@@ -361,7 +452,6 @@ class ReportController extends Controller
             'chartCampaignRevenue'
         ));
     }
-
     /**
      * Hiển thị trang báo cáo phiên live
      */
@@ -570,9 +660,18 @@ class ReportController extends Controller
 
             // Recalculate rates for the $result
             foreach ($result as &$session) {
-                $session['success_rate'] = $session['total_orders'] > 0 ? round(($session['successful_orders'] / $session['total_orders']) * 100, 2) : 0;
-                $session['cancellation_rate'] = $session['total_orders'] > 0 ? round(($session['canceled_orders'] / $session['total_orders']) * 100, 2) : 0;
-                $session['delivering_rate'] = $session['total_orders'] > 0 ? round(($session['delivering_orders'] / $session['total_orders']) * 100, 2) : 0;
+                // Tính toán đơn đã có kết quả cuối cùng (không tính đơn đang giao)
+                $finalized_orders = $session['total_orders'] - $session['delivering_orders'];
+
+                // Tỷ lệ chốt đơn = đơn chốt / (tổng đơn - đơn đang giao)
+                $session['success_rate'] = $finalized_orders > 0
+                    ? round(($session['successful_orders'] / $finalized_orders) * 100, 2)
+                    : 0;
+
+                // Tỷ lệ hủy = đơn hủy / tổng đơn
+                $session['cancellation_rate'] = $session['total_orders'] > 0
+                    ? round(($session['canceled_orders'] / $session['total_orders']) * 100, 2)
+                    : 0;
             }
             unset($session);
 
@@ -868,6 +967,30 @@ class ReportController extends Controller
         $finalViewData = $overallViewData;
         $finalViewData['monthlyTabsData'] = $monthlyTabsData;
 
+        // Prepare data for live sessions detail table
+        $liveSessions = [];
+        foreach ($overallViewData['result'] as $session) {
+            $liveSessions[] = [
+                'live_number' => $session['live_number'],
+                'date' => $session['session_date_carbon'],
+                'expected_revenue' => array_sum(array_column($session['orders_in_session'], 'total_value')),
+                'actual_revenue' => $session['revenue'],
+                'total_orders' => $session['total_orders'],
+                'successful_orders' => $session['successful_orders'],
+                'canceled_orders' => $session['canceled_orders'],
+                'conversion_rate' => $session['success_rate'],
+                'cancellation_rate' => $session['cancellation_rate'],
+                'new_customers' => count(array_filter($session['customers'] ?? [], function($customer) use ($session) {
+                    return isset($customer['orders']) && $customer['orders'] === 1;
+                })),
+                'returning_customers' => count(array_filter($session['customers'] ?? [], function($customer) {
+                    return isset($customer['orders']) && $customer['orders'] > 1;
+                }))
+            ];
+        }
+
+        $finalViewData['liveSessions'] = $liveSessions;
+
         Log::info("ReportController@liveSessionsPage: Successfully processed all data including monthly tabs. Total overall sessions: {$overallViewData['totalSessions']}");
 
         return view('reports.live_sessions', $finalViewData);
@@ -1114,7 +1237,7 @@ class ReportController extends Controller
                 ->delete();
 
             // Chuyển hướng đến trang báo cáo với tham số calculate=true
-            return redirect()->route('reports.live_sessions', [
+            return redirect()->route('reports.live-sessions', [
                 'start_date' => $startDate->format('Y-m-d'),
                 'end_date' => $endDate->format('Y-m-d'),
                 'calculate' => 'true'
@@ -1263,13 +1386,13 @@ class ReportController extends Controller
      */
     public function getLiveSessionReport(Request $request)
     {
-        $this->authorize('reports.live_sessions');
+        $this->authorize('reports.live-sessions');
 
         $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date')) : null;
         $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date')) : null;
         $forceRefresh = $request->input('force_refresh', false);
 
-        // For live sessions, allow anyone with the 'reports.live_sessions' permission to see all data
+        // For live sessions, allow anyone with the 'reports.live-sessions' permission to see all data
         // Don't use user IDs based on permission for filtering
         $userIds = null;
 
@@ -1485,7 +1608,7 @@ class ReportController extends Controller
      */
     public function getLiveSessionDetail(Request $request)
     {
-        $this->authorize('reports.live_sessions');
+        $this->authorize('reports.live-sessions');
 
         $liveSessionId = $request->input('session_id');
 
@@ -2047,7 +2170,7 @@ class ReportController extends Controller
      */
     public function exportLiveSessionReport(Request $request)
     {
-        $this->authorize('reports.live_sessions');
+        $this->authorize('reports.live-sessions');
 
         $sessionId = $request->input('session_id');
 
@@ -2189,7 +2312,7 @@ class ReportController extends Controller
      */
     public function checkNotesPatterns(Request $request)
     {
-        $this->authorize('reports.live_sessions');
+        $this->authorize('reports.live-sessions');
 
         // Lấy mẫu notes chứa "LIVE"
         $notes = Order::whereNotNull('notes')
@@ -2229,7 +2352,7 @@ class ReportController extends Controller
      */
     public function debugLiveSessions()
     {
-        $this->authorize('reports.live_sessions');
+        $this->authorize('reports.live-sessions');
 
         // Lấy một số đơn hàng mẫu với notes có LIVE
         $sampleOrders = Order::whereNotNull('notes')
@@ -2622,5 +2745,469 @@ class ReportController extends Controller
         });
 
         return response()->json(['success' => true, 'data' => $chartData]);
+    }
+
+    public function liveSessions(Request $request)
+    {
+        $startDate = $request->get('start_date') ? Carbon::parse($request->get('start_date')) : Carbon::now()->startOfMonth();
+        $endDate = $request->get('end_date') ? Carbon::parse($request->get('end_date')) : Carbon::now();
+
+        // Get stats for the selected period
+        $stats = $this->getLiveSessionStats($startDate, $endDate);
+
+        // Get stats for the previous period for comparison
+        $previousStartDate = (clone $startDate)->subDays(30);
+        $previousEndDate = (clone $endDate)->subDays(30);
+        $previousStats = $this->getLiveSessionStats($previousStartDate, $previousEndDate);
+
+        // Calculate change rates
+        $revenueChangeRate = $this->calculateChangeRate(
+            $stats['summary']['actual_revenue'],
+            $previousStats['summary']['actual_revenue']
+        );
+        $ordersChangeRate = $this->calculateChangeRate(
+            $stats['summary']['successful_orders'],
+            $previousStats['summary']['successful_orders']
+        );
+        $canceledOrdersChangeRate = $this->calculateChangeRate(
+            $stats['summary']['canceled_orders'],
+            $previousStats['summary']['canceled_orders']
+        );
+        $successRateChange = $this->calculateChangeRate(
+            $stats['summary']['conversion_rate'],
+            $previousStats['summary']['conversion_rate']
+        );
+
+        // Prepare live sessions data for the table
+        $liveSessions = [];
+        foreach ($stats['result'] as $session) {
+            // Calculate finalized orders (excluding delivering)
+            $finalizedOrders = $session['total_orders'] - $session['delivering_orders'];
+
+            // Calculate success rate based on finalized orders
+            $successRate = $finalizedOrders > 0
+                ? ($session['successful_orders'] / $finalizedOrders) * 100
+                : 0;
+
+            // Calculate cancellation rate based on total orders
+            $cancellationRate = $session['total_orders'] > 0
+                ? ($session['canceled_orders'] / $session['total_orders']) * 100
+                : 0;
+
+            $liveSessions[] = [
+                'live_number' => $session['live_number'],
+                'date' => Carbon::parse($session['session_date']),
+                'expected_revenue' => $session['expected_revenue'],
+                'actual_revenue' => $session['revenue'],
+                'total_orders' => $session['total_orders'],
+                'successful_orders' => $session['successful_orders'],
+                'canceled_orders' => $session['canceled_orders'],
+                'success_rate' => $successRate,
+                'cancellation_rate' => $cancellationRate,
+                'new_customers' => $session['new_customers'],
+                'returning_customers' => $session['returning_customers']
+            ];
+        }
+
+        // Determine chart type based on date range
+        $diffInDays = $startDate->diffInDays($endDate);
+        $chartType = 'daily';
+        if ($diffInDays > 31) {
+            $chartType = 'monthly';
+        } elseif ($diffInDays === 0) {
+            $chartType = 'hourly';
+        }
+
+        // Get chart data based on type
+        $chartData = $chartType === 'hourly'
+            ? $this->getHourlyData($startDate, $endDate)
+            : $stats['chart_data'];
+
+        return view('reports.live_sessions', [
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'summary' => $stats['summary'],
+            'chartData' => $chartData,
+            'chartType' => $chartType,
+            'provinceStats' => $stats['province_stats'] ?? [],
+            'topProducts' => $stats['top_products'] ?? [],
+            'revenueChangeRate' => $revenueChangeRate,
+            'ordersChangeRate' => $ordersChangeRate,
+            'canceledOrdersChangeRate' => $canceledOrdersChangeRate,
+            'successRateChange' => $successRateChange,
+            'liveSessions' => $liveSessions
+        ]);
+    }
+
+    private function calculateChangeRate($current, $previous)
+    {
+        if ($previous == 0) return 0;
+        return (($current - $previous) / $previous) * 100;
+    }
+
+    private function getLiveSessionStats($startDate, $endDate)
+    {
+        // Get orders within date range
+        $orders = Order::whereBetween('created_at', [$startDate, $endDate])
+            ->with(['items', 'items.product'])
+            ->get();
+
+        $stats = [
+            'totalSessions' => 0,
+            'totalRevenue' => 0,
+            'totalOrders' => $orders->count(),
+            'successfulOrders' => 0,
+            'canceledOrders' => 0,
+            'canceledRevenue' => 0,
+            'totalCustomers' => $orders->pluck('customer_id')->unique()->count(),
+            'onlineRevenue' => 0,
+            'onlineOrders' => 0,
+            'offlineRevenue' => 0,
+            'offlineOrders' => 0,
+            'totalPurchasePrice' => 0,
+            'totalSalePrice' => 0,
+            'restockNeeded' => 0,
+            'totalSales' => 0,
+            'totalProfit' => 0,
+            'profitRate' => 0,
+            'averageOrderValue' => 0,
+            'totalProducts' => 0,
+            'averageProductsPerOrder' => 0,
+            'averageProfit' => 0,
+            'giftCost' => 0
+        ];
+
+        foreach ($orders as $order) {
+            if ($order->status === 'completed' || $order->status === 'delivered') {
+                $stats['successfulOrders']++;
+                $stats['totalRevenue'] += $order->total_value;
+
+                if ($order->order_type === 'online') {
+                    $stats['onlineRevenue'] += $order->total_value;
+                    $stats['onlineOrders']++;
+                } else {
+                    $stats['offlineRevenue'] += $order->total_value;
+                    $stats['offlineOrders']++;
+                }
+            } elseif ($order->status === 'canceled') {
+                $stats['canceledOrders']++;
+                $stats['canceledRevenue'] += $order->total_value;
+            }
+
+            $stats['totalProducts'] += $order->items->sum('quantity');
+            $stats['totalSales'] += $order->total_value;
+
+            // Calculate purchase price and sale price
+            foreach ($order->items as $item) {
+                if ($item->product) {
+                    $stats['totalPurchasePrice'] += $item->product->purchase_price * $item->quantity;
+                    $stats['totalSalePrice'] += $item->product->sale_price * $item->quantity;
+                }
+            }
+        }
+
+        // Calculate averages and rates
+        if ($stats['successfulOrders'] > 0) {
+            $stats['averageOrderValue'] = $stats['totalRevenue'] / $stats['successfulOrders'];
+            $stats['averageProductsPerOrder'] = $stats['totalProducts'] / $stats['successfulOrders'];
+            $stats['totalProfit'] = $stats['totalRevenue'] - $stats['totalPurchasePrice'];
+            $stats['averageProfit'] = $stats['totalProfit'] / $stats['successfulOrders'];
+            $stats['profitRate'] = ($stats['totalProfit'] / $stats['totalRevenue']) * 100;
+        }
+
+        // Calculate restock needed based on some business logic
+        $stats['restockNeeded'] = ceil($stats['totalProducts'] * 0.2); // Example: 20% of total products
+
+        return $stats;
+    }
+
+    private function getHourlyData($startDate, $endDate)
+    {
+        $hourlyData = collect();
+
+        for ($hour = 0; $hour < 24; $hour++) {
+            $revenue = Order::whereBetween('created_at', [$startDate, $endDate])
+                ->whereRaw('HOUR(created_at) = ?', [$hour])
+                ->where(function($query) {
+                    $query->where('status', 'completed')
+                          ->orWhere('status', 'delivered');
+                })
+                ->sum('total_value');
+
+            $hourlyData->push([
+                'hour' => $hour,
+                'revenue' => $revenue
+            ]);
+        }
+
+        return $hourlyData;
+    }
+
+    /**
+     * Get comprehensive variant revenue report data
+     */
+    public function getVariantRevenueReport(Request $request)
+    {
+        $startDate = Carbon::parse($request->input('start_date'));
+        $endDate = Carbon::parse($request->input('end_date'));
+
+        // Base query
+        $query = DB::table('variant_revenues')
+            ->whereBetween('order_date', [$startDate, $endDate])
+            ->where('status', '!=', 'huy')
+            ->where('status', '!=', 'da_huy');
+
+        // 1. Overall Summary
+        $summary = $query->selectRaw('
+            COUNT(DISTINCT order_id) as total_orders,
+            COUNT(DISTINCT variant_id) as total_variants,
+            SUM(quantity) as total_quantity,
+            SUM(total_amount) as total_revenue,
+            AVG(total_amount) as avg_order_value,
+            SUM(total_amount) / COUNT(DISTINCT order_id) as avg_revenue_per_order,
+            SUM(quantity) / COUNT(DISTINCT order_id) as avg_items_per_order
+        ')->first();
+
+        // 2. All Variants Performance
+        $variantsPerformance = $query->select([
+            'variant_id',
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_name")) as variant_name'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_sku")) as variant_sku'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.product_name")) as product_name'),
+            DB::raw('COUNT(DISTINCT order_id) as order_count'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(total_amount) as total_revenue'),
+            DB::raw('AVG(price) as avg_price'),
+            DB::raw('MIN(price) as min_price'),
+            DB::raw('MAX(price) as max_price'),
+            DB::raw('SUM(total_amount) / SUM(quantity) as revenue_per_unit'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_cost")) as cost_per_unit'),
+            DB::raw('(SUM(total_amount) - (SUM(quantity) * CAST(JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_cost")) AS DECIMAL(15,2)))) as gross_profit')
+        ])
+        ->groupBy('variant_id')
+        ->orderBy('total_revenue', 'desc')
+        ->get();
+
+        // 3. Daily Revenue Trend
+        $dailyTrend = $query->select([
+            DB::raw('DATE(order_date) as date'),
+            DB::raw('COUNT(DISTINCT order_id) as order_count'),
+            DB::raw('COUNT(DISTINCT variant_id) as variant_count'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(total_amount) as total_revenue'),
+            DB::raw('AVG(total_amount) as avg_order_value')
+        ])
+        ->groupBy('date')
+        ->orderBy('date')
+        ->get();
+
+        // 4. Category Performance
+        $categoryPerformance = $query->select([
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(category_ids, "$[0]")) as category_id'),
+            DB::raw('COUNT(DISTINCT order_id) as order_count'),
+            DB::raw('COUNT(DISTINCT variant_id) as variant_count'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(total_amount) as total_revenue'),
+            DB::raw('AVG(total_amount) as avg_order_value'),
+            DB::raw('SUM(total_amount) / SUM(quantity) as avg_price_per_unit')
+        ])
+        ->whereRaw('JSON_LENGTH(category_ids) > 0')
+        ->groupBy('category_id')
+        ->orderBy('total_revenue', 'desc')
+        ->get();
+
+        // 5. Customer Analysis
+        $customerAnalysis = $query->select([
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.customer_id")) as customer_id'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.customer_name")) as customer_name'),
+            DB::raw('COUNT(DISTINCT order_id) as order_count'),
+            DB::raw('COUNT(DISTINCT variant_id) as variant_count'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(total_amount) as total_revenue'),
+            DB::raw('AVG(total_amount) as avg_order_value')
+        ])
+        ->groupBy('customer_id', 'customer_name')
+        ->orderBy('total_revenue', 'desc')
+        ->limit(100)  // Top 100 customers
+        ->get();
+
+        // 6. Stock Analysis
+        $stockAnalysis = $query->select([
+            'variant_id',
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_name")) as variant_name'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_sku")) as variant_sku'),
+            DB::raw('SUM(quantity) as total_quantity_sold'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_stock")) as current_stock'),
+            DB::raw('SUM(quantity) / DATEDIFF("' . $endDate->format('Y-m-d') . '", "' . $startDate->format('Y-m-d') . '") as daily_sales_rate')
+        ])
+        ->groupBy('variant_id', 'variant_name', 'variant_sku')
+        ->get()
+        ->map(function($item) {
+            $item->days_of_inventory = $item->current_stock > 0 && $item->daily_sales_rate > 0
+                ? floor($item->current_stock / $item->daily_sales_rate)
+                : null;
+            return $item;
+        });
+
+        return response()->json([
+            'summary' => $summary,
+            'variants_performance' => $variantsPerformance,
+            'daily_trend' => $dailyTrend,
+            'category_performance' => $categoryPerformance,
+            'customer_analysis' => $customerAnalysis,
+            'stock_analysis' => $stockAnalysis,
+            'date_range' => [
+                'start' => $startDate->format('Y-m-d'),
+                'end' => $endDate->format('Y-m-d'),
+                'days' => $startDate->diffInDays($endDate) + 1
+            ]
+        ]);
+    }
+
+    /**
+     * Get variant performance comparison
+     */
+    public function compareVariants(Request $request)
+    {
+        $variantIds = $request->input('variant_ids', []);
+        $startDate = Carbon::parse($request->input('start_date'));
+        $endDate = Carbon::parse($request->input('end_date'));
+
+        $comparison = DB::table('variant_revenues')
+            ->whereIn('variant_id', $variantIds)
+            ->whereBetween('order_date', [$startDate, $endDate])
+            ->where('status', '!=', 'huy')
+            ->where('status', '!=', 'da_huy')
+            ->select([
+                'variant_id',
+                DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_name")) as variant_name'),
+                DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.product_name")) as product_name'),
+                DB::raw('COUNT(DISTINCT order_id) as order_count'),
+                DB::raw('SUM(quantity) as total_quantity'),
+                DB::raw('SUM(total_amount) as total_revenue'),
+                DB::raw('AVG(price) as avg_price'),
+                DB::raw('MIN(price) as min_price'),
+                DB::raw('MAX(price) as max_price')
+            ])
+            ->groupBy('variant_id', 'variant_name', 'product_name')
+            ->get();
+
+        return response()->json($comparison);
+    }
+
+    /**
+     * Get comprehensive category/industry revenue report data
+     */
+    public function getCategoryRevenueReport(Request $request)
+    {
+        $startDate = Carbon::parse($request->input('start_date'));
+        $endDate = Carbon::parse($request->input('end_date'));
+
+        // Base query
+        $query = DB::table('variant_revenues')
+            ->whereBetween('order_date', [$startDate, $endDate])
+            ->where('status', '!=', 'huy')
+            ->where('status', '!=', 'da_huy');
+
+        // 1. Tổng quan theo ngành hàng
+        $categoryOverview = $query->select([
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(category_ids, "$[0]")) as category_id'),
+            DB::raw('COUNT(DISTINCT order_id) as total_orders'),
+            DB::raw('COUNT(DISTINCT variant_id) as total_variants'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(total_amount) as total_revenue'),
+            DB::raw('AVG(total_amount) as avg_order_value'),
+            DB::raw('SUM(total_amount) / SUM(quantity) as avg_unit_price'),
+            DB::raw('COUNT(DISTINCT JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.customer_id"))) as unique_customers')
+        ])
+        ->whereRaw('JSON_LENGTH(category_ids) > 0')
+        ->groupBy('category_id')
+        ->orderBy('total_revenue', 'desc')
+        ->get();
+
+        // 2. Xu hướng doanh thu theo ngành hàng theo ngày
+        $dailyCategoryTrend = $query->select([
+            DB::raw('DATE(order_date) as date'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(category_ids, "$[0]")) as category_id'),
+            DB::raw('SUM(total_amount) as daily_revenue'),
+            DB::raw('COUNT(DISTINCT order_id) as daily_orders'),
+            DB::raw('SUM(quantity) as daily_quantity')
+        ])
+        ->whereRaw('JSON_LENGTH(category_ids) > 0')
+        ->groupBy('date', 'category_id')
+        ->orderBy('date')
+        ->get();
+
+        // 3. Top sản phẩm trong mỗi ngành hàng
+        $topProductsByCategory = $query->select([
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(category_ids, "$[0]")) as category_id'),
+            'variant_id',
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_name")) as variant_name'),
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.product_name")) as product_name'),
+            DB::raw('SUM(quantity) as total_quantity'),
+            DB::raw('SUM(total_amount) as total_revenue'),
+            DB::raw('COUNT(DISTINCT order_id) as order_count')
+        ])
+        ->whereRaw('JSON_LENGTH(category_ids) > 0')
+        ->groupBy('category_id', 'variant_id', 'variant_name', 'product_name')
+        ->orderByRaw('category_id, total_revenue DESC')
+        ->get()
+        ->groupBy('category_id');
+
+        // 4. Phân tích lợi nhuận theo ngành hàng
+        $categoryProfitAnalysis = $query->select([
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(category_ids, "$[0]")) as category_id'),
+            DB::raw('SUM(total_amount) as total_revenue'),
+            DB::raw('SUM(quantity * CAST(JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_cost")) AS DECIMAL(15,2))) as total_cost'),
+            DB::raw('SUM(total_amount - (quantity * CAST(JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_cost")) AS DECIMAL(15,2)))) as gross_profit'),
+            DB::raw('(SUM(total_amount - (quantity * CAST(JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_cost")) AS DECIMAL(15,2)))) / SUM(total_amount) * 100) as profit_margin')
+        ])
+        ->whereRaw('JSON_LENGTH(category_ids) > 0')
+        ->groupBy('category_id')
+        ->orderBy('gross_profit', 'desc')
+        ->get();
+
+        // 5. Phân tích khách hàng theo ngành hàng
+        $categoryCustomerAnalysis = $query->select([
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(category_ids, "$[0]")) as category_id'),
+            DB::raw('COUNT(DISTINCT JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.customer_id"))) as unique_customers'),
+            DB::raw('COUNT(DISTINCT order_id) / COUNT(DISTINCT JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.customer_id"))) as orders_per_customer'),
+            DB::raw('SUM(total_amount) / COUNT(DISTINCT JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.customer_id"))) as revenue_per_customer'),
+            DB::raw('AVG(total_amount) as avg_order_value')
+        ])
+        ->whereRaw('JSON_LENGTH(category_ids) > 0')
+        ->groupBy('category_id')
+        ->get();
+
+        // 6. Tồn kho theo ngành hàng
+        $categoryInventoryAnalysis = $query->select([
+            DB::raw('JSON_UNQUOTE(JSON_EXTRACT(category_ids, "$[0]")) as category_id'),
+            DB::raw('SUM(CAST(JSON_UNQUOTE(JSON_EXTRACT(metadata, "$.variant_stock")) AS UNSIGNED)) as total_stock'),
+            DB::raw('SUM(quantity) as total_sold'),
+            DB::raw('SUM(quantity) / DATEDIFF("' . $endDate->format('Y-m-d') . '", "' . $startDate->format('Y-m-d') . '") as daily_sales_rate')
+        ])
+        ->whereRaw('JSON_LENGTH(category_ids) > 0')
+        ->groupBy('category_id')
+        ->get()
+        ->map(function($item) {
+            $item->estimated_days_of_inventory = $item->total_stock > 0 && $item->daily_sales_rate > 0
+                ? floor($item->total_stock / $item->daily_sales_rate)
+                : null;
+            return $item;
+        });
+
+        return response()->json([
+            'category_overview' => $categoryOverview,
+            'daily_category_trend' => $dailyCategoryTrend,
+            'top_products_by_category' => $topProductsByCategory,
+            'category_profit_analysis' => $categoryProfitAnalysis,
+            'category_customer_analysis' => $categoryCustomerAnalysis,
+            'category_inventory_analysis' => $categoryInventoryAnalysis,
+            'date_range' => [
+                'start' => $startDate->format('Y-m-d'),
+                'end' => $endDate->format('Y-m-d'),
+                'days' => $startDate->diffInDays($endDate) + 1
+            ]
+        ]);
     }
 }

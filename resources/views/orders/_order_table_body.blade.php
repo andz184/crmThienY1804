@@ -62,7 +62,7 @@
                         <span class="badge badge-info">ID: {{ $order->pancake_order_id }}</span>
                     </div>
                 @endif
-                
+
                 <div>
                     @if($order->is_livestream)
                         <span class="badge badge-info">Livestream</span>
@@ -71,7 +71,7 @@
                         <span class="badge badge-primary">Live Shopping</span>
                     @endif
                 </div>
-                
+
                 <div class="mt-1">
                     @if($order->is_free_shipping)
                         <span class="badge badge-success">Free Ship</span>
@@ -80,13 +80,13 @@
                         <span class="badge badge-warning">KH trả phí</span>
                     @endif
                 </div>
-                
+
                 @if($order->partner_fee > 0)
                     <div class="mt-1">
                         <span class="badge badge-secondary">Phí ĐT: {{ number_format($order->partner_fee, 0, ',', '.') }}đ</span>
                     </div>
                 @endif
-                
+
                 @if($order->returned_reason)
                     <div class="mt-1">
                         <span class="badge badge-danger" title="Lý do hoàn/hủy đơn">
@@ -94,7 +94,7 @@
                         </span>
                     </div>
                 @endif
-                
+
                 @if($order->tracking_code)
                     <div class="mt-1 text-truncate" style="max-width: 120px;" title="Mã vận đơn: {{ $order->tracking_code }}">
                         <i class="fas fa-truck fa-fw"></i> {{ $order->tracking_code }}
@@ -102,7 +102,7 @@
                 @endif
             </div>
         </td>
-        <td>{{ optional($order->pancake_inserted_at)->format('d/m/Y H:i') }}</td>
+        <td>{{($order->pancake_inserted_at) }}</td>
         <td>
             <a href="{{ route('orders.show', $order) }}" class="btn btn-info btn-xs" title="Xem chi tiết"><i class="fas fa-eye fa-fw"></i></a>
             @can('calls.manage')

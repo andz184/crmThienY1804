@@ -29,7 +29,7 @@ return new class extends Migration
                 $table->string('pancake_page_id')->nullable();
             }
             if (!Schema::hasColumn('orders', 'warehouse_id')) {
-                $table->uuid('warehouse_id')->nullable();
+                $table->unsignedBigInteger('warehouse_id')->nullable();
                 $table->foreign('warehouse_id')->references('id')->on('warehouses')->onDelete('set null');
             }
         });

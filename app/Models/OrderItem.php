@@ -23,6 +23,7 @@ class OrderItem extends Model
         'price',
         'weight',
         'product_info',
+        'total',
     ];
 
     /**
@@ -32,7 +33,16 @@ class OrderItem extends Model
      */
     protected $casts = [
         'product_info' => 'array',
+        'total' => 'decimal:2',
     ];
+
+    /**
+     * Get the total amount for this order item
+     */
+    public function getTotalAttribute()
+    {
+        return $this->quantity * $this->price;
+    }
 
     /**
      * Get the order that owns the item.
@@ -40,5 +50,15 @@ class OrderItem extends Model
     public function order(): BelongsTo
     {
         return $this->belongsTo(Order::class);
+    }
+
+    /**
+     * Get the variants for this order item
+     */
+    public function variants()
+    {
+        return $this->belongsToMany(ProductVariant::class, 'order_item_variants', 'order_item_id', 'pancake_variant_id')
+            ->withPivot('quantity', 'price', 'variant_data')
+            ->withTimestamps();
     }
 }

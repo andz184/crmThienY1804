@@ -22,7 +22,9 @@ class OrderObserver
     public function created(Order $order): void
     {
         $this->updateCustomerFromOrder($order);
-        
+        $this->updateLiveSessionRevenue($order);
+        $this->updateLiveSessionReport($order);
+
         // Dispatch the OrderCreated event for order assignment
         event(new \App\Events\OrderCreated($order));
     }
@@ -36,6 +38,8 @@ class OrderObserver
         // For simplicity, we can call it on every update, but be mindful of performance on high-traffic sites.
         // A more granular check could be: if ($order->isDirty('status') || $order->isDirty('customer_phone') || ...)
         $this->updateCustomerFromOrder($order);
+        $this->updateLiveSessionRevenue($order);
+        $this->updateLiveSessionReport($order);
     }
 
     /**
@@ -49,6 +53,8 @@ class OrderObserver
         // For now, we'll log it. A more robust solution might queue a job to recalculate.
         Log::info("Order [ID:{$order->id}] for customer phone [{$order->customer_phone}] deleted. Customer aggregates might need recalculation.");
         // $this->recalculateCustomerAggregates($order->customer_phone); // Implement this if needed
+        $this->updateLiveSessionRevenue($order);
+        $this->updateLiveSessionReport($order);
     }
 
     /**
@@ -255,4 +261,204 @@ class OrderObserver
     //         }
     //     }
     // }
+
+    private function updateLiveSessionRevenue($order)
+    {
+        try {
+            // Check if order has live session info
+            if (empty($order->live_session_info)) {
+                \Illuminate\Support\Facades\Log::info('Order has no live session info', ['order_id' => $order->id]);
+                return;
+            }
+
+            $liveSessionInfo = is_array($order->live_session_info)
+                ? $order->live_session_info
+                : json_decode($order->live_session_info, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                \Illuminate\Support\Facades\Log::error('Failed to decode live session info', [
+                    'order_id' => $order->id,
+                    'error' => json_last_error_msg(),
+                    'live_session_info' => $order->live_session_info
+                ]);
+                return;
+            }
+
+            if (empty($liveSessionInfo['live_number']) || empty($liveSessionInfo['session_date'])) {
+                \Illuminate\Support\Facades\Log::info('Live session info missing required fields', [
+                    'order_id' => $order->id,
+                    'live_session_info' => $liveSessionInfo
+                ]);
+                return;
+            }
+
+            $date = $liveSessionInfo['session_date'];
+            $liveNumber = $liveSessionInfo['live_number'];
+
+            \Illuminate\Support\Facades\Log::info('Processing live session revenue', [
+                'order_id' => $order->id,
+                'date' => $date,
+                'live_number' => $liveNumber
+            ]);
+
+            // Get or create live session revenue record
+            $revenue = \App\Models\LiveSessionRevenue::firstOrNew([
+                'date' => $date,
+                'live_number' => $liveNumber
+            ]);
+
+            // Set session name if not set
+            if (!$revenue->session_name) {
+                $revenue->session_name = "LIVE {$liveNumber} (" . \Carbon\Carbon::parse($date)->format('d/m/Y') . ")";
+            }
+
+            // Get all orders for this live session using JSON_EXTRACT
+            $sessionOrders = \App\Models\Order::whereRaw("JSON_UNQUOTE(JSON_EXTRACT(live_session_info, '$.session_date')) = ?", [$date])
+                ->whereRaw("JSON_EXTRACT(live_session_info, '$.live_number') = ?", [$liveNumber])
+                ->get();
+
+            \Illuminate\Support\Facades\Log::info('Found session orders', [
+                'order_id' => $order->id,
+                'total_orders' => $sessionOrders->count()
+            ]);
+
+            // Update statistics
+            $revenue->total_orders = $sessionOrders->count();
+            $revenue->successful_orders = $sessionOrders->where('pancake_status', \App\Models\Order::PANCAKE_STATUS_COMPLETED)->count();
+            $revenue->canceled_orders = $sessionOrders->where('pancake_status', \App\Models\Order::PANCAKE_STATUS_CANCELED)->count();
+            $revenue->delivering_orders = $sessionOrders->where('pancake_status', \App\Models\Order::PANCAKE_STATUS_SHIPPING)->count();
+            $revenue->total_revenue = $sessionOrders->where('pancake_status', \App\Models\Order::PANCAKE_STATUS_COMPLETED)->sum('total_value');
+
+            // Calculate customer statistics
+            $customerIds = $sessionOrders->pluck('customer_id')->unique();
+            $revenue->total_customers = $customerIds->count();
+
+            $newCustomers = 0;
+            foreach ($customerIds as $customerId) {
+                $firstOrder = \App\Models\Order::where('customer_id', $customerId)
+                    ->orderBy('created_at')
+                    ->first();
+
+                if ($firstOrder && $firstOrder->live_session_info) {
+                    $firstOrderInfo = is_array($firstOrder->live_session_info)
+                        ? $firstOrder->live_session_info
+                        : json_decode($firstOrder->live_session_info, true);
+
+                    if (isset($firstOrderInfo['session_date']) &&
+                        $firstOrderInfo['session_date'] === $date &&
+                        isset($firstOrderInfo['live_number']) &&
+                        $firstOrderInfo['live_number'] === $liveNumber) {
+                        $newCustomers++;
+                    }
+                }
+            }
+            $revenue->new_customers = $newCustomers;
+            $revenue->returning_customers = $revenue->total_customers - $newCustomers;
+
+            // Calculate rates
+            if ($revenue->total_orders > 0) {
+                $revenue->conversion_rate = ($revenue->successful_orders / $revenue->total_orders) * 100;
+                $revenue->cancellation_rate = ($revenue->canceled_orders / $revenue->total_orders) * 100;
+            }
+
+            // Calculate orders by status
+            $ordersByStatus = [];
+            foreach ($sessionOrders as $order) {
+                $status = $order->pancake_status;
+                if (!isset($ordersByStatus[$status])) {
+                    $ordersByStatus[$status] = [
+                        'count' => 0,
+                        'revenue' => 0
+                    ];
+                }
+                $ordersByStatus[$status]['count']++;
+                $ordersByStatus[$status]['revenue'] += $order->total_value;
+            }
+            $revenue->orders_by_status = $ordersByStatus;
+
+            // Calculate orders by province
+            $ordersByProvince = [];
+            foreach ($sessionOrders as $order) {
+                if ($order->province_code) {
+                    if (!isset($ordersByProvince[$order->province_code])) {
+                        $ordersByProvince[$order->province_code] = [
+                            'count' => 0,
+                            'revenue' => 0
+                        ];
+                    }
+                    $ordersByProvince[$order->province_code]['count']++;
+                    $ordersByProvince[$order->province_code]['revenue'] += $order->total_value;
+                }
+            }
+
+            // Ensure orders_by_province is properly encoded as JSON string
+            $revenue->orders_by_province = json_encode($ordersByProvince);
+
+            \Illuminate\Support\Facades\Log::info('Saving live session revenue', [
+                'order_id' => $order->id,
+                'revenue_data' => $revenue->toArray()
+            ]);
+
+            $revenue->save();
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error in updateLiveSessionRevenue', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    public function restored(Order $order)
+    {
+        $this->updateLiveSessionRevenue($order);
+        $this->updateLiveSessionReport($order);
+    }
+
+    /**
+     * Handle the Order "force deleted" event.
+     */
+    public function forceDeleted(Order $order)
+    {
+        $this->updateLiveSessionReport($order);
+    }
+
+    /**
+     * Update live session report when order changes
+     */
+    private function updateLiveSessionReport(Order $order)
+    {
+        try {
+            if (empty($order->live_session_info)) {
+                return;
+            }
+
+            $liveSessionInfo = is_array($order->live_session_info)
+                ? $order->live_session_info
+                : json_decode($order->live_session_info, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                \Illuminate\Support\Facades\Log::error('Failed to decode live session info', [
+                    'order_id' => $order->id,
+                    'error' => json_last_error_msg(),
+                    'live_session_info' => $order->live_session_info
+                ]);
+                return;
+            }
+
+            if (empty($liveSessionInfo['session_date'])) {
+                return;
+            }
+
+            // Recalculate report for the order's date
+            \App\Models\LiveSessionReport::calculateAndStore($liveSessionInfo['session_date'], 'daily');
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error updating live session report', [
+                'order_id' => $order->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
 }

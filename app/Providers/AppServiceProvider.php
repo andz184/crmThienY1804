@@ -5,8 +5,6 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Spatie\Permission\PermissionServiceProvider;
 use Illuminate\Pagination\Paginator;
-use App\Models\Order;
-use App\Observers\OrderObserver;
 use Illuminate\Support\Facades\Schema;
 
 class AppServiceProvider extends ServiceProvider
@@ -27,6 +25,5 @@ class AppServiceProvider extends ServiceProvider
     {
         Paginator::useBootstrapFour();
         Schema::defaultStringLength(191);
-        Order::observe(OrderObserver::class);
     }
 }

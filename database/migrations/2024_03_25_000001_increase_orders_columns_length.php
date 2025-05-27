@@ -9,6 +9,12 @@ return new class extends Migration
     public function up()
     {
         Schema::table('orders', function (Blueprint $table) {
+            // Add missing columns first
+            if (!Schema::hasColumn('orders', 'full_address')) {
+                $table->string('full_address')->nullable();
+            }
+
+            // Then change column types
             $table->text('full_address')->nullable()->change();
             $table->text('street_address')->nullable()->change();
             $table->text('notes')->nullable()->change();

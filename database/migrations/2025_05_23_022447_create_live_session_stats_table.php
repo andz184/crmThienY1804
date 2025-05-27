@@ -13,16 +13,18 @@ class CreateLiveSessionStatsTable extends Migration
      */
     public function up()
     {
-        Schema::create('live_session_stats', function (Blueprint $table) {
-            $table->id();
-            $table->date('period_start')->index();
-            $table->date('period_end')->index();
-            $table->longText('stats_data'); // Lưu JSON dữ liệu thống kê
-            $table->timestamps();
+        if (!Schema::hasTable('live_session_stats')) {
+            Schema::create('live_session_stats', function (Blueprint $table) {
+                $table->id();
+                $table->date('period_start')->index();
+                $table->date('period_end')->index();
+                $table->longText('stats_data'); // Lưu JSON dữ liệu thống kê
+                $table->timestamps();
 
-            // Tạo index compound key cho period_start + period_end
-            $table->index(['period_start', 'period_end'], 'live_session_period_index');
-        });
+                // Tạo index compound key cho period_start + period_end
+                $table->index(['period_start', 'period_end'], 'live_session_period_index');
+            });
+        }
     }
 
     /**

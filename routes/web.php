@@ -18,6 +18,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\Admin\PancakeSyncController;
 use App\Http\Controllers\PancakeConfigController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\LiveSessionRevenueController;
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -317,6 +318,16 @@ Route::middleware(['auth'])->prefix('reports')->name('reports.')->group(function
 
     Route::get('overall-revenue', [ReportController::class, 'overallRevenueSummaryPage'])->name('overall_revenue_summary');
     Route::get('overall-revenue/chart-data', [ReportController::class, 'getOverallRevenueChartData'])->name('overall_revenue_summary.chart_data');
+
+    Route::get('/category-revenue', [ReportController::class, 'getCategoryRevenueReport'])->name('reports.category_revenue');
+});
+
+// Live Session Revenue Routes
+Route::prefix('reports')->group(function () {
+    Route::get('live-sessions', [LiveSessionRevenueController::class, 'index'])->name('reports.live-sessions');
+    Route::get('live-sessions/data', [LiveSessionRevenueController::class, 'getData'])->name('reports.live-sessions.data');
+    Route::get('live-sessions/filtered', [LiveSessionRevenueController::class, 'getFilteredData'])->name('reports.live-sessions.filtered');
+    Route::get('live-sessions/{id}', [LiveSessionRevenueController::class, 'getSessionDetail'])->name('reports.live-sessions.detail');
 });
 
 // Sales Staff Management
@@ -352,3 +363,47 @@ Route::get('/test-pancake-page', function () {
 
 // Debug routes
 Route::get('/debug/live-patterns', [App\Http\Controllers\ReportController::class, 'debugLiveSessions'])->middleware(['auth']);
+
+// Temporary route for debugging
+Route::get('/debug/live-sessions', function() {
+    $data = \App\Models\LiveSessionRevenue::all();
+    dd([
+        'total_records' => $data->count(),
+        'records' => $data->toArray()
+    ]);
+});
+
+// Temporary route for debugging orders
+Route::get('/debug/orders-with-live-session', function() {
+    $orders = \App\Models\Order::whereNotNull('live_session_info')->get();
+    dd([
+        'total_orders' => $orders->count(),
+        'sample_orders' => $orders->take(5)->map(function($order) {
+            return [
+                'id' => $order->id,
+                'live_session_info' => $order->live_session_info,
+                'pancake_status' => $order->pancake_status,
+                'total_value' => $order->total_value,
+                'province_code' => $order->province_code
+            ];
+        })
+    ]);
+});
+
+// Temporary route for creating test order
+Route::get('/debug/create-test-order', function() {
+    $order = new \App\Models\Order();
+    $order->customer_name = 'Test Customer';
+    $order->customer_phone = '0123456789';
+    $order->total_value = 1000000;
+    $order->pancake_status = \App\Models\Order::PANCAKE_STATUS_COMPLETED;
+    $order->province_code = 'HN';
+    $order->live_session_info = json_encode([
+        'session_date' => '2025-05-23',
+        'live_number' => 3,
+        'session_name' => 'LIVE 3 (23/05/2025)'
+    ]);
+    $order->save();
+
+    return 'Test order created with ID: ' . $order->id;
+});

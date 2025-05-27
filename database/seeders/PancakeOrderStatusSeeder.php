@@ -127,6 +127,14 @@ class PancakeOrderStatusSeeder extends Seeder
                 'description' => 'Đơn hàng đã được hoàn trả hoàn toàn',
                 'active' => true
             ],
+            [
+                'status_code' => 6,
+                'name' => 'Đã hủy',
+                'api_name' => 'canceled',
+                'color' => 'danger',
+                'description' => 'Đơn hàng đã bị hủy',
+                'active' => true
+            ],
         ];
 
         // Insert or update each status

@@ -215,7 +215,7 @@
             if ($('#pancake_shop_id_campaign').val()) {
                 $('#pancake_shop_id_campaign').trigger('change');
             }
-            
+
             // Number formatting function
             function number_format(number, decimals, dec_point, thousands_sep) {
                 number = (number + '').replace(/[^0-9+\-Ee.]/g, '');
@@ -239,7 +239,7 @@
                 return s.join(dec);
             }
 
-            // Chart.js Global Defaults 
+            // Chart.js Global Defaults
             Chart.defaults.font.family = "'Source Sans Pro', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'";
             Chart.defaults.color = '#6c757d';
 
@@ -278,7 +278,7 @@
                     }
                 }
             };
-            
+
             const chartColors = {
                 primary: '#007bff', success: '#28a745', info: '#17a2b8', warning: '#ffc107',
                 danger: '#dc3545', teal: '#20c997', purple: '#6f42c1', orange: '#fd7e14'
@@ -290,7 +290,7 @@
                 if (!canvas) return;
                 const ctx = canvas.getContext('2d');
                 let hasData = chartConfig.data && chartConfig.data.datasets && chartConfig.data.datasets.some(ds => ds.data && ds.data.length > 0 && ds.data.some(d => d > 0));
-                
+
                 if (window.existingCharts && window.existingCharts[canvasId]) {
                     window.existingCharts[canvasId].destroy();
                 }
@@ -306,7 +306,7 @@
                     ctx.fillText('Không có dữ liệu để hiển thị.', canvas.width / 2, canvas.height / 2);
                 }
             }
-            
+
             // Campaign Performance Chart
             const campaignLabels = @json($chartCampaignLabels ?? []);
             const campaignRevenueData = @json($chartCampaignRevenue ?? []);
@@ -330,9 +330,9 @@
                         scales: {
                             x: {
                                 grid: { display: false },
-                                ticks: { 
+                                ticks: {
                                     autoSkip: campaignLabels.length > 15,
-                                    maxRotation: campaignLabels.length > 10 ? 45 : 0, 
+                                    maxRotation: campaignLabels.length > 10 ? 45 : 0,
                                     minRotation: 0
                                 }
                             }

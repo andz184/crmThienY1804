@@ -11,7 +11,7 @@ return new class extends Migration {
         DB::statement("
             CREATE OR REPLACE VIEW monthly_revenue AS
             SELECT user_id, YEAR(created_at) as year, MONTH(created_at) as month,
-                   SUM(COALESCE(shipping_fee, 0)) as total
+                   SUM(COALESCE(total_value, 0)) as total
             FROM orders
             WHERE status = 'completed'
             GROUP BY user_id, year, month

@@ -10,26 +10,50 @@ return new class extends Migration
     {
         Schema::table('customers', function (Blueprint $table) {
             // Social media fields
-            $table->string('facebook_id')->nullable()->after('street_address');
-            $table->string('facebook_url')->nullable()->after('facebook_id');
-            $table->string('zalo_id')->nullable()->after('facebook_url');
-            $table->string('telegram_id')->nullable()->after('zalo_id');
+            if (!Schema::hasColumn('customers', 'facebook_id')) {
+                $table->string('facebook_id')->nullable()->after('street_address');
+            }
+            if (!Schema::hasColumn('customers', 'facebook_url')) {
+                $table->string('facebook_url')->nullable()->after('facebook_id');
+            }
+            if (!Schema::hasColumn('customers', 'zalo_id')) {
+                $table->string('zalo_id')->nullable()->after('facebook_url');
+            }
+            if (!Schema::hasColumn('customers', 'telegram_id')) {
+                $table->string('telegram_id')->nullable()->after('zalo_id');
+            }
 
             // Customer source and tags
-            $table->string('source')->nullable()->after('telegram_id');
+            if (!Schema::hasColumn('customers', 'source')) {
+                $table->string('source')->nullable()->after('telegram_id');
+            }
 
             // Customer status and classification
-            $table->string('status')->default('active')->after('source');
-            $table->string('customer_type')->nullable()->after('status');
-            $table->string('customer_group')->nullable()->after('customer_type');
+            if (!Schema::hasColumn('customers', 'status')) {
+                $table->string('status')->default('active')->after('source');
+            }
+            if (!Schema::hasColumn('customers', 'customer_type')) {
+                $table->string('customer_type')->nullable()->after('status');
+            }
+            if (!Schema::hasColumn('customers', 'customer_group')) {
+                $table->string('customer_group')->nullable()->after('customer_type');
+            }
 
             // Additional contact preferences
-            $table->boolean('can_contact')->default(true)->after('last_order_date');
-            $table->json('contact_preferences')->nullable()->after('can_contact');
+            if (!Schema::hasColumn('customers', 'can_contact')) {
+                $table->boolean('can_contact')->default(true)->after('last_order_date');
+            }
+            if (!Schema::hasColumn('customers', 'contact_preferences')) {
+                $table->json('contact_preferences')->nullable()->after('can_contact');
+            }
 
             // External IDs
-            $table->string('pancake_customer_id')->nullable()->unique()->after('deleted_at');
-            $table->json('external_ids')->nullable()->after('pancake_customer_id');
+            if (!Schema::hasColumn('customers', 'pancake_customer_id')) {
+                $table->string('pancake_customer_id')->nullable()->unique()->after('deleted_at');
+            }
+            if (!Schema::hasColumn('customers', 'external_ids')) {
+                $table->json('external_ids')->nullable()->after('pancake_customer_id');
+            }
         });
     }
 

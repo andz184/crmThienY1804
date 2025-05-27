@@ -410,9 +410,9 @@ return [
                 ],
                 [
                     'text' => 'Phiên Live',
-                    'route' => 'reports.live_sessions',
+                    'route' => 'reports.live-sessions',
                     'icon' => 'fas fa-fw fa-video',
-                    'can' => 'reports.live_sessions',
+                    'can' => 'reports.live-sessions',
                 ],
                 // [
                 //     'text' => 'Thanh Toán',

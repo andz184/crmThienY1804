@@ -4,7 +4,10 @@
 
 @section('content_header')
     <div class="d-flex justify-content-between align-items-center">
-        <h1>Báo cáo theo Nhóm Hàng Hóa</h1>
+        <h1 class="m-0 text-dark">Báo cáo theo Nhóm Hàng Hóa</h1>
+        <button type="button" class="btn btn-info" data-toggle="modal" data-target="#helpModal">
+            <i class="fas fa-question-circle mr-1"></i> Hướng dẫn
+        </button>
         {{-- Optional: Add a back button if you have a general reports index --}}
         {{-- <a href="{{ route('reports.index') }}" class="btn btn-secondary btn-sm">
             <i class="fas fa-arrow-left"></i> Quay lại
@@ -14,148 +17,217 @@
 
 @section('content')
     <div class="container-fluid">
-        {{-- The h1 that was here is now in content_header --}}
+        <!-- Main row -->
+        <div class="row">
+            <div class="col-md-12">
+                <!-- Help Modal -->
+                <div class="modal fade" id="helpModal" tabindex="-1" role="dialog" aria-labelledby="helpModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-lg" role="document">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="helpModalLabel">
+                                    <i class="fas fa-question-circle mr-1"></i>
+                                    Hướng dẫn đọc báo cáo
+                                </h5>
+                                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h5 class="text-muted font-weight-bold mb-3">Giải thích các chỉ số:</h5>
+                                        <ul class="list-unstyled">
+                                            <li class="mb-3">
+                                                <i class="fas fa-info-circle text-primary mr-2"></i>
+                                                <strong>Tổng Doanh Thu:</strong><br>
+                                                <span class="text-muted ml-4">Tổng giá trị đơn hàng của tất cả sản phẩm trong nhóm hàng hóa.</span>
+                                            </li>
+                                            <li class="mb-3">
+                                                <i class="fas fa-info-circle text-success mr-2"></i>
+                                                <strong>Số Lượng Đơn Hàng:</strong><br>
+                                                <span class="text-muted ml-4">Số lượng đơn hàng có chứa ít nhất một sản phẩm thuộc nhóm hàng hóa.</span>
+                                            </li>
+                                            <li class="mb-3">
+                                                <i class="fas fa-info-circle text-info mr-2"></i>
+                                                <strong>Số Lượng Sản Phẩm Bán:</strong><br>
+                                                <span class="text-muted ml-4">Tổng số lượng sản phẩm đã bán ra từ nhóm hàng hóa.</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h5 class="text-muted font-weight-bold mb-3">Lưu ý quan trọng:</h5>
+                                        <ul class="list-unstyled">
+                                            <li class="mb-3">
+                                                <i class="fas fa-exclamation-circle text-warning mr-2"></i>
+                                                <strong>Hiển thị biểu đồ:</strong><br>
+                                                <span class="text-muted ml-4">Biểu đồ chỉ hiển thị top 10 nhóm hàng có doanh thu cao nhất.</span>
+                                            </li>
+                                            <li class="mb-3">
+                                                <i class="fas fa-exclamation-circle text-warning mr-2"></i>
+                                                <strong>Bảng chi tiết:</strong><br>
+                                                <span class="text-muted ml-4">Bảng chi tiết bên dưới hiển thị đầy đủ tất cả các nhóm hàng.</span>
+                                            </li>
+                                            <li class="mb-3">
+                                                <i class="fas fa-exclamation-circle text-warning mr-2"></i>
+                                                <strong>Đơn hàng và nhóm hàng:</strong><br>
+                                                <span class="text-muted ml-4">Một đơn hàng có thể chứa nhiều sản phẩm từ nhiều nhóm hàng khác nhau.</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-        <!-- Date Range Filter -->
-        <div class="card card-primary shadow mb-4">
-            <div class="card-header">
-                <h3 class="card-title">Bộ lọc</h3>
-            </div>
-            <div class="card-body">
-                <form method="GET" action="{{ route('reports.product_groups') }}">
+                <!-- Filter Card -->
+                <div class="card">
+                    <div class="card-header border-0">
+                        <h3 class="card-title">
+                            <i class="fas fa-filter mr-1"></i>
+                            Bộ lọc
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" action="{{ route('reports.product_groups') }}" class="mb-0">
+                            <div class="row align-items-end">
+                                <div class="col-md-4">
+                                    <div class="form-group mb-0">
+                                        <label for="date_range">Khoảng thời gian:</label>
+                                        <div class="input-group">
+                                            <div class="input-group-prepend">
+                                                <span class="input-group-text">
+                                                    <i class="far fa-calendar-alt"></i>
+                                                </span>
+                                            </div>
+                                            <input type="text" name="date_range" id="date_range" class="form-control" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <div class="form-group mb-0">
+                                        <button type="submit" class="btn btn-primary btn-block">
+                                            <i class="fas fa-search mr-1"></i> Lọc
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Summary Stats -->
+                <div class="row">
+                    <div class="col-12 col-sm-6 col-md-4">
+                        <div class="info-box mb-3">
+                            <span class="info-box-icon bg-primary elevation-1"><i class="fas fa-dollar-sign"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Tổng Doanh Thu</span>
+                                <span class="info-box-number">{{ number_format($totalRevenueAllGroups ?? 0, 0, ',', '.') }} VND</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-md-4">
+                        <div class="info-box mb-3">
+                            <span class="info-box-icon bg-success elevation-1"><i class="fas fa-shopping-cart"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Tổng Số Đơn Hàng</span>
+                                <span class="info-box-number">{{ number_format($totalOrdersAllGroups ?? 0, 0, ',', '.') }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-sm-6 col-md-4">
+                        <div class="info-box mb-3">
+                            <span class="info-box-icon bg-info elevation-1"><i class="fas fa-cubes"></i></span>
+                            <div class="info-box-content">
+                                <span class="info-box-text">Tổng Số Lượng Sản Phẩm</span>
+                                <span class="info-box-number">{{ number_format($totalQuantityAllGroups ?? 0, 0, ',', '.') }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @if(!empty($categoryData))
+                    <!-- Charts Row -->
                     <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label for="date_range">Khoảng thời gian:</label>
-                                <input type="text" name="date_range" id="date_range" class="form-control" />
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header border-0">
+                                    <h3 class="card-title">
+                                        <i class="fas fa-chart-bar mr-1"></i>
+                                        Top 10 Doanh Thu theo Nhóm Hàng Hóa
+                                    </h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container">
+                                        <canvas id="revenueByGroupChart"></canvas>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <div class="col-md-2 align-self-end">
-                            <div class="form-group">
-                                <button type="submit" class="btn btn-primary btn-block">Lọc</button>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
 
-        <!-- Summary Info Boxes (AdminLTE style) -->
-        <div class="row mb-4">
-            <div class="col-lg-4 col-md-6 col-sm-12">
-                <div class="info-box bg-primary">
-                    <span class="info-box-icon"><i class="fas fa-dollar-sign"></i></span>
-                    <div class="info-box-content">
-                        <span class="info-box-text">Tổng Doanh Thu (các nhóm hiển thị)</span>
-                        <span class="info-box-number">{{ number_format($totalRevenueAllGroups ?? 0, 0, ',', '.') }} VND</span>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-4 col-md-6 col-sm-12">
-                <div class="info-box bg-success">
-                    <span class="info-box-icon"><i class="fas fa-shopping-cart"></i></span>
-                    <div class="info-box-content">
-                        <span class="info-box-text">Tổng Số Đơn Hàng (liên quan đến nhóm)</span>
-                        <span class="info-box-number">{{ number_format($totalOrdersAllGroups ?? 0, 0, ',', '.') }}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-4 col-md-6 col-sm-12">
-                <div class="info-box bg-info">
-                    <span class="info-box-icon"><i class="fas fa-cubes"></i></span>
-                    <div class="info-box-content">
-                        <span class="info-box-text">Tổng Số Lượng Sản Phẩm Bán (từ các nhóm)</span>
-                        <span class="info-box-number">{{ number_format($totalQuantityAllGroups ?? 0, 0, ',', '.') }}</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        @if(!empty($categoryData))
-            <!-- Charts Row -->
-            <div class="row">
-                <!-- Revenue by Product Group Chart -->
-                <div class="col-lg-6">
-                    <div class="card card-info shadow mb-4">
-                        <div class="card-header">
-                            <h3 class="card-title"><i class="fas fa-chart-bar mr-1"></i>Doanh Thu theo Nhóm Hàng Hóa</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="chart-container">
-                                <canvas id="revenueByGroupChart"></canvas>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header border-0">
+                                    <h3 class="card-title">
+                                        <i class="fas fa-chart-line mr-1"></i>
+                                        Top 10 Số Lượng Đơn Hàng theo Nhóm
+                                    </h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container">
+                                        <canvas id="orderCountByGroupChart"></canvas>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Order Count by Product Group Chart -->
-                <div class="col-lg-6">
-                    <div class="card card-success shadow mb-4">
-                        <div class="card-header">
-                            <h3 class="card-title"><i class="fas fa-chart-bar mr-1"></i>Số Lượng Đơn Hàng theo Nhóm Hàng Hóa</h3>
+                    <!-- Product Groups Table -->
+                    <div class="card">
+                        <div class="card-header border-0">
+                            <h3 class="card-title">
+                                <i class="fas fa-table mr-1"></i>
+                                Chi Tiết theo Nhóm Hàng Hóa
+                            </h3>
                         </div>
-                        <div class="card-body">
-                            <div class="chart-container">
-                                <canvas id="orderCountByGroupChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="row">
-                 <!-- Quantity Sold by Product Group Chart -->
-                 <div class="col-lg-12">
-                    <div class="card card-warning shadow mb-4">
-                        <div class="card-header">
-                            <h3 class="card-title"><i class="fas fa-chart-bar mr-1"></i>Số Lượng Sản Phẩm Bán theo Nhóm Hàng Hóa</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="chart-container" style="height: 500px;"> {{-- Potentially more categories, so taller chart --}}
-                                <canvas id="quantitySoldByGroupChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Product Groups Table -->
-            <div class="card card-secondary shadow mb-4">
-                <div class="card-header">
-                    <h3 class="card-title"><i class="fas fa-table mr-1"></i>Chi Tiết theo Nhóm Hàng Hóa</h3>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-hover" id="productGroupsTable" width="100%" cellspacing="0">
-                            <thead>
-                                <tr>
-                                    <th>ID Nhóm</th>
-                                    <th>Tên Nhóm Hàng Hóa</th>
-                                    <th>Tổng Doanh Thu (VND)</th>
-                                    <th>Số Lượng Đơn Hàng</th>
-                                    <th>Số Lượng Sản Phẩm Bán</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach($categoryData as $category)
+                        <div class="card-body table-responsive p-0">
+                            <table class="table table-hover table-striped" id="productGroupsTable">
+                                <thead>
                                     <tr>
-                                        <td>{{ $category['id'] }}</td>
-                                        <td>{{ $category['name'] }}</td>
-                                        <td class="text-right">{{ number_format($category['total_revenue'], 0, ',', '.') }}</td>
-                                        <td class="text-right">{{ number_format($category['total_orders'], 0, ',', '.') }}</td>
-                                        <td class="text-right">{{ number_format($category['total_quantity_sold'], 0, ',', '.') }}</td>
+                                        <th>ID Nhóm</th>
+                                        <th>Tên Nhóm Hàng Hóa</th>
+                                        <th class="text-right">Tổng Doanh Thu (VND)</th>
+                                        <th class="text-right">Số Lượng Đơn Hàng</th>
+                                        <th class="text-right">Số Lượng Sản Phẩm Bán</th>
                                     </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    @foreach($categoryData as $category)
+                                        <tr>
+                                            <td>{{ $category['id'] }}</td>
+                                            <td>{{ $category['name'] }}</td>
+                                            <td class="text-right">{{ number_format($category['total_revenue'], 0, ',', '.') }}</td>
+                                            <td class="text-right">{{ number_format($category['total_orders'], 0, ',', '.') }}</td>
+                                            <td class="text-right">{{ number_format($category['total_quantity_sold'], 0, ',', '.') }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>
+                @else
+                    <div class="alert alert-info">
+                        <h5><i class="icon fas fa-info"></i> Thông báo!</h5>
+                        Không có dữ liệu nhóm hàng hóa cho khoảng thời gian đã chọn.
+                    </div>
+                @endif
             </div>
-        @else
-            <div class="alert alert-info text-center" role="alert">
-                Không có dữ liệu nhóm hàng hóa cho khoảng thời gian đã chọn.
-            </div>
-        @endif
+        </div>
     </div>
 @stop
 
@@ -166,22 +238,36 @@
     <style>
         .chart-container {
             position: relative;
-            height: 400px; /* Default height, can be adjusted */
+            height: 300px;
             width: 100%;
         }
-         #productGroupsTable_wrapper .row:first-child {
+        .card {
             margin-bottom: 1rem;
+            box-shadow: 0 0 1px rgba(0,0,0,.125), 0 1px 3px rgba(0,0,0,.2);
+        }
+        .card-header {
+            background-color: transparent;
+            padding: 1rem;
+        }
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 400;
+            margin: 0;
         }
         .info-box {
-            min-height: 100px;
+            min-height: 80px;
         }
         .info-box-icon {
-            width: 90px;
-            font-size: 45px;
-            line-height:90px;
+            width: 70px;
+            font-size: 30px;
+            line-height: 70px;
         }
         .info-box-content {
-            margin-left: 90px;
+            padding: 5px 10px;
+            margin-left: 70px;
+        }
+        .table th {
+            border-top: 0;
         }
     </style>
 @stop
@@ -318,7 +404,7 @@
                     }
                 }
             };
-            
+
             const pieChartOptions = {
                  responsive: true,
                 maintainAspectRatio: false,
@@ -377,12 +463,12 @@
                 }
                 return colors;
             }
-            
+
             function renderChartOrNoDataMessage(canvasId, chartConfig) {
                 const canvas = document.getElementById(canvasId);
                 if (!canvas) return;
                 const ctx = canvas.getContext('2d');
-                
+
                 let hasData = false;
                 if (chartConfig.data && chartConfig.data.datasets) {
                     chartConfig.data.datasets.forEach(dataset => {
@@ -472,7 +558,7 @@
                 },
                 options: { ...commonChartOptions }
             });
-            
+
             // 4. Optional: Order Distribution by Product Group (Pie Chart)
             // This requires an additional canvas in the HTML, e.g., id="orderDistributionByGroupChart"
             // For now, let's assume it's not added yet to avoid errors.

@@ -69,7 +69,10 @@ Route::prefix('reports')->group(function () {
 });
 
 // Pancake Webhook Endpoint
-Route::post('/webhooks/pancake', [PancakeWebhookController::class, 'handleWebhook'])->middleware(['api']);
+Route::middleware(['api'])->group(function () {
+    // Main webhook endpoint that handles both orders and customers
+    Route::post('/webhooks/pancake', [App\Http\Controllers\Api\PancakeWebhookController::class, 'handleWebhook']);
+});
 
 // For backward compatibility - these will be deprecated
 Route::middleware(['api'])->group(function () {
