@@ -2532,63 +2532,79 @@ class ReportController extends Controller
     public function overallRevenueSummaryPage(Request $request)
     {
         try {
-            // Get date range with defaults
-            $startDate = $request->get('start_date')
-                ? Carbon::parse($request->get('start_date'))->startOfDay()
-                : Carbon::now()->subDays(30)->startOfDay();
-            $endDate = $request->get('end_date')
-                ? Carbon::parse($request->get('end_date'))->endOfDay()
-                : Carbon::now()->endOfDay();
-            $perPage = $request->get('per_page', 20);
+            $perPage = $request->input('per_page', 20);
+            $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : Carbon::now()->startOfMonth()->startOfDay();
+            $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : Carbon::now()->endOfDay();
 
-            // Build base query with indexing optimization
-            $query = DB::table('orders')
-                ->select([
-                    DB::raw('DATE(created_at) as date'),
-                    DB::raw('SUM(total_value) as expected_revenue'),
-                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as actual_revenue'),
+            // Base query for daily revenue
+            $dailyRevenueQuery = DB::table('orders')
+                ->select(
+                    DB::raw('DATE(pancake_inserted_at) as date'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (5, 6, 15, 4) THEN total_value + shipping_fee ELSE 0 END) as expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as actual_revenue'),
                     DB::raw('COUNT(*) as total_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as successful_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as canceled_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as delivering_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN 1 ELSE 0 END) as successful_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 5 THEN 1 ELSE 0 END) as canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as delivering_orders'),
                     DB::raw('COUNT(DISTINCT customer_id) as total_customers')
-                ])
-                ->whereBetween('created_at', [$startDate, $endDate])
-                ->groupBy(DB::raw('DATE(created_at)'))
+                )
+                ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
+                ->groupBy(DB::raw('DATE(pancake_inserted_at)'))
                 ->orderBy('date', 'desc');
 
-            // Get paginated results with eager loading
-            $dailyRevenue = $query->paginate($perPage);
+            // Get totals for the entire period
+            $totals = DB::table('orders')
+                ->select(
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (5, 6, 15, 4) THEN total_value + shipping_fee ELSE 0 END) as total_expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as total_actual_revenue'),
+                    DB::raw('COUNT(*) as total_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN 1 ELSE 0 END) as total_successful_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 5 THEN 1 ELSE 0 END) as total_canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as total_delivering_orders'),
+                    DB::raw('COUNT(DISTINCT customer_id) as total_unique_customers')
+                )
+                ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
+                ->first();
 
-            // Get dates for the current page only
-            $dates = $dailyRevenue->pluck('date')->toArray();
-
-            // Get customer stats efficiently using a single query
-            $customerStats = DB::table('orders AS o1')
-                ->join('customers', 'o1.customer_id', '=', 'customers.pancake_id')
-                ->whereIn(DB::raw('DATE(o1.created_at)'), $dates)
-                ->select([
-                    DB::raw('DATE(o1.created_at) as date'),
-                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) = DATE(o1.created_at) THEN customers.pancake_id END) as new_customers'),
-                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) < DATE(o1.created_at) THEN customers.pancake_id END) as returning_customers')
-                ])
-                ->groupBy(DB::raw('DATE(o1.created_at)'))
+            // Get customer statistics
+            $customerStats = DB::table('orders as o1')
+                ->select(
+                    DB::raw('DATE(o1.pancake_inserted_at) as date'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN NOT EXISTS (
+                        SELECT 1 FROM orders o2
+                        WHERE o2.customer_id = o1.customer_id
+                        AND o2.pancake_inserted_at < o1.pancake_inserted_at
+                    ) THEN o1.customer_id END) as new_customers'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN EXISTS (
+                        SELECT 1 FROM orders o2
+                        WHERE o2.customer_id = o1.customer_id
+                        AND o2.pancake_inserted_at < o1.pancake_inserted_at
+                    ) THEN o1.customer_id END) as returning_customers')
+                )
+                ->whereBetween('o1.pancake_inserted_at', [$startDate, $endDate])
+                ->groupBy(DB::raw('DATE(o1.pancake_inserted_at)'))
                 ->get()
                 ->keyBy('date');
 
-            // Calculate totals for the entire period (not just current page)
-            $totals = DB::table('orders')
-                ->whereBetween('created_at', [$startDate, $endDate])
-                ->select([
-                    DB::raw('SUM(total_value) as total_expected_revenue'),
-                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as total_actual_revenue'),
-                    DB::raw('COUNT(*) as total_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as total_successful_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as total_canceled_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as total_delivering_orders'),
-                    DB::raw('COUNT(DISTINCT customer_id) as total_unique_customers')
-                ])
+            // Get total customer stats for the period
+            $totalCustomerStats = DB::table('orders as o1')
+                ->select(
+                    DB::raw('COUNT(DISTINCT CASE WHEN NOT EXISTS (
+                        SELECT 1 FROM orders o2
+                        WHERE o2.customer_id = o1.customer_id
+                        AND o2.pancake_inserted_at < o1.pancake_inserted_at
+                    ) THEN o1.customer_id END) as total_new_customers'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN EXISTS (
+                        SELECT 1 FROM orders o2
+                        WHERE o2.customer_id = o1.customer_id
+                        AND o2.pancake_inserted_at < o1.pancake_inserted_at
+                    ) THEN o1.customer_id END) as total_returning_customers')
+                )
+                ->whereBetween('o1.pancake_inserted_at', [$startDate, $endDate])
                 ->first();
+
+            // Paginate the daily revenue data
+            $dailyRevenue = $dailyRevenueQuery->paginate($perPage);
 
             // Format the data for current page
             $revenueData = collect($dailyRevenue->items())->map(function($row) use ($customerStats) {
@@ -2625,16 +2641,6 @@ class ReportController extends Controller
                 ? round(($totals->total_canceled_orders / $totals->total_orders) * 100, 1)
                 : 0;
 
-            // Get total customer stats for the entire period
-            $totalCustomerStats = DB::table('orders AS o2')
-                ->join('customers', 'o2.customer_id', '=', 'customers.pancake_id')
-                ->whereBetween('o2.created_at', [$startDate, $endDate])
-                ->select([
-                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) = DATE(o2.created_at) THEN customers.pancake_id END) as total_new_customers'),
-                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) < DATE(o2.created_at) THEN customers.pancake_id END) as total_returning_customers')
-                ])
-                ->first();
-
             return view('reports.overall_revenue_summary', [
                 'revenueData' => $revenueData,
                 'startDate' => $startDate->format('Y-m-d'),
@@ -2643,7 +2649,8 @@ class ReportController extends Controller
                     'total' => $dailyRevenue->total(),
                     'per_page' => $dailyRevenue->perPage(),
                     'current_page' => $dailyRevenue->currentPage(),
-                    'last_page' => $dailyRevenue->lastPage()
+                    'last_page' => $dailyRevenue->lastPage(),
+                    'links' => $dailyRevenue->links()
                 ],
                 'totals' => [
                     'expected_revenue' => $totals->total_expected_revenue,

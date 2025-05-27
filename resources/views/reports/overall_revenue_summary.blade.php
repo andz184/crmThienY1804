@@ -67,68 +67,28 @@
                 </tr>
                                 @endforeach
             </tbody>
-                            <tfoot>
-                                <tr class="font-weight-bold">
-                                    <td>Tổng cộng</td>
-                                    <td class="text-right">{{ number_format($revenueData->sum('expected_revenue')) }}</td>
-                                    <td class="text-right">{{ number_format($revenueData->sum('actual_revenue')) }}</td>
-                                    <td class="text-center">{{ $revenueData->sum('total_orders') }}</td>
-                                    <td class="text-center">{{ $revenueData->sum('successful_orders') }}</td>
-                                    <td class="text-center">{{ $revenueData->sum('canceled_orders') }}</td>
-                                    <td class="text-center">{{ $revenueData->sum('delivering_orders') }}</td>
-                                    <td class="text-center">{{ number_format($revenueData->avg('success_rate'), 1) }}%</td>
-                                    <td class="text-center">{{ number_format($revenueData->avg('cancellation_rate'), 1) }}%</td>
-                                    <td class="text-center">{{ $revenueData->sum('new_customers') }}</td>
-                                    <td class="text-center">{{ $revenueData->sum('returning_customers') }}</td>
-                                    <td class="text-center">{{ $revenueData->sum('total_customers') }}</td>
-                                </tr>
-                            </tfoot>
+            <tfoot>
+                <tr class="font-weight-bold">
+                    <td>Tổng cộng</td>
+                    <td class="text-right">{{ number_format($totals['expected_revenue']) }}</td>
+                    <td class="text-right">{{ number_format($totals['actual_revenue']) }}</td>
+                    <td class="text-center">{{ $totals['total_orders'] }}</td>
+                    <td class="text-center">{{ $totals['successful_orders'] }}</td>
+                    <td class="text-center">{{ $totals['canceled_orders'] }}</td>
+                    <td class="text-center">{{ $totals['delivering_orders'] }}</td>
+                    <td class="text-center">{{ number_format($totals['success_rate'], 1) }}%</td>
+                    <td class="text-center">{{ number_format($totals['cancellation_rate'], 1) }}%</td>
+                    <td class="text-center">{{ $totals['new_customers'] }}</td>
+                    <td class="text-center">{{ $totals['returning_customers'] }}</td>
+                    <td class="text-center">{{ $totals['total_customers'] }}</td>
+                </tr>
+            </tfoot>
         </table>
+
+        <div class="d-flex justify-content-center mt-4">
+            {{ $pagination['links'] }}
+        </div>
     </div>
-
-                    {{-- Pagination --}}
-                    @if($pagination['last_page'] > 1)
-                    <div class="d-flex justify-content-center mt-4">
-                        <nav>
-                            <ul class="pagination">
-                                {{-- Previous Page Link --}}
-                                @if($pagination['current_page'] > 1)
-                                    <li class="page-item">
-                                        <a class="page-link" href="{{ request()->fullUrlWithQuery(['page' => $pagination['current_page'] - 1]) }}" rel="prev">&laquo;</a>
-                                    </li>
-                                @else
-                                    <li class="page-item disabled">
-                                        <span class="page-link">&laquo;</span>
-                                    </li>
-                                @endif
-
-                                {{-- Pagination Elements --}}
-                                @for($i = 1; $i <= $pagination['last_page']; $i++)
-                                    @if($i == $pagination['current_page'])
-                                        <li class="page-item active">
-                                            <span class="page-link">{{ $i }}</span>
-                                        </li>
-                                    @else
-                                        <li class="page-item">
-                                            <a class="page-link" href="{{ request()->fullUrlWithQuery(['page' => $i]) }}">{{ $i }}</a>
-                                        </li>
-                                    @endif
-                                @endfor
-
-                                {{-- Next Page Link --}}
-                                @if($pagination['current_page'] < $pagination['last_page'])
-                                    <li class="page-item">
-                                        <a class="page-link" href="{{ request()->fullUrlWithQuery(['page' => $pagination['current_page'] + 1]) }}" rel="next">&raquo;</a>
-                                    </li>
-                                @else
-                                    <li class="page-item disabled">
-                                        <span class="page-link">&raquo;</span>
-                                    </li>
-                                @endif
-                            </ul>
-                        </nav>
-            </div>
-                    @endif
                 </div>
             </div>
         </div>
