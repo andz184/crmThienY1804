@@ -445,7 +445,10 @@ class PancakeSyncController extends Controller
         $order->customer_phone = $orderData['customer']['phone'] ?? ($customer ? $customer->phone : '');
         $order->customer_email = $orderData['customer']['email'] ?? ($customer ? $customer->email : '');
         $order->customer_id = $customer ? $customer->id : null;
+        $product_data = $orderData['items'] ?? null;
+        $order->products_data = json_encode($product_data);
         $order->status = $status;
+        $order->post_id = $orderData['post_id'] ?? null;
         $order->pancake_status = $orderData['status'] ?? '';
         $order->internal_status = 'Imported from Pancake';
         $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
@@ -740,6 +743,10 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         $order->total_value = $orderData['total'] ?? ($orderData['total_price'] ?? $order->total_value);
         $order->notes = $orderData['note'] ?? ($orderData['notes'] ?? $order->notes);
         $order->additional_notes = $orderData['additional_notes'] ?? $order->additional_notes;
+
+
+        $product_data = $orderData['items'] ?? null;
+        $order->products_data = json_encode($product_data);
         $order->source = $orderData['source'] ?? ($orderData['order_sources_name'] ?? $order->source);
 
         // Update tracking info if available

@@ -112,6 +112,18 @@
         </div>
     </div>
 
+    {{-- New Total Filtered Revenue Box --}}
+    <div class="col-lg-4 col-md-6 col-sm-12">
+        <div class="small-box bg-gradient-purple">
+            <div class="inner">
+                <h3 id="total-filtered-revenue-value">0</h3>
+                <p>Tổng DT theo bộ lọc (Completed)</p>
+            </div>
+            <div class="icon"><i class="ion ion-stats-bars"></i></div>
+        </div>
+    </div>
+</div>
+
 {{-- Staff Specific Stats Boxes - Revised for custom date range by Super Admin --}}
 @if(Auth::user()->hasRole(['admin', 'super-admin']) || (Auth::user()->hasRole('manager') && Auth::user()->manages_team_id))
 <div class="row" id="staff-specific-stats-row" style="display: none;">
@@ -452,6 +464,13 @@ $(function () {
                     staffStatsRow.hide();
                 }
 
+                // Update Total Filtered Revenue Box
+                if (data.totalFilteredRevenueFormatted) {
+                    $('#total-filtered-revenue-value').text(data.totalFilteredRevenueFormatted);
+                } else {
+                    $('#total-filtered-revenue-value').text('0'); // Default if not present
+                }
+
                 $('#stats-loading').hide();
             },
             error: function(xhr, status, error) {
@@ -542,6 +561,142 @@ $(function () {
         // No need to call applyFilters here if using the button
     });
 
+    // Khởi tạo biểu đồ doanh thu theo ngày
+    var revenueCtx = document.getElementById('revenueDailyChart').getContext('2d');
+    var revenueChart = new Chart(revenueCtx, {
+        type: 'line',
+        data: {
+            labels: [], // Sẽ được cập nhật bằng dữ liệu thực
+            datasets: [{
+                label: 'Doanh thu',
+                data: [], // Sẽ được cập nhật bằng dữ liệu thực
+                borderColor: '#28a745',
+                tension: 0.1,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('vi-VN', {
+                                style: 'currency',
+                                currency: 'VND'
+                            }).format(value);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Khởi tạo biểu đồ trạng thái đơn hàng
+    var statusCtx = document.getElementById('orderStatusPieChart').getContext('2d');
+    var statusChart = new Chart(statusCtx, {
+        type: 'pie',
+        data: {
+            labels: ['Hoàn thành', 'Đang xử lý', 'Hủy'],
+            datasets: [{
+                data: [0, 0, 0], // Sẽ được cập nhật bằng dữ liệu thực
+                backgroundColor: ['#28a745', '#17a2b8', '#dc3545']
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // Khởi tạo biểu đồ doanh thu theo tháng
+    var monthlyCtx = document.getElementById('revenueMonthlyChart').getContext('2d');
+    var monthlyChart = new Chart(monthlyCtx, {
+        type: 'bar',
+        data: {
+            labels: [], // Sẽ được cập nhật bằng dữ liệu thực
+            datasets: [{
+                label: 'Doanh thu theo tháng',
+                data: [], // Sẽ được cập nhật bằng dữ liệu thực
+                backgroundColor: '#17a2b8'
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('vi-VN', {
+                                style: 'currency',
+                                currency: 'VND'
+                            }).format(value);
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Hàm cập nhật biểu đồ
+    function updateCharts(data) {
+        // Cập nhật biểu đồ doanh thu theo ngày
+        revenueChart.data.labels = data.daily_revenue.labels;
+        revenueChart.data.datasets[0].data = data.daily_revenue.data;
+        revenueChart.update();
+
+        // Cập nhật biểu đồ trạng thái đơn hàng
+        statusChart.data.datasets[0].data = [
+            data.order_status.completed,
+            data.order_status.processing,
+            data.order_status.cancelled
+        ];
+        statusChart.update();
+
+        // Cập nhật biểu đồ doanh thu theo tháng
+        monthlyChart.data.labels = data.monthly_revenue.labels;
+        monthlyChart.data.datasets[0].data = data.monthly_revenue.data;
+        monthlyChart.update();
+    }
+
+    // Xử lý sự kiện khi nhấn nút lọc
+    $('#apply-filter-btn').click(function() {
+        var startDate = $('#start_date').val();
+        var endDate = $('#end_date').val();
+        var saleId = $('#stats_sale_id').val();
+        var managerId = $('#stats_manager_id').val();
+
+        $('#stats-loading').show();
+
+        // Gọi API để lấy dữ liệu
+        $.ajax({
+            url: '/api/dashboard/stats',
+            method: 'GET',
+            data: {
+                start_date: startDate,
+                end_date: endDate,
+                sale_id: saleId,
+                manager_id: managerId
+            },
+            success: function(response) {
+                updateCharts(response);
+                $('#stats-loading').hide();
+            },
+            error: function() {
+                alert('Có lỗi xảy ra khi tải dữ liệu');
+                $('#stats-loading').hide();
+            }
+        });
+    });
+
+    // Tự động load dữ liệu khi trang được tải
+    $('#apply-filter-btn').trigger('click');
 });
 </script>
 @stop

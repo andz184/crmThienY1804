@@ -40,6 +40,8 @@ class OrderObserver
         $this->updateCustomerFromOrder($order);
         $this->updateLiveSessionRevenue($order);
         $this->updateLiveSessionReport($order);
+
+        event(new \App\Events\OrderUpdated($order));
     }
 
     /**
@@ -265,6 +267,7 @@ class OrderObserver
     private function updateLiveSessionRevenue($order)
     {
         try {
+
             // Check if order has live session info
             if (empty($order->live_session_info)) {
                 \Illuminate\Support\Facades\Log::info('Order has no live session info', ['order_id' => $order->id]);
@@ -321,8 +324,48 @@ class OrderObserver
                 'order_id' => $order->id,
                 'total_orders' => $sessionOrders->count()
             ]);
+            $topProducts = [];
+            foreach ($sessionOrders as $order) {
+                // Only process completed orders for top products
+                // if ($order->pancake_status !== \App\Models\Order::PANCAKE_STATUS_COMPLETED) {
+                //     continue;
+                // }
+                $data = json_decode($order->products_data, true);
+                // if (!is_array($data)) continue;
+                // dd($data);
 
-            // Update statistics
+                foreach ($data as $item) {
+                    $productName = $item['name'];
+                    $productId = $item['variation_id'];
+                    $productNameVariation = $item['variation_info']['name'];
+                    $quantity = (int)$item['quantity'];
+                    $price = (float)$item['variation_info']['retail_price'];
+                    $totalAmount = $quantity * $price;
+
+                    if (!isset($topProducts[$productId])) {
+                        $topProducts[$productId] = [
+                            'product_id' => $productId,
+                            'product_name' => $productName,
+                            'total_quantity' => 0,
+                            'total_revenue' => 0,
+                            'unit_price' => $price
+                        ];
+                    }
+
+                    $topProducts[$productId]['total_quantity'] += $quantity;
+                    $topProducts[$productId]['total_revenue'] += $totalAmount;
+
+                }
+            }
+            dd($topProducts);
+            // Sort products by revenue in descending order
+            uasort($topProducts, function($a, $b) {
+                return $b['total_revenue'] <=> $a['total_revenue'];
+            });
+
+            // Convert to array and store in revenue record
+            $revenue->top_products = $topProducts;
+
             $revenue->total_orders = $sessionOrders->count();
             $revenue->successful_orders = $sessionOrders->where('pancake_status', \App\Models\Order::PANCAKE_STATUS_COMPLETED)->count();
             $revenue->canceled_orders = $sessionOrders->where('pancake_status', \App\Models\Order::PANCAKE_STATUS_CANCELED)->count();
@@ -394,12 +437,14 @@ class OrderObserver
             // Ensure orders_by_province is properly encoded as JSON string
             $revenue->orders_by_province = json_encode($ordersByProvince);
 
+
             \Illuminate\Support\Facades\Log::info('Saving live session revenue', [
                 'order_id' => $order->id,
                 'revenue_data' => $revenue->toArray()
             ]);
 
             $revenue->save();
+            dd($revenue);
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Error in updateLiveSessionRevenue', [

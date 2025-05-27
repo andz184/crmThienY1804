@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use App\Models\Order;
 use App\Models\LiveSessionOrder;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class LiveSessionRevenue extends Model
 {
@@ -45,6 +46,7 @@ class LiveSessionRevenue extends Model
      */
     public static function updateFromOrder($order)
     {
+
         if (!$order->live_session_info) {
             return;
         }
@@ -67,7 +69,7 @@ class LiveSessionRevenue extends Model
      */
     public static function recalculateStats($date, $liveNumber)
     {
-        \Log::info("Starting recalculateStats for date: {$date}, live number: {$liveNumber}");
+        Log::info("Starting recalculateStats for date: {$date}, live number: {$liveNumber}");
 
         // Get all orders for this live session using live_session_orders table
         $liveSessionOrders = LiveSessionOrder::where('live_session_date', $date)
@@ -77,12 +79,12 @@ class LiveSessionRevenue extends Model
             ->with(['order.items']) // Eager load order items
             ->get();
 
-        \Log::info("Found live session orders: " . $liveSessionOrders->count());
+        Log::info("Found live session orders: " . $liveSessionOrders->count());
 
         // Get all orders
         $orders = $liveSessionOrders->pluck('order');
-        \Log::info("Total orders: " . $orders->count());
-        \Log::info("Completed orders: " . $orders->where('pancake_status', '3')->count());
+        Log::info("Total orders: " . $orders->count());
+        Log::info("Completed orders: " . $orders->where('pancake_status', '3')->count());
 
         // Create or update revenue record
         $revenue = self::firstOrNew([
@@ -134,7 +136,6 @@ class LiveSessionRevenue extends Model
 
         // Calculate orders by status
         $ordersByStatus = [];
-        $products = [];
         foreach ($orders as $order) {
             $status = $order->pancake_status;
             if (!isset($ordersByStatus[$status])) {
@@ -145,30 +146,6 @@ class LiveSessionRevenue extends Model
             }
             $ordersByStatus[$status]['count']++;
             $ordersByStatus[$status]['revenue'] += $order->total_value;
-
-            // Process products for completed orders
-            if ($status === '3') {
-                \Log::info("Processing completed order {$order->id} with " . $order->items->count() . " items");
-                foreach ($order->items as $item) {
-                    $productId = $item->pancake_variant_id ?? $item->product_code ?? $item->code;
-                    if (!$productId) {
-                        \Log::warning("No product ID found for item in order {$order->id}");
-                        continue;
-                    }
-
-                    if (!isset($products[$productId])) {
-                        $products[$productId] = [
-                            'id' => $productId,
-                            'name' => $item->product_name ?? $item->name ?? 'Unknown Product',
-                            'quantity' => 0,
-                            'revenue' => 0
-                        ];
-                    }
-                    $products[$productId]['quantity'] += $item->quantity;
-                    $products[$productId]['revenue'] += $item->price * $item->quantity;
-                }
-
-            }
         }
         $revenue->orders_by_status = $ordersByStatus;
 
@@ -188,17 +165,13 @@ class LiveSessionRevenue extends Model
         }
         $revenue->orders_by_province = $ordersByProvince;
 
-        // Sort products by revenue and get top 5
-        uasort($products, function($a, $b) {
-            return $b['revenue'] <=> $a['revenue'];
-        });
-        $revenue->top_products = array_values(array_slice($products, 0, 5));
-
-        \Log::info("Products found: " . count($products));
-        \Log::info("Top products: " . json_encode($revenue->top_products));
-
         // Save changes
         $revenue->save();
+
+        // Update products data
+        self::updateProductsData($date, $liveNumber);
+
+        return $revenue;
     }
 
     /**
@@ -318,11 +291,14 @@ class LiveSessionRevenue extends Model
                         'id' => $id,
                         'name' => $product['name'],
                         'quantity' => 0,
-                        'revenue' => 0
+                        'revenue' => 0,
+                        'orders' => $product['orders'] ?? 1,
+                        'unit_price' => $product['unit_price'] ?? 0
                     ];
                 }
                 $products[$id]['quantity'] += $product['quantity'];
                 $products[$id]['revenue'] += $product['revenue'];
+                $products[$id]['orders'] += $product['orders'] ?? 1;
             }
         }
 
@@ -331,6 +307,204 @@ class LiveSessionRevenue extends Model
             return $b['revenue'] <=> $a['revenue'];
         });
 
-        return array_slice($products, 0, 5);
+        // Add average_price field, avoid division by zero
+        foreach ($products as &$product) {
+            $product['average_price'] = ($product['quantity'] > 0) ? ($product['revenue'] / $product['quantity']) : 0;
+        }
+        unset($product);
+
+        return array_values($products);
+    }
+
+    /**
+     * Update products data for a specific live session
+     */
+    public static function updateProductsData($date, $liveNumber)
+    {
+        Log::info("Starting updateProductsData for date: {$date}, live number: {$liveNumber}");
+
+        // Get all orders for this live session
+        $liveSessionOrders = LiveSessionOrder::where('live_session_date', $date)
+            ->whereHas('order', function ($query) use ($liveNumber) {
+                $query->whereRaw("JSON_EXTRACT(live_session_info, '$.live_number') = ?", [$liveNumber]);
+            })
+            ->with(['order']) // Eager load order
+            ->get();
+
+        Log::info("Found {$liveSessionOrders->count()} orders for live session", [
+            'date' => $date,
+            'live_number' => $liveNumber,
+            'order_ids' => $liveSessionOrders->pluck('order_id')->toArray()
+        ]);
+
+        if ($liveSessionOrders->isEmpty()) {
+            Log::warning("No orders found for live session", [
+                'date' => $date,
+                'live_number' => $liveNumber
+            ]);
+            return null;
+        }
+
+        $productsData = [];
+        $hasProducts = false;
+
+        // Process each order's items
+        foreach ($liveSessionOrders as $liveSessionOrder) {
+            if (!$liveSessionOrder->order) {
+                Log::warning("Order not found for live session order ID: {$liveSessionOrder->id}");
+                continue;
+            }
+
+            // Get products data from order
+            $orderProducts = json_decode($liveSessionOrder->order->products_data, true);
+            Log::info("Processing order products", [
+                'order_id' => $liveSessionOrder->order->id,
+                'products_data' => $orderProducts
+            ]);
+
+            if (!is_array($orderProducts)) {
+                Log::warning("Invalid products_data format for order ID: {$liveSessionOrder->order->id}", [
+                    'products_data' => $liveSessionOrder->order->products_data
+                ]);
+                continue;
+            }
+
+            foreach ($orderProducts as $item) {
+                if (!is_array($item)) {
+                    Log::warning("Invalid product item format in order ID: {$liveSessionOrder->order->id}", [
+                        'item' => $item
+                    ]);
+                    continue;
+                }
+
+                $hasProducts = true;
+
+                // Get product ID with fallback options
+                $productId = $item['id'] ?? $item['product_code'] ?? $item['code'] ?? 'unknown_' . uniqid();
+
+                // Get product name with fallback options
+                $productName = $item['variation_info']['name'] ?? $item['name'] ?? 'Unknown Product';
+
+                // Get price and quantity with fallback to 0
+                $price = floatval($item['variation_info']['retail_price'] ?? $item['price'] ?? 0);
+                $quantity = intval($item['quantity'] ?? 0);
+
+                Log::info("Processing product", [
+                    'product_id' => $productId,
+                    'name' => $productName,
+                    'price' => $price,
+                    'quantity' => $quantity,
+                    'order_status' => $liveSessionOrder->order->pancake_status ?? 'unknown'
+                ]);
+
+                if (!isset($productsData[$productId])) {
+                    $productsData[$productId] = [
+                        'id' => $productId,
+                        'name' => $productName,
+                        'unit_price' => $price, // Store unit price
+                        'quantity_ordered' => 0,
+                        'expected_revenue' => 0,
+                        'quantity_actual' => 0,
+                        'actual_revenue' => 0,
+                        'orders_count' => 0
+                    ];
+                }
+
+                $productsData[$productId]['quantity_ordered'] += $quantity;
+                $productsData[$productId]['expected_revenue'] += ($price * $quantity);
+                $productsData[$productId]['orders_count']++; // Increment order count for this product
+
+                // Check if the order is completed for actual revenue and quantity
+                if (isset($liveSessionOrder->order) && $liveSessionOrder->order->pancake_status == Order::PANCAKE_STATUS_COMPLETED) {
+                    $productsData[$productId]['quantity_actual'] += $quantity;
+                    $productsData[$productId]['actual_revenue'] += ($price * $quantity);
+                }
+            }
+        }
+
+        // If no products found, create a default "Unknown" product structure
+        if (!$hasProducts) {
+            Log::info("No products found for live session, creating default Unknown product structure");
+            $productsData['unknown'] = [
+                'id' => 'unknown',
+                'name' => 'Unknown Product',
+                'unit_price' => 0,
+                'quantity_ordered' => 0,
+                'expected_revenue' => 0,
+                'quantity_actual' => 0,
+                'actual_revenue' => 0,
+                'orders_count' => 0
+            ];
+        }
+
+        // Sort products by expected_revenue (or actual_revenue, as per preference) and get top 5 (or all if needed)
+        uasort($productsData, function($a, $b) {
+            return $b['expected_revenue'] <=> $a['expected_revenue']; // Sorting by expected revenue
+        });
+
+        // Get or create live session revenue record
+        $revenue = self::firstOrNew([
+            'date' => $date,
+            'live_number' => $liveNumber
+        ]);
+
+        // Set required fields if they don't exist
+        // if (!$revenue->session_name) {
+        //     $revenue->session_name = "LIVE {$liveNumber} (" . Carbon::parse($date)->format('d/m/Y') . ")";
+        // }
+
+        // Calculate total revenue from products
+        $totalRevenue = array_sum(array_column($productsData, 'actual_revenue'));
+        // $revenue->total_revenue = $totalRevenue;
+
+        // Update top products
+        $topProducts = array_values(array_slice($productsData, 0, 5));
+
+        Log::info("Preparing to save revenue record", [
+            'date' => $date,
+            'live_number' => $liveNumber,
+            'revenue_id' => $revenue->id,
+            'session_name' => $revenue->session_name,
+            'total_revenue' => $totalRevenue,
+            'top_products' => $topProducts,
+            'products_count' => count($topProducts)
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $revenue->top_products = $topProducts;
+            $saved = $revenue->save();
+
+            if (!$saved) {
+                Log::error("Failed to save revenue record", [
+                    'revenue' => $revenue->toArray(),
+                    'errors' => $revenue->getErrors()
+                ]);
+                DB::rollBack();
+                return null;
+            }
+
+            DB::commit();
+
+            Log::info("Successfully saved revenue record", [
+                'saved' => $saved,
+                'revenue_id' => $revenue->id,
+                'date' => $date,
+                'live_number' => $liveNumber,
+                'total_revenue' => $totalRevenue
+            ]);
+
+            return $revenue;
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error("Exception while saving revenue record", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'revenue' => $revenue->toArray()
+            ]);
+            throw $e;
+        }
     }
 }

@@ -285,12 +285,49 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h3 class="card-title">Top 5 sản phẩm bán chạy</h3>
+                <h3 class="card-title">Thống kê sản phẩm bán chạy</h3>
             </div>
             <div class="card-body">
                 <div class="chart-container" style="height: 300px;">
                     <canvas id="topProductsChart"></canvas>
                 </div>
+
+                <h4 class="mt-4">Chi tiết sản phẩm</h4>
+                <table id="product-details-table" class="table table-sm table-bordered table-striped mt-2">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Sản phẩm</th>
+                            <th class="text-right">SL Đặt</th>
+                            <th class="text-right">DT Dự kiến</th>
+                            <th class="text-right">SL Thực tế</th>
+                            <th class="text-right">DT Thực tế</th>
+                            <th class="text-right">Số đơn</th>
+                            <th class="text-right">Giá TB Dự kiến</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($topProducts as $index => $product)
+                        <tr>
+                            <td>{{ $index + 1 }}</td>
+                            <td>
+                                {{ $product['name'] }}
+                                <small class="d-block text-muted">ID: {{ $product['id'] }}</small>
+                            </td>
+                            <td class="text-right">{{ number_format($product['quantity_ordered'] ?? 0, 0, ',', '.') }}</td>
+                            <td class="text-right">{{ number_format($product['expected_revenue'] ?? 0, 0, ',', '.') }} đ</td>
+                            <td class="text-right">{{ number_format($product['quantity_actual'] ?? 0, 0, ',', '.') }}</td>
+                            <td class="text-right">{{ number_format($product['actual_revenue'] ?? 0, 0, ',', '.') }} đ</td>
+                            <td class="text-right">{{ number_format($product['orders_count'] ?? 0, 0, ',', '.') }}</td>
+                            <td class="text-right">{{ number_format($product['average_price'] ?? 0, 0, ',', '.') }} đ</td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="8" class="text-center">Không có dữ liệu sản phẩm.</td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -585,19 +622,24 @@ $(function() {
             labels: topProducts.map(product => product.name),
             datasets: [
                 {
-                    label: 'Doanh thu',
-                    data: topProducts.map(product => product.revenue),
-                    backgroundColor: '#007bff'
+                    label: 'Số lượng đặt',
+                    data: topProducts.map(product => product.quantity_ordered),
+                    backgroundColor: '#ffc107' // Yellow
                 },
                 {
-                    label: 'Số lượng',
-                    data: topProducts.map(product => product.quantity),
-                    backgroundColor: '#28a745'
+                    label: 'Doanh thu dự kiến',
+                    data: topProducts.map(product => product.expected_revenue),
+                    backgroundColor: '#007bff' // Blue
+                },
+                {
+                    label: 'Doanh thu thực tế',
+                    data: topProducts.map(product => product.actual_revenue),
+                    backgroundColor: '#28a745' // Green
                 }
             ]
         },
         options: {
-            indexAxis: 'y',
+            indexAxis: 'x', // Vertical bar chart
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
@@ -607,17 +649,22 @@ $(function() {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            if (context.datasetIndex === 0) {
-                                return context.dataset.label + ': ' +
-                                    new Intl.NumberFormat('vi-VN', {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                if (context.dataset.label === 'Số lượng đặt') {
+                                    label += new Intl.NumberFormat('vi-VN').format(context.parsed.y);
+                                } else {
+                                    label += new Intl.NumberFormat('vi-VN', {
                                         style: 'currency',
                                         currency: 'VND',
                                         maximumFractionDigits: 0
-                                    }).format(context.parsed.x);
-                            } else {
-                                return context.dataset.label + ': ' +
-                                    new Intl.NumberFormat('vi-VN').format(context.parsed.x);
+                                    }).format(context.parsed.y);
+                                }
                             }
+                            return label;
                         }
                     }
                 }
@@ -627,6 +674,12 @@ $(function() {
                     beginAtZero: true,
                     grid: {
                         display: false
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        display: true
                     },
                     ticks: {
                         callback: function(value) {
@@ -638,12 +691,6 @@ $(function() {
                             }
                             return value;
                         }
-                    }
-                },
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        display: false
                     }
                 }
             }
@@ -669,6 +716,21 @@ $(function() {
         "autoWidth": false,
         "responsive": true,
         "order": [[1, 'desc']], // Sắp xếp theo ngày giảm dần
+        "language": {
+            "url": "//cdn.datatables.net/plug-ins/1.10.24/i18n/Vietnamese.json"
+        }
+    });
+
+    // Initialize DataTable for product details
+    $('#product-details-table').DataTable({
+        "paging": true,
+        "lengthChange": true,
+        "searching": true,
+        "ordering": true,
+        "info": true,
+        "autoWidth": false,
+        "responsive": true,
+        "order": [[3, 'desc']], // Sort by Expected Revenue desc by default
         "language": {
             "url": "//cdn.datatables.net/plug-ins/1.10.24/i18n/Vietnamese.json"
         }

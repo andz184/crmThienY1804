@@ -257,69 +257,49 @@ Route::post('/pancake-config/test', [PancakeConfigController::class, 'testConnec
 // Pancake Webhook Configuration
 Route::get('/admin/pancake/webhooks', [App\Http\Controllers\Admin\PancakeWebhookConfigController::class, 'index'])->name('admin.pancake.webhooks');
 
-// Report routes
-Route::middleware(['auth'])->prefix('reports')->name('reports.')->group(function () {
-    Route::get('/', [App\Http\Controllers\ReportController::class, 'index'])->name('index');
+// Reports Routes
+Route::middleware(['auth'])->group(function () {
+    // Base reports route
+    Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
 
-    // API đồng bộ dữ liệu từ Pancake
-    Route::post('/sync-from-pancake', [App\Http\Controllers\ReportController::class, 'syncFromPancake'])->name('sync_from_pancake');
+    // Report pages
+    Route::prefix('reports')->name('reports.')->group(function () {
+        Route::get('/total-revenue', [ReportController::class, 'totalRevenuePage'])->name('total-revenue');
+        Route::get('/detail', [ReportController::class, 'detailPage'])->name('detail');
+        Route::get('/product-groups', [ReportController::class, 'productGroupsPage'])->name('product_groups');
+        Route::get('/campaigns', [ReportController::class, 'campaignsPage'])->name('campaigns');
+        Route::get('/live-sessions', [ReportController::class, 'liveSessionsPage'])->name('live-sessions');
+        Route::get('/conversion-rates', [ReportController::class, 'conversionRatesPage'])->name('conversion-rates');
+        Route::get('/new-customers', [ReportController::class, 'newCustomersPage'])->name('new-customers');
+        Route::get('/returning-customers', [ReportController::class, 'returningCustomersPage'])->name('returning-customers');
+        Route::get('/payments', [ReportController::class, 'paymentsPage'])->name('payments');
+        Route::get('/order-report', [ReportController::class, 'orderReportIndex'])->name('order-report');
+        Route::get('/overall-revenue', [ReportController::class, 'overallRevenueSummaryPage'])->name('overall-revenue');
+        Route::get('/overall-revenue', [ReportController::class, 'overallRevenueSummaryPage'])->name('overall_revenue_summary');
+        Route::get('/general', [ReportController::class, 'generalReportPage'])->name('general_report');
+        Route::get('/overall-revenue-data', [ReportController::class, 'getOverallRevenueData'])->name('overall-revenue-data');
 
-    // Order Reports
-    Route::get('/orders', [App\Http\Controllers\ReportController::class, 'orderReportIndex'])->name('orders');
-    Route::get('/orders/data', [App\Http\Controllers\ReportController::class, 'getOrderReportData'])->name('orders.data');
-
-    // Báo cáo tổng doanh thu
-    Route::get('/total-revenue', [App\Http\Controllers\ReportController::class, 'totalRevenuePage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.total_revenue')
-        ->name('total_revenue');
-
-    // Báo cáo chi tiết
-    Route::get('/detail', [App\Http\Controllers\ReportController::class, 'detailPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.detailed')
-        ->name('detail');
-
-    // Báo cáo theo nhóm hàng hóa
-    Route::get('/product-groups', [App\Http\Controllers\ReportController::class, 'productGroupsPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.product_groups')
-        ->name('product_groups');
-
-    // Báo cáo theo chiến dịch (bài post)
-    Route::get('/campaigns', [App\Http\Controllers\ReportController::class, 'campaignsPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.campaigns')
-        ->name('campaigns');
-
-    // Báo cáo phiên live
-    Route::get('/live-sessions', [App\Http\Controllers\ReportController::class, 'liveSessionsPage'])
-        ->name('live_sessions');
-
-    // Báo cáo thanh toán
-    Route::get('/payments', [App\Http\Controllers\ReportController::class, 'paymentsPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.view')
-        ->name('payments');
-
-    // Báo cáo tỷ lệ chốt đơn
-    Route::get('/conversion-rates', [App\Http\Controllers\ReportController::class, 'conversionRatesPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.conversion_rates')
-        ->name('conversion_rates');
-
-    // Báo cáo khách hàng mới
-    Route::get('/new-customers', [App\Http\Controllers\ReportController::class, 'newCustomersPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.customer_new')
-        ->name('new_customers');
-
-    // Báo cáo khách hàng cũ
-    Route::get('/returning-customers', [App\Http\Controllers\ReportController::class, 'returningCustomersPage'])
-        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.customer_returning')
-        ->name('returning_customers');
-
-    // Tính lại doanh thu phiên live
-    Route::get('/recalculate-live-revenue', [App\Http\Controllers\ReportController::class, 'recalculateLiveRevenue'])
-        ->name('recalculate_live_revenue');
-
-    Route::get('overall-revenue', [ReportController::class, 'overallRevenueSummaryPage'])->name('overall_revenue_summary');
-    Route::get('overall-revenue/chart-data', [ReportController::class, 'getOverallRevenueChartData'])->name('overall_revenue_summary.chart_data');
-
-    Route::get('/category-revenue', [ReportController::class, 'getCategoryRevenueReport'])->name('reports.category_revenue');
+        // API routes for report data
+        Route::get('/total-revenue-overview-data', [ReportController::class, 'getTotalRevenueOverviewData'])->name('total-revenue-overview-data');
+        Route::get('/total-revenue-data', [ReportController::class, 'getTotalRevenue'])->name('total-revenue-data');
+        Route::get('/daily-revenue', [ReportController::class, 'getDailyRevenue'])->name('daily-revenue');
+        Route::get('/campaign-report', [ReportController::class, 'getCampaignReport'])->name('campaign-report');
+        Route::get('/campaign-products', [ReportController::class, 'getCampaignProducts'])->name('campaign-products');
+        Route::get('/product-group-report', [ReportController::class, 'getProductGroupReport'])->name('product-group-report');
+        Route::get('/live-session-report', [ReportController::class, 'getLiveSessionReport'])->name('live-session-report');
+        Route::get('/live-session-detail', [ReportController::class, 'getLiveSessionDetail'])->name('live-session-detail');
+        Route::get('/customer-order-report', [ReportController::class, 'getCustomerOrderReport'])->name('customer-order-report');
+        Route::get('/conversion-report', [ReportController::class, 'getConversionReport'])->name('conversion-report');
+        Route::get('/detail-report', [ReportController::class, 'getDetailReport'])->name('detail-report');
+        Route::get('/daily-report', [ReportController::class, 'getDailyReport'])->name('daily-report');
+        Route::get('/payment-report', [ReportController::class, 'getPaymentReport'])->name('payment-report');
+        Route::get('/order-report-data', [ReportController::class, 'getOrderReportData'])->name('order-report-data');
+        Route::get('/general-report-data', [ReportController::class, 'getGeneralReportData'])->name('general-report-data');
+        Route::get('/overall-revenue-chart-data', [ReportController::class, 'getOverallRevenueChartData'])->name('overall-revenue-chart-data');
+        Route::get('/variant-revenue-report', [ReportController::class, 'getVariantRevenueReport'])->name('variant-revenue-report');
+        Route::get('/compare-variants', [ReportController::class, 'compareVariants'])->name('compare-variants');
+        Route::get('/category-revenue-report', [ReportController::class, 'getCategoryRevenueReport'])->name('category-revenue-report');
+    });
 });
 
 // Live Session Revenue Routes

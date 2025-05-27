@@ -96,6 +96,8 @@ class Order extends Model
         'customer_pay_fee',
         'returned_reason',
         'warehouse_info',
+        'products_data',
+
     ];
 
     /**
@@ -105,6 +107,9 @@ class Order extends Model
      */
     protected $casts = [
         'product_info' => 'array', // Cast product_info to array/json
+        'products_data' => 'array',
+        'shipping_address_info' => 'array',
+        'warehouse_info' => 'array'
     ];
 
     /**

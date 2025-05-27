@@ -1430,7 +1430,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Reload page if orders were created or updated
             if (totalOrders > 0) {
-                window.location.reload();
+                window.location.href = '{{ route("orders.index") }}';
             }
         });
     }

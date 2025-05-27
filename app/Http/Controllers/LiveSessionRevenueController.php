@@ -127,7 +127,7 @@ class LiveSessionRevenueController extends Controller
         // Get status codes from pancake_order_statuses table
         $statusCodes = DB::table('pancake_order_statuses')->get()->pluck('name', 'id')->toArray();
 
-        // Get daily data
+        // Get daily data with more detailed information
         $dailyStats = LiveSessionRevenue::select([
             'date',
             'live_number',
@@ -135,7 +135,12 @@ class LiveSessionRevenueController extends Controller
             'new_customers',
             'total_customers',
             'orders_by_province',
-            'top_products'
+            'top_products',
+            'total_orders',
+            'successful_orders',
+            'canceled_orders',
+            'delivering_orders',
+            'total_revenue'
         ])
         ->whereBetween('date', [$startDate, $endDate])
         ->orderBy('date', 'desc')
@@ -146,27 +151,16 @@ class LiveSessionRevenueController extends Controller
             $statusData = is_array($revenue->orders_by_status) ? $revenue->orders_by_status : [];
 
             // Calculate totals from orders_by_status
-            $totalOrders = 0;
+            $totalOrders = $revenue->total_orders ?? 0;
             $expectedRevenue = 0;
-            $actualRevenue = 0;
-            $totalSales = 0;
-            $successfulOrders = 0;
-            $canceledOrders = 0;
-            $deliveringOrders = 0;
+            $actualRevenue = $revenue->total_revenue ?? 0;
+            $successfulOrders = $revenue->successful_orders ?? 0;
+            $canceledOrders = $revenue->canceled_orders ?? 0;
+            $deliveringOrders = $revenue->delivering_orders ?? 0;
+            $pendingOrders = $totalOrders - ($successfulOrders + $canceledOrders + $deliveringOrders);
 
             foreach ($statusData as $status => $data) {
-                $totalOrders += $data['count'] ?? 0;
                 $expectedRevenue += $data['revenue'] ?? 0;
-
-                // Only count successful orders for actual revenue
-                if ($status == 3) { // Success status
-                    $actualRevenue += $data['revenue'] ?? 0;
-                    $successfulOrders += $data['count'] ?? 0;
-                } elseif ($status == 6) { // Cancel status
-                    $canceledOrders += $data['count'] ?? 0;
-                } elseif ($status == 2) { // Shipping status
-                    $deliveringOrders += $data['count'] ?? 0;
-                }
             }
 
             // Calculate finalized orders (excluding delivering)
@@ -182,56 +176,44 @@ class LiveSessionRevenueController extends Controller
                 'total_sessions' => 1,
                 'expected_revenue' => $expectedRevenue,
                 'actual_revenue' => $actualRevenue,
-                'total_sales' => $totalSales,
+                'potential_revenue' => $expectedRevenue,
                 'total_orders' => $totalOrders,
                 'successful_orders' => $successfulOrders,
                 'canceled_orders' => $canceledOrders,
                 'delivering_orders' => $deliveringOrders,
+                'pending_orders' => $pendingOrders,
                 'conversion_rate' => round($conversionRate, 1),
                 'cancellation_rate' => round($cancellationRate, 1),
                 'new_customers' => intval($revenue->new_customers),
                 'returning_customers' => max(0, intval($revenue->total_customers) - intval($revenue->new_customers)),
                 'total_customers' => intval($revenue->total_customers),
                 'orders_by_province' => $revenue->orders_by_province,
-                'top_products' => $revenue->top_products
+                'top_products' => $revenue->top_products,
+                'orders_by_status' => $statusData
             ];
         });
 
-        // Prepare chart data based on chart type
-        $chartData = [];
-        switch ($chartType) {
-            case 'hourly':
-                $chartData = $this->prepareHourlyChartData($dailyStats);
-                break;
-            case 'monthly':
-                $chartData = $this->prepareMonthlyChartData($dailyStats);
-                break;
-            default:
-                $chartData = $this->prepareDailyChartData($dailyStats);
-        }
-
-        // Calculate summary with updated conversion rate
+        // Calculate summary with updated metrics
         $summary = [
             'total_sessions' => $dailyStats->sum('total_sessions'),
             'expected_revenue' => $dailyStats->sum('expected_revenue'),
             'actual_revenue' => $dailyStats->sum('actual_revenue'),
-            'total_sales' => $dailyStats->sum('total_sales'),
+            'potential_revenue' => $dailyStats->sum('potential_revenue'),
             'total_orders' => $dailyStats->sum('total_orders'),
             'successful_orders' => $dailyStats->sum('successful_orders'),
             'canceled_orders' => $dailyStats->sum('canceled_orders'),
             'delivering_orders' => $dailyStats->sum('delivering_orders'),
+            'pending_orders' => $dailyStats->sum('pending_orders'),
             'new_customers' => $dailyStats->sum('new_customers'),
             'returning_customers' => $dailyStats->sum('returning_customers'),
             'total_customers' => $dailyStats->sum('total_customers')
         ];
 
-        // Calculate overall conversion rate
+        // Calculate overall rates
         $totalFinalizedOrders = $summary['total_orders'] - $summary['delivering_orders'];
         $summary['conversion_rate'] = $totalFinalizedOrders > 0
             ? round(($summary['successful_orders'] / $totalFinalizedOrders) * 100, 1)
             : 0;
-
-        // Calculate overall cancellation rate
         $summary['cancellation_rate'] = $summary['total_orders'] > 0
             ? round(($summary['canceled_orders'] / $summary['total_orders']) * 100, 1)
             : 0;
@@ -239,7 +221,7 @@ class LiveSessionRevenueController extends Controller
         // Get top 5 products with more details
         $topProducts = $this->getDetailedTopProducts($dailyStats);
 
-        // Get province statistics
+        // Get province statistics with more details
         $provinceStats = [];
         $dailyStats->each(function($stat) use (&$provinceStats) {
             if (!empty($stat['orders_by_province']) && is_array($stat['orders_by_province'])) {
@@ -250,7 +232,11 @@ class LiveSessionRevenueController extends Controller
                         $provinceStats[$code] = [
                             'name' => $provinceName,
                             'revenue' => 0,
+                            'expected_revenue' => 0,
                             'orders' => 0,
+                            'successful_orders' => 0,
+                            'canceled_orders' => 0,
+                            'delivering_orders' => 0,
                             'new_customers' => 0,
                             'returning_customers' => 0,
                             'total_customers' => 0
@@ -259,9 +245,11 @@ class LiveSessionRevenueController extends Controller
 
                     // Add revenue and orders
                     $provinceStats[$code]['revenue'] += $data['revenue'] ?? 0;
+                    $provinceStats[$code]['expected_revenue'] += $data['expected_revenue'] ?? $data['revenue'] ?? 0;
                     $provinceStats[$code]['orders'] += $data['count'] ?? 0;
-
-                    // Add customer data
+                    $provinceStats[$code]['successful_orders'] += $data['successful_orders'] ?? 0;
+                    $provinceStats[$code]['canceled_orders'] += $data['canceled_orders'] ?? 0;
+                    $provinceStats[$code]['delivering_orders'] += $data['delivering_orders'] ?? 0;
                     $provinceStats[$code]['new_customers'] += $data['new_customers'] ?? 0;
                     $provinceStats[$code]['total_customers'] += $data['total_customers'] ?? 0;
                     $provinceStats[$code]['returning_customers'] =
@@ -275,6 +263,19 @@ class LiveSessionRevenueController extends Controller
             ->sortByDesc('revenue')
             ->values()
             ->toArray();
+
+        // Prepare chart data based on chart type
+        $chartData = [];
+        switch ($chartType) {
+            case 'hourly':
+                $chartData = $this->prepareHourlyChartData($dailyStats);
+                break;
+            case 'monthly':
+                $chartData = $this->prepareMonthlyChartData($dailyStats);
+                break;
+            default:
+                $chartData = $this->prepareDailyChartData($dailyStats);
+        }
 
         return response()->json([
             'summary' => $summary,
@@ -297,7 +298,14 @@ class LiveSessionRevenueController extends Controller
                 return [
                     'expected_revenue' => $stats->sum('expected_revenue'),
                     'actual_revenue' => $stats->sum('actual_revenue'),
-                    'orders' => $stats->sum('total_orders')
+                    'potential_revenue' => $stats->sum('potential_revenue'),
+                    'total_orders' => $stats->sum('total_orders'),
+                    'successful_orders' => $stats->sum('successful_orders'),
+                    'canceled_orders' => $stats->sum('canceled_orders'),
+                    'delivering_orders' => $stats->sum('delivering_orders'),
+                    'pending_orders' => $stats->sum('pending_orders'),
+                    'conversion_rate' => $stats->avg('conversion_rate'),
+                    'cancellation_rate' => $stats->avg('cancellation_rate')
                 ];
             });
     }
@@ -313,7 +321,14 @@ class LiveSessionRevenueController extends Controller
                 return [
                     'expected_revenue' => $stats->sum('expected_revenue'),
                     'actual_revenue' => $stats->sum('actual_revenue'),
-                    'orders' => $stats->sum('total_orders')
+                    'potential_revenue' => $stats->sum('potential_revenue'),
+                    'total_orders' => $stats->sum('total_orders'),
+                    'successful_orders' => $stats->sum('successful_orders'),
+                    'canceled_orders' => $stats->sum('canceled_orders'),
+                    'delivering_orders' => $stats->sum('delivering_orders'),
+                    'pending_orders' => $stats->sum('pending_orders'),
+                    'conversion_rate' => $stats->avg('conversion_rate'),
+                    'cancellation_rate' => $stats->avg('cancellation_rate')
                 ];
             });
     }
@@ -329,7 +344,14 @@ class LiveSessionRevenueController extends Controller
                 return [
                     'expected_revenue' => $stats->sum('expected_revenue'),
                     'actual_revenue' => $stats->sum('actual_revenue'),
-                    'orders' => $stats->sum('total_orders')
+                    'potential_revenue' => $stats->sum('potential_revenue'),
+                    'total_orders' => $stats->sum('total_orders'),
+                    'successful_orders' => $stats->sum('successful_orders'),
+                    'canceled_orders' => $stats->sum('canceled_orders'),
+                    'delivering_orders' => $stats->sum('delivering_orders'),
+                    'pending_orders' => $stats->sum('pending_orders'),
+                    'conversion_rate' => $stats->avg('conversion_rate'),
+                    'cancellation_rate' => $stats->avg('cancellation_rate')
                 ];
             });
     }
@@ -338,31 +360,42 @@ class LiveSessionRevenueController extends Controller
     {
         $products = collect();
 
-        // Collect all products from daily stats
-        $dailyStats->each(function($stat) use (&$products) {
-            if (!empty($stat['top_products'])) {
-                foreach ($stat['top_products'] as $product) {
-                    $existingProduct = $products->where('id', $product['id'])->first();
+        // Collect all products from daily stats (which are individual LiveSessionRevenue records)
+        $dailyStats->each(function($session) use (&$products) {
+            if (!empty($session['top_products']) && is_array($session['top_products'])) {
+                foreach ($session['top_products'] as $productData) {
+                    $existingProduct = $products->where('id', $productData['id'])->first();
                     if ($existingProduct) {
-                        $existingProduct['quantity'] += $product['quantity'];
-                        $existingProduct['revenue'] += $product['revenue'];
-                        $existingProduct['orders'] += $product['orders'] ?? 1;
+                        $existingProduct['quantity_ordered'] += $productData['quantity_ordered'] ?? 0;
+                        $existingProduct['expected_revenue'] += $productData['expected_revenue'] ?? 0;
+                        $existingProduct['quantity_actual'] += $productData['quantity_actual'] ?? 0;
+                        $existingProduct['actual_revenue'] += $productData['actual_revenue'] ?? 0;
+                        $existingProduct['orders_count'] += $productData['orders_count'] ?? 0;
                     } else {
                         $products->push([
-                            'id' => $product['id'],
-                            'name' => $product['name'],
-                            'quantity' => $product['quantity'],
-                            'revenue' => $product['revenue'],
-                            'orders' => $product['orders'] ?? 1,
-                            'average_price' => $product['revenue'] / $product['quantity']
+                            'id' => $productData['id'],
+                            'name' => $productData['name'],
+                            'unit_price' => $productData['unit_price'] ?? 0, // Retain unit_price from first encounter
+                            'quantity_ordered' => $productData['quantity_ordered'] ?? 0,
+                            'expected_revenue' => $productData['expected_revenue'] ?? 0,
+                            'quantity_actual' => $productData['quantity_actual'] ?? 0,
+                            'actual_revenue' => $productData['actual_revenue'] ?? 0,
+                            'orders_count' => $productData['orders_count'] ?? 0,
                         ]);
                     }
                 }
             }
         });
 
-        // Sort by revenue and take top 5
-        return $products->sortByDesc('revenue')->take(5)->values();
+        // Calculate average price for each product after aggregation
+        $products = $products->map(function ($product) {
+            // Calculate average price based on expected revenue and ordered quantity
+            $product['average_price'] = ($product['quantity_ordered'] > 0) ? ($product['expected_revenue'] / $product['quantity_ordered']) : 0;
+            return $product;
+        });
+
+        // Sort by expected_revenue and return all
+        return $products->sortByDesc('expected_revenue')->values();
     }
 
     /**

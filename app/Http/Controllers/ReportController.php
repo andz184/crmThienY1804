@@ -2531,71 +2531,236 @@ class ReportController extends Controller
 
     public function overallRevenueSummaryPage(Request $request)
     {
-        $this->authorize('dashboard.view'); // Assuming similar permission as dashboard
-        /** @var \App\Models\User $user */
-        $user = Auth::user();
-        $stats = [];
+        try {
+            // Get date range with defaults
+            $startDate = $request->get('start_date')
+                ? Carbon::parse($request->get('start_date'))->startOfDay()
+                : Carbon::now()->subDays(30)->startOfDay();
+            $endDate = $request->get('end_date')
+                ? Carbon::parse($request->get('end_date'))->endOfDay()
+                : Carbon::now()->endOfDay();
+            $perPage = $request->get('per_page', 20);
 
-        $year = now()->year;
-        $month = now()->month;
-        $today = now()->toDateString();
+            // Build base query with indexing optimization
+            $query = DB::table('orders')
+                ->select([
+                    DB::raw('DATE(created_at) as date'),
+                    DB::raw('SUM(total_value) as expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as actual_revenue'),
+                    DB::raw('COUNT(*) as total_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as successful_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as delivering_orders'),
+                    DB::raw('COUNT(DISTINCT customer_id) as total_customers')
+                ])
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->groupBy(DB::raw('DATE(created_at)'))
+                ->orderBy('date', 'desc');
 
-        // Initial Stats (Similar to DashboardController@index)
-        $cacheKeyBase = 'report_overall_revenue_base_stats_v1_' . $user->id . '_' . implode('_', $user->getRoleNames()->toArray()) . "_{$today}";
-        $stats = Cache::remember($cacheKeyBase, 300, function() use ($user, $year, $month, $today) {
-            $currentStats = [];
-            $baseDailyAggQuery = DailyRevenueAggregate::query();
-            $targetUserIds = $this->getTargetUserIdsForQuery($user); // Helper to get user IDs based on role
+            // Get paginated results with eager loading
+            $dailyRevenue = $query->paginate($perPage);
 
-            if ($targetUserIds === false) { // No access / manager with no team
-                 $baseDailyAggQuery->whereRaw('1 = 0');
-            } elseif (is_array($targetUserIds) && !empty($targetUserIds)) {
-                $baseDailyAggQuery->whereIn('user_id', $targetUserIds);
-            } // if null, admin/super-admin sees all
+            // Get dates for the current page only
+            $dates = $dailyRevenue->pluck('date')->toArray();
 
-            $currentStats['monthly_revenue'] = (clone $baseDailyAggQuery)->whereYear('aggregation_date', $year)->whereMonth('aggregation_date', $month)->sum('total_revenue');
-            $currentStats['today_revenue'] = (clone $baseDailyAggQuery)->whereDate('aggregation_date', $today)->sum('total_revenue');
-            $currentStats['today_completed_orders'] = (clone $baseDailyAggQuery)->whereDate('aggregation_date', $today)->sum('completed_orders_count');
+            // Get customer stats efficiently using a single query
+            $customerStats = DB::table('orders AS o1')
+                ->join('customers', 'o1.customer_id', '=', 'customers.pancake_id')
+                ->whereIn(DB::raw('DATE(o1.created_at)'), $dates)
+                ->select([
+                    DB::raw('DATE(o1.created_at) as date'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) = DATE(o1.created_at) THEN customers.pancake_id END) as new_customers'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) < DATE(o1.created_at) THEN customers.pancake_id END) as returning_customers')
+                ])
+                ->groupBy(DB::raw('DATE(o1.created_at)'))
+                ->get()
+                ->keyBy('date');
 
-            $currentStats['monthly_revenue_formatted'] = number_format($currentStats['monthly_revenue'] ?? 0, 0, ',', '.');
-            $currentStats['today_revenue_formatted'] = number_format($currentStats['today_revenue'] ?? 0, 0, ',', '.');
+            // Calculate totals for the entire period (not just current page)
+            $totals = DB::table('orders')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->select([
+                    DB::raw('SUM(total_value) as total_expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as total_actual_revenue'),
+                    DB::raw('COUNT(*) as total_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as total_successful_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as total_canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as total_delivering_orders'),
+                    DB::raw('COUNT(DISTINCT customer_id) as total_unique_customers')
+                ])
+                ->first();
 
-            return $currentStats;
-        });
+            // Format the data for current page
+            $revenueData = collect($dailyRevenue->items())->map(function($row) use ($customerStats) {
+                $date = $row->date;
+                $customerData = $customerStats[$date] ?? null;
+                $totalOrders = $row->total_orders;
+                $successfulOrders = $row->successful_orders;
+                $canceledOrders = $row->canceled_orders;
+                $deliveringOrders = $row->delivering_orders;
+                $nonDeliveringOrders = $totalOrders - $deliveringOrders;
 
-        // Prepare Data for Filter Dropdowns (Similar to DashboardController@index)
-        $filterableStaff = collect();
-        $filterableManagers = collect();
-        // ... (Keep existing filterable staff/manager logic from DashboardController or adapt as needed) ...
-        if ($user->hasRole(['admin', 'super-admin'])) {
-            $filterableStaff = User::whereHas('roles', fn($q) => $q->where('name', 'staff'))->orderBy('name')->pluck('name', 'id');
-            $filterableManagers = User::whereNotNull('manages_team_id')
-                                      ->whereHas('roles', fn($q) => $q->where('name', 'manager'))
-                                      ->orderBy('name')
-                                      ->pluck('name', 'id');
-        } elseif ($user->hasRole('manager') && $user->manages_team_id) {
-            $filterableStaff = User::where('team_id', $user->manages_team_id)
-                                   ->whereHas('roles', fn($q) => $q->where('name', 'staff'))
-                                   ->orderBy('name')
-                                   ->pluck('name', 'id');
+                return [
+                    'date' => Carbon::parse($date)->format('d/m/Y'),
+                    'expected_revenue' => $row->expected_revenue,
+                    'actual_revenue' => $row->actual_revenue,
+                    'total_orders' => $totalOrders,
+                    'successful_orders' => $successfulOrders,
+                    'canceled_orders' => $canceledOrders,
+                    'delivering_orders' => $deliveringOrders,
+                    'success_rate' => $nonDeliveringOrders > 0 ? round(($successfulOrders / $nonDeliveringOrders) * 100, 1) : 0,
+                    'cancellation_rate' => $totalOrders > 0 ? round(($canceledOrders / $totalOrders) * 100, 1) : 0,
+                    'new_customers' => $customerData ? $customerData->new_customers : 0,
+                    'returning_customers' => $customerData ? $customerData->returning_customers : 0,
+                    'total_customers' => $row->total_customers
+                ];
+            });
+
+            // Calculate overall success and cancellation rates
+            $totalNonDelivering = $totals->total_orders - $totals->total_delivering_orders;
+            $overallSuccessRate = $totalNonDelivering > 0
+                ? round(($totals->total_successful_orders / $totalNonDelivering) * 100, 1)
+                : 0;
+            $overallCancellationRate = $totals->total_orders > 0
+                ? round(($totals->total_canceled_orders / $totals->total_orders) * 100, 1)
+                : 0;
+
+            // Get total customer stats for the entire period
+            $totalCustomerStats = DB::table('orders AS o2')
+                ->join('customers', 'o2.customer_id', '=', 'customers.pancake_id')
+                ->whereBetween('o2.created_at', [$startDate, $endDate])
+                ->select([
+                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) = DATE(o2.created_at) THEN customers.pancake_id END) as total_new_customers'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN DATE(customers.created_at) < DATE(o2.created_at) THEN customers.pancake_id END) as total_returning_customers')
+                ])
+                ->first();
+
+            return view('reports.overall_revenue_summary', [
+                'revenueData' => $revenueData,
+                'startDate' => $startDate->format('Y-m-d'),
+                'endDate' => $endDate->format('Y-m-d'),
+                'pagination' => [
+                    'total' => $dailyRevenue->total(),
+                    'per_page' => $dailyRevenue->perPage(),
+                    'current_page' => $dailyRevenue->currentPage(),
+                    'last_page' => $dailyRevenue->lastPage()
+                ],
+                'totals' => [
+                    'expected_revenue' => $totals->total_expected_revenue,
+                    'actual_revenue' => $totals->total_actual_revenue,
+                    'total_orders' => $totals->total_orders,
+                    'successful_orders' => $totals->total_successful_orders,
+                    'canceled_orders' => $totals->total_canceled_orders,
+                    'delivering_orders' => $totals->total_delivering_orders,
+                    'success_rate' => $overallSuccessRate,
+                    'cancellation_rate' => $overallCancellationRate,
+                    'new_customers' => $totalCustomerStats->total_new_customers,
+                    'returning_customers' => $totalCustomerStats->total_returning_customers,
+                    'total_customers' => $totals->total_unique_customers
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error in overallRevenueSummaryPage: ' . $e->getMessage());
+            return back()->with('error', 'Có lỗi xảy ra khi tải dữ liệu báo cáo.');
+        }
+    }
+
+    public function generalReportPage(Request $request)
+    {
+        $this->authorize('reports.view'); // Or a more specific permission
+
+        // Default to last 30 days if no date range is provided
+        $defaultStartDate = Carbon::now()->subDays(29)->startOfDay();
+        $defaultEndDate = Carbon::now()->endOfDay();
+
+        $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : $defaultStartDate;
+        $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : $defaultEndDate;
+        $dateRange = $request->input('date_range');
+
+        if ($dateRange) {
+            $dates = explode(' - ', $dateRange);
+            if (count($dates) == 2) {
+                try {
+                    $startDate = Carbon::createFromFormat('d/m/Y', trim($dates[0]))->startOfDay();
+                    $endDate = Carbon::createFromFormat('d/m/Y', trim($dates[1]))->endOfDay();
+                } catch (\Exception $e) {
+                    Log::warning("generalReportPage: Invalid date_range format '$dateRange', falling back to defaults.");
+                    $startDate = $defaultStartDate;
+                    $endDate = $defaultEndDate;
+                }
+            }
+        } else {
+            // Ensure date_range is set for the view if individual dates were used or defaults
+            $dateRange = $startDate->format('d/m/Y') . ' - ' . $endDate->format('d/m/Y');
         }
 
-        // Initial chart data (for page load)
-        // We pass a simple request object with default date range to getOverallRevenueChartData method's core logic
-        $initialChartRequest = new Request([
-            // Default to last 30 days or current month for initial view
-            'start_date' => now()->subDays(29)->format('Y-m-d'),
-            'end_date' => now()->format('Y-m-d')
-        ]);
-        $initialChartDataResponse = $this->getOverallRevenueChartData($initialChartRequest, true); // Pass true to indicate internal call
-        $initialChartData = json_decode($initialChartDataResponse->getContent(), true)['data'] ?? [];
+        return view('reports.general_report', compact('startDate', 'endDate', 'dateRange'));
+    }
 
-        return view('reports.overall_revenue_summary', compact(
-            'stats',
-            'filterableStaff',
-            'filterableManagers',
-            'initialChartData' // Pass initial chart data to the view
-        ));
+    public function getGeneralReportData(Request $request)
+    {
+        $this->authorize('reports.view'); // Or a more specific permission
+
+        $startDate = Carbon::parse($request->input('start_date'))->startOfDay();
+        $endDate = Carbon::parse($request->input('end_date'))->endOfDay();
+
+        // 1. Full Revenue
+        $fullRevenue = Order::whereBetween('created_at', [$startDate, $endDate])
+                            ->where('status', '!=', Order::STATUS_DA_HUY)
+                            ->sum('total_price');
+
+        // 2. Statistics by Province/City
+        $revenueByProvince = Order::whereBetween('created_at', [$startDate, $endDate])
+            ->where('status', '!=', Order::STATUS_DA_HUY)
+            ->join('customers', 'orders.customer_id', '=', 'customers.id')
+            ->groupBy('customers.city_id') // Assuming you have a city_id in customers table
+            ->selectRaw('customers.city_id, SUM(orders.total_price) as total_revenue, COUNT(orders.id) as total_orders')
+            // If you have a City model to get names:
+            // ->with('customer.city') // Assuming Customer model has city relationship
+            ->get()
+            ->mapWithKeys(function ($item) {
+                // Fetch city name - this is an example, adjust based on your models
+                // $cityName = \App\Models\City::find($item->city_id)->name ?? 'Unknown'; // Placeholder
+                $cityName = 'Unknown City: ' . $item->city_id; // Use city_id directly for now
+                return [$cityName => ['total_revenue' => $item->total_revenue, 'total_orders' => $item->total_orders]];
+            });
+
+        // 3. Statistics by Product
+        $revenueByProduct = DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->join('products', 'order_items.product_id', '=', 'products.id') // Assuming product_id in order_items
+            ->whereBetween('orders.created_at', [$startDate, $endDate])
+            ->where('orders.status', '!=', Order::STATUS_DA_HUY)
+            ->groupBy('order_items.product_id', 'products.name')
+            ->selectRaw('products.name as product_name, SUM(order_items.price * order_items.quantity) as total_revenue, SUM(order_items.quantity) as total_quantity, COUNT(DISTINCT orders.id) as total_orders')
+            ->orderBy('total_revenue', 'desc')
+            ->get();
+
+        // 4. Detailed Daily Statistics
+        $dailyStats = [];
+        $period = CarbonPeriod::create($startDate, $endDate);
+        foreach ($period as $date) {
+            $dayStart = $date->copy()->startOfDay();
+            $dayEnd = $date->copy()->endOfDay();
+            $dailyRevenue = Order::whereBetween('created_at', [$dayStart, $dayEnd])
+                                ->where('status', '!=', Order::STATUS_DA_HUY)
+                                ->sum('total_price');
+            $dailyOrders = Order::whereBetween('created_at', [$dayStart, $dayEnd])
+                                ->where('status', '!=', Order::STATUS_DA_HUY)
+                                ->count();
+            $dailyStats[$date->toDateString()] = [
+                'revenue' => $dailyRevenue,
+                'orders' => $dailyOrders
+            ];
+        }
+
+        return response()->json([
+            'full_revenue' => $fullRevenue,
+            'revenue_by_province' => $revenueByProvince,
+            'revenue_by_product' => $revenueByProduct,
+            'daily_stats' => $dailyStats,
+        ]);
     }
 
     private function getTargetUserIdsForQuery(User $user, $saleId = null, $managerId = null)
@@ -3209,5 +3374,535 @@ class ReportController extends Controller
                 'days' => $startDate->diffInDays($endDate) + 1
             ]
         ]);
+    }
+
+    public function getTotalRevenueOverviewData(Request $request)
+    {
+        try {
+            $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date')) : Carbon::now()->subDays(30);
+            $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date')) : Carbon::now();
+
+            Log::info("Fetching orders from {$startDate} to {$endDate}");
+
+            // Lấy dữ liệu đơn hàng trong khoảng thời gian
+            $orders = Order::with(['customer', 'items.variants', 'items.product'])
+                ->whereBetween('created_at', [$startDate->startOfDay(), $endDate->endOfDay()])
+                ->get();
+
+            Log::info("Found {$orders->count()} orders");
+
+            // Tính toán các chỉ số tổng quan
+            $overallStats = [
+                'expected_revenue' => $orders->sum('total_value'),
+                'actual_revenue' => $orders->where('status', Order::STATUS_DA_THU_TIEN)->sum('total_value'),
+                'total_orders' => $orders->count(),
+                'successful_orders' => $orders->where('status', Order::STATUS_DA_THU_TIEN)->count(),
+                'canceled_orders' => $orders->where('status', Order::STATUS_DA_HUY)->count(),
+                'processing_orders' => $orders->whereNotIn('status', [Order::STATUS_DA_THU_TIEN, Order::STATUS_DA_HUY])->count(),
+            ];
+
+            // Tính tỷ lệ thành công và trung bình giá trị đơn hàng
+            $overallStats['success_rate'] = $overallStats['total_orders'] > 0
+                ? ($overallStats['successful_orders'] / $overallStats['total_orders']) * 100
+                : 0;
+
+            $overallStats['average_order_value'] = $overallStats['total_orders'] > 0
+                ? $overallStats['expected_revenue'] / $overallStats['total_orders']
+                : 0;
+
+            // Thống kê khách hàng
+            $customerStats = $orders->groupBy('customer_id')->map(function ($customerOrders) {
+                return [
+                    'first_order_date' => $customerOrders->min('created_at'),
+                    'total_orders' => $customerOrders->count()
+                ];
+            });
+
+            $overallStats['unique_customers'] = $customerStats->count();
+            $overallStats['new_customers'] = $customerStats->where('total_orders', 1)->count();
+            $overallStats['returning_customers'] = $customerStats->where('total_orders', '>', 1)->count();
+
+            // Thống kê theo tỉnh thành
+            $provinceStats = $orders->groupBy('province_code')
+                ->map(function ($provinceOrders) {
+                    return [
+                        'province_code' => $provinceOrders->first()->province_code,
+                        'province_name' => $provinceOrders->first()->shipping_province ?? 'Không xác định',
+                        'total_revenue' => $provinceOrders->sum('total_value'),
+                        'total_orders' => $provinceOrders->count(),
+                        'success_rate' => ($provinceOrders->where('status', Order::STATUS_DA_THU_TIEN)->count() / $provinceOrders->count()) * 100
+                    ];
+                })
+                ->sortByDesc('total_revenue')
+                ->values()
+                ->take(10);
+
+            // Thống kê theo sản phẩm
+            $productStats = collect();
+            foreach ($orders as $order) {
+                if (!empty($order->products_data)) {
+                    $items = json_decode($order->products_data, true);
+                    if (is_array($items)) {
+                        foreach ($items as $item) {
+                            $productId = $item['product_id'] ?? null;
+                            if ($productId) {
+                                $quantity = $item['quantity'] ?? 1;
+                                $price = $item['price'] ?? 0;
+                                $total = $quantity * $price;
+
+                                $existingProduct = $productStats->where('product_id', $productId)->first();
+                                if ($existingProduct) {
+                                    $existingProduct['total_revenue'] += $total;
+                                    $existingProduct['total_quantity'] += $quantity;
+                                    $existingProduct['total_count']++;
+                                    if ($order->status === Order::STATUS_DA_THU_TIEN) {
+                                        $existingProduct['success_count']++;
+                                    }
+                                } else {
+                                    $productStats->push([
+                                        'product_id' => $productId,
+                                        'product_name' => $item['name'] ?? 'Không xác định',
+                                        'total_revenue' => $total,
+                                        'total_quantity' => $quantity,
+                                        'total_count' => 1,
+                                        'success_count' => $order->status === Order::STATUS_DA_THU_TIEN ? 1 : 0
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            $productStats = $productStats->sortByDesc('total_revenue')
+                ->values()
+                ->take(10);
+
+            // Thống kê doanh thu theo ngày
+            $dailyStats = $orders->groupBy(function ($order) {
+                return $order->created_at->format('Y-m-d');
+            })->map(function ($dayOrders, $date) {
+                return [
+                    'date' => $date,
+                    'total_revenue' => $dayOrders->sum('total_value'),
+                    'total_orders' => $dayOrders->count(),
+                    'successful_orders' => $dayOrders->where('status', Order::STATUS_DA_THU_TIEN)->count()
+                ];
+            })->values();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'overall_stats' => $overallStats,
+                    'province_stats' => $provinceStats,
+                    'product_stats' => $productStats,
+                    'daily_stats' => $dailyStats
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error in getTotalRevenueOverviewData: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Đã xảy ra lỗi khi lấy dữ liệu báo cáo: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get overall revenue report data
+     */
+    public function getOverallRevenueData(Request $request)
+    {
+        try {
+        /** @var \App\Models\User $user */
+        $user = Auth::user();
+            $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : now()->subDays(29)->startOfDay();
+            $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : now()->endOfDay();
+        $saleId = $request->input('sale_id');
+        $managerId = $request->input('manager_id');
+
+            // Get current period data
+            $currentData = $this->getRevenueDataForPeriod($user, $startDate, $endDate, $saleId, $managerId);
+
+            // Get previous period for comparison
+            $previousStart = (clone $startDate)->subDays($startDate->diffInDays($endDate) + 1);
+            $previousEnd = (clone $startDate)->subDay();
+            $previousData = $this->getRevenueDataForPeriod($user, $previousStart, $previousEnd, $saleId, $managerId);
+
+            // Calculate changes
+            $changes = $this->calculateChanges($currentData, $previousData);
+
+            // Merge changes into stats
+            $currentData['summary'] = array_merge($currentData['summary'], $changes);
+
+            return [
+                'success' => true,
+                'data' => [
+                    'stats' => $currentData['summary'],
+                    'daily_stats' => $currentData['daily_stats'],
+                    'top_products' => $currentData['top_products'],
+                    'province_stats' => $currentData['province_stats']
+                ]
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Error in getOverallRevenueData: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Có lỗi xảy ra khi lấy dữ liệu báo cáo'
+            ];
+        }
+    }
+
+    /**
+     * Get revenue data for a specific period
+     */
+    private function getRevenueDataForPeriod($user, $start, $end, $saleId = null, $managerId = null)
+    {
+        $targetUserIds = $this->getTargetUserIdsForQuery($user, $saleId, $managerId);
+
+        // Base query for orders
+        $orderQuery = Order::query()
+            ->whereBetween('created_at', [$start, $end]);
+
+        if ($targetUserIds === false) {
+            $orderQuery->whereRaw('1 = 0');
+        } elseif (is_array($targetUserIds) && !empty($targetUserIds)) {
+            $orderQuery->whereIn('user_id', $targetUserIds);
+        }
+
+        // Get daily stats
+        $dailyStats = [];
+        $currentDate = $start->copy();
+        while ($currentDate <= $end) {
+            $dateStr = $currentDate->format('Y-m-d');
+            $dailyOrders = (clone $orderQuery)->whereDate('created_at', $dateStr);
+
+            $dailyStats[$dateStr] = [
+                'date' => $currentDate->format('d/m/Y'),
+                'expected_revenue' => $dailyOrders->whereNotIn('pancake_status', [5, 6, 15, 4])
+                    ->sum(DB::raw('total_value + shipping_fee')),
+                'actual_revenue' => $dailyOrders->where('pancake_status', 3)
+                    ->sum(DB::raw('total_value + shipping_fee')),
+                'total_orders' => $dailyOrders->count(),
+                'successful_orders' => $dailyOrders->where('pancake_status', 3)->count(),
+                'canceled_orders' => $dailyOrders->where('pancake_status', Order::PANCAKE_STATUS_CANCELED)->count(),
+                'delivering_orders' => $dailyOrders->where('pancake_status', Order::PANCAKE_STATUS_SHIPPING)->count()
+            ];
+
+            $currentDate->addDay();
+        }
+
+        // Get top products
+        $topProducts = DB::table('orders')
+            ->join('order_items', 'orders.id', '=', 'order_items.order_id')
+            ->select(
+                'order_items.pancake_product_id as id',
+                'order_items.product_name as name',
+                DB::raw('COUNT(DISTINCT orders.id) as orders_count'),
+                DB::raw('SUM(order_items.quantity) as quantity_ordered'),
+                DB::raw('SUM(order_items.quantity * order_items.price) as expected_revenue'),
+                DB::raw('SUM(CASE WHEN orders.pancake_status IN (3,4) THEN order_items.quantity ELSE 0 END) as quantity_actual'),
+                DB::raw('SUM(CASE WHEN orders.pancake_status IN (3,4) THEN order_items.quantity * order_items.price ELSE 0 END) as actual_revenue')
+            )
+            ->whereBetween('orders.created_at', [$start, $end])
+            ->when($targetUserIds !== null, function($query) use ($targetUserIds) {
+                return $query->whereIn('orders.user_id', $targetUserIds);
+            })
+            ->groupBy('order_items.pancake_product_id', 'order_items.product_name')
+            ->orderByDesc('expected_revenue')
+            ->limit(5)
+            ->get()
+            ->map(function($product) {
+                return [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'orders_count' => $product->orders_count,
+                    'quantity_ordered' => $product->quantity_ordered,
+                    'expected_revenue' => $product->expected_revenue,
+                    'quantity_actual' => $product->quantity_actual,
+                    'actual_revenue' => $product->actual_revenue,
+                    'average_price' => $product->quantity_ordered > 0
+                        ? $product->expected_revenue / $product->quantity_ordered
+                        : 0
+                ];
+            })
+            ->toArray();
+
+        // Calculate summary stats
+        $totalOrders = array_sum(array_column($dailyStats, 'total_orders'));
+        $successfulOrders = array_sum(array_column($dailyStats, 'successful_orders'));
+        $canceledOrders = array_sum(array_column($dailyStats, 'canceled_orders'));
+        $deliveringOrders = array_sum(array_column($dailyStats, 'delivering_orders'));
+
+        // Get customer stats
+        $customerStats = DB::table('orders')
+            ->join('customers', 'orders.customer_id', '=', 'customers.pancake_id')
+            ->whereBetween('orders.created_at', [$start, $end])
+            ->when($targetUserIds !== null, function($query) use ($targetUserIds) {
+                return $query->whereIn('orders.user_id', $targetUserIds);
+            })
+            ->select([
+                DB::raw('COUNT(DISTINCT customers.pancake_id) as total_customers'),
+                DB::raw('COUNT(DISTINCT CASE WHEN customers.created_at BETWEEN ? AND ? THEN customers.pancake_id END) as new_customers')
+            ])
+            ->addBinding([$start, $end], 'select')
+            ->first();
+
+        // Get province stats
+        $provinceStats = DB::table('orders')
+            ->join('customers', 'orders.customer_id', '=', 'customers.pancake_id')
+            ->select(
+                'customers.province',
+                DB::raw('COUNT(orders.id) as orders_count'),
+                DB::raw('SUM(orders.total_value) as revenue')
+            )
+            ->whereBetween('orders.created_at', [$start, $end])
+            ->when($targetUserIds !== null, function($query) use ($targetUserIds) {
+                return $query->whereIn('orders.user_id', $targetUserIds);
+            })
+            ->groupBy('customers.province')
+            ->orderByDesc('revenue')
+            ->get()
+            ->map(function($province) {
+        return [
+                    'name' => $province->province,
+                    'orders' => $province->orders_count,
+                    'revenue' => $province->revenue
+                ];
+            })
+            ->toArray();
+
+        $summary = [
+            'expected_revenue' => array_sum(array_column($dailyStats, 'expected_revenue')),
+            'actual_revenue' => array_sum(array_column($dailyStats, 'actual_revenue')),
+            'total_orders' => $totalOrders,
+                'successful_orders' => $successfulOrders,
+                'canceled_orders' => $canceledOrders,
+                'delivering_orders' => $deliveringOrders,
+            'conversion_rate' => $totalOrders > 0 ? ($successfulOrders / ($totalOrders - $deliveringOrders)) * 100 : 0,
+            'cancellation_rate' => $totalOrders > 0 ? ($canceledOrders / $totalOrders) * 100 : 0,
+            'new_customers' => $customerStats->new_customers ?? 0,
+            'returning_customers' => ($customerStats->total_customers ?? 0) - ($customerStats->new_customers ?? 0),
+            'total_customers' => $customerStats->total_customers ?? 0
+        ];
+
+        return [
+            'summary' => $summary,
+            'daily_stats' => $dailyStats,
+            'top_products' => $topProducts,
+            'province_stats' => $provinceStats
+        ];
+    }
+
+    /**
+     * Calculate percentage changes between current and previous period
+     *
+     * @param array $current Current period data
+     * @param array $previous Previous period data
+     * @return array Changes in percentages
+     */
+    private function calculateChanges($current, $previous)
+    {
+        // Doanh thu thực tế thay đổi
+        $revenueChange = 0;
+        if ($previous['summary']['actual_revenue'] > 0) {
+            $revenueChange = (($current['summary']['actual_revenue'] - $previous['summary']['actual_revenue']) / $previous['summary']['actual_revenue']) * 100;
+        }
+
+        // Số lượng đơn hàng thay đổi
+        $ordersChange = 0;
+        if ($previous['summary']['total_orders'] > 0) {
+            $ordersChange = (($current['summary']['total_orders'] - $previous['summary']['total_orders']) / $previous['summary']['total_orders']) * 100;
+        }
+
+        // Tỷ lệ chốt đơn thay đổi (điểm phần trăm)
+        $currentConversionRate = $current['summary']['conversion_rate'];
+        $previousConversionRate = $previous['summary']['conversion_rate'];
+        $conversionRateChange = $currentConversionRate - $previousConversionRate;
+
+        // Tỷ lệ hủy đơn thay đổi (điểm phần trăm)
+        $currentCancellationRate = $current['summary']['cancellation_rate'];
+        $previousCancellationRate = $previous['summary']['cancellation_rate'];
+        $cancellationRateChange = $currentCancellationRate - $previousCancellationRate;
+
+        // Số lượng khách hàng mới thay đổi
+        $newCustomersChange = 0;
+        if ($previous['summary']['new_customers'] > 0) {
+            $newCustomersChange = (($current['summary']['new_customers'] - $previous['summary']['new_customers']) / $previous['summary']['new_customers']) * 100;
+        }
+
+        // Số lượng khách hàng cũ thay đổi
+        $returningCustomersChange = 0;
+        if ($previous['summary']['returning_customers'] > 0) {
+            $returningCustomersChange = (($current['summary']['returning_customers'] - $previous['summary']['returning_customers']) / $previous['summary']['returning_customers']) * 100;
+        }
+
+        return [
+            'revenue_change_rate' => round($revenueChange, 2),          // % thay đổi doanh thu
+            'orders_change_rate' => round($ordersChange, 2),            // % thay đổi số đơn
+            'success_rate_change' => round($conversionRateChange, 2),   // Điểm % thay đổi tỷ lệ chốt
+            'canceled_orders_change_rate' => round($cancellationRateChange, 2), // Điểm % thay đổi tỷ lệ hủy
+            'new_customers_change_rate' => round($newCustomersChange, 2),       // % thay đổi khách mới
+            'returning_customers_change_rate' => round($returningCustomersChange, 2), // % thay đổi khách cũ
+
+            // Thêm các giá trị tuyệt đối để so sánh
+            'previous_period' => [
+                'revenue' => $previous['summary']['actual_revenue'],
+                'orders' => $previous['summary']['total_orders'],
+                'conversion_rate' => round($previousConversionRate, 2),
+                'cancellation_rate' => round($previousCancellationRate, 2),
+                'new_customers' => $previous['summary']['new_customers'],
+                'returning_customers' => $previous['summary']['returning_customers']
+            ]
+        ];
+    }
+
+    /**
+     * Get revenue details by day or month
+     */
+    private function getRevenueDetails($startDate, $endDate, $perPage = 20)
+    {
+        try {
+            $daysDiff = $startDate->diffInDays($endDate);
+            $isMonthlyView = $daysDiff > 31;
+
+            // Build base query
+            $query = DB::table('orders')
+                ->whereBetween('created_at', [$startDate, $endDate]);
+
+            if ($isMonthlyView) {
+                // Monthly stats
+                $stats = $query->select([
+                    DB::raw('DATE_FORMAT(created_at, "%Y-%m") as period'),
+                    DB::raw('SUM(total_value) as expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as actual_revenue'),
+                    DB::raw('COUNT(*) as total_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as successful_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as delivering_orders'),
+                    DB::raw('COUNT(DISTINCT customer_id) as total_customers')
+                ])
+                ->groupBy(DB::raw('DATE_FORMAT(created_at, "%Y-%m")'))
+                ->orderByDesc('period');
+            } else {
+                // Daily stats
+                $stats = $query->select([
+                    DB::raw('DATE(created_at) as period'),
+                    DB::raw('SUM(total_value) as expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as actual_revenue'),
+                    DB::raw('COUNT(*) as total_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as successful_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as delivering_orders'),
+                    DB::raw('COUNT(DISTINCT customer_id) as total_customers')
+                ])
+                ->groupBy(DB::raw('DATE(created_at)'))
+                ->orderByDesc('period');
+            }
+
+            // Get paginated results
+            $stats = $stats->paginate($perPage);
+
+            // Get periods for customer stats
+            $periods = $stats->pluck('period')->toArray();
+
+            // Get customer stats
+            $customerStatsQuery = DB::table('orders')
+                ->join('customers', 'orders.customer_id', '=', 'customers.pancake_id')
+                ->select([
+                    $isMonthlyView
+                        ? DB::raw('DATE_FORMAT(orders.created_at, "%Y-%m") as period')
+                        : DB::raw('DATE(orders.created_at) as period'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN ' .
+                        ($isMonthlyView
+                            ? 'DATE_FORMAT(customers.created_at, "%Y-%m") = DATE_FORMAT(orders.created_at, "%Y-%m")'
+                            : 'DATE(customers.created_at) = DATE(orders.created_at)'
+                        ) . ' THEN customers.pancake_id END) as new_customers'),
+                    DB::raw('COUNT(DISTINCT CASE WHEN ' .
+                        ($isMonthlyView
+                            ? 'DATE_FORMAT(customers.created_at, "%Y-%m") < DATE_FORMAT(orders.created_at, "%Y-%m")'
+                            : 'DATE(customers.created_at) < DATE(orders.created_at)'
+                        ) . ' THEN customers.pancake_id END) as returning_customers')
+                ])
+                ->whereIn(
+                    $isMonthlyView
+                        ? DB::raw('DATE_FORMAT(orders.created_at, "%Y-%m")')
+                        : DB::raw('DATE(orders.created_at)'),
+                    $periods
+                )
+                ->groupBy('period')
+                ->get()
+                ->keyBy('period');
+
+            // Format the data
+            $formattedData = $stats->map(function($row) use ($customerStatsQuery, $isMonthlyView) {
+                $periodData = $customerStatsQuery[$row->period] ?? null;
+                $totalOrders = $row->total_orders;
+                $successfulOrders = $row->successful_orders;
+                $canceledOrders = $row->canceled_orders;
+                $deliveringOrders = $row->delivering_orders;
+
+                return [
+                    'period' => $isMonthlyView
+                        ? Carbon::createFromFormat('Y-m', $row->period)->format('m/Y')
+                        : Carbon::parse($row->period)->format('d/m/Y'),
+                    'expected_revenue' => $row->expected_revenue,
+                    'actual_revenue' => $row->actual_revenue,
+                    'total_orders' => $totalOrders,
+                    'successful_orders' => $successfulOrders,
+                    'canceled_orders' => $canceledOrders,
+                    'delivering_orders' => $deliveringOrders,
+                    'success_rate' => $totalOrders > 0 ? ($successfulOrders / ($totalOrders - $deliveringOrders)) * 100 : 0,
+                    'cancellation_rate' => $totalOrders > 0 ? ($canceledOrders / $totalOrders) * 100 : 0,
+                    'new_customers' => $periodData ? $periodData->new_customers : 0,
+                    'returning_customers' => $periodData ? $periodData->returning_customers : 0,
+                    'total_customers' => $row->total_customers
+                ];
+            });
+
+            return [
+                'data' => $formattedData,
+                'pagination' => [
+                    'total' => $stats->total(),
+                    'per_page' => $stats->perPage(),
+                    'current_page' => $stats->currentPage(),
+                    'last_page' => $stats->lastPage()
+                ],
+                'view_type' => $isMonthlyView ? 'monthly' : 'daily',
+                'help_text' => [
+                    'title' => $isMonthlyView ? 'Thống kê doanh thu theo tháng' : 'Thống kê doanh thu theo ngày',
+                    'description' => 'Hiển thị chi tiết doanh thu và các chỉ số theo ' . ($isMonthlyView ? 'tháng' : 'ngày'),
+                    'notes' => [
+                        'Doanh thu dự kiến: Tổng giá trị của tất cả đơn hàng',
+                        'Doanh thu thực tế: Tổng giá trị các đơn hàng đã chốt thành công',
+                        'Đơn chốt: Số đơn hàng đã xác nhận thành công',
+                        'Đơn hủy: Số đơn hàng đã bị hủy',
+                        'Đơn đang giao: Số đơn hàng đang trong quá trình giao',
+                        'Tỷ lệ chốt: (Đơn chốt / (Tổng đơn - Đơn đang giao)) × 100%',
+                        'Tỷ lệ hủy: (Đơn hủy / Tổng đơn) × 100%',
+                        'Khách mới: Số khách hàng lần đầu mua trong ' . ($isMonthlyView ? 'tháng' : 'ngày'),
+                        'Khách cũ: Số khách hàng đã từng mua trước ' . ($isMonthlyView ? 'tháng' : 'ngày') . ' này'
+                    ]
+                ]
+            ];
+        } catch (\Exception $e) {
+            Log::error('Error in getRevenueDetails: ' . $e->getMessage());
+            return [
+                'data' => [],
+                'pagination' => [
+                    'total' => 0,
+                    'per_page' => $perPage,
+                    'current_page' => 1,
+                    'last_page' => 1
+                ],
+                'view_type' => $isMonthlyView ? 'monthly' : 'daily',
+                'help_text' => []
+            ];
+        }
     }
 }

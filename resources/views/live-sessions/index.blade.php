@@ -210,8 +210,31 @@ function updateRevenueChart(dailyStats) {
 }
 
 function updateProductsChart(products) {
-    const labels = products.map(p => p.product_name);
-    const revenues = products.map(p => p.total_revenue);
+    if (!products || !Array.isArray(products) || products.length === 0) {
+        console.warn('No product data available for chart');
+        const ctx = document.getElementById('productsChart');
+        if (ctx) {
+            ctx.style.display = 'none';
+            const noDataMsg = document.createElement('p');
+            noDataMsg.textContent = 'No product data available';
+            noDataMsg.className = 'text-center text-muted mt-3';
+            ctx.parentNode.appendChild(noDataMsg);
+        }
+        return;
+    }
+
+    // Show the canvas if it was hidden
+    const ctx = document.getElementById('productsChart');
+    if (ctx) {
+        ctx.style.display = 'block';
+        // Remove any "no data" message if it exists
+        const noDataMsg = ctx.parentNode.querySelector('p');
+        if (noDataMsg) noDataMsg.remove();
+    }
+
+    const labels = products.map(p => p.product_name || p.name || 'Unknown Product');
+    const revenues = products.map(p => p.total_revenue || p.revenue || 0);
+    const quantities = products.map(p => p.total_quantity || p.quantity || 0);
 
     if (productsChart) {
         productsChart.destroy();
@@ -221,19 +244,62 @@ function updateProductsChart(products) {
         type: 'bar',
         data: {
             labels: labels,
-            datasets: [{
-                label: 'Revenue by Product',
-                data: revenues,
-                backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                borderColor: 'rgb(54, 162, 235)',
-                borderWidth: 1
-            }]
+            datasets: [
+                {
+                    label: 'Revenue',
+                    data: revenues,
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderColor: 'rgb(54, 162, 235)',
+                    borderWidth: 1,
+                    yAxisID: 'y-revenue'
+                },
+                {
+                    label: 'Quantity',
+                    data: quantities,
+                    backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                    borderColor: 'rgb(255, 99, 132)',
+                    borderWidth: 1,
+                    yAxisID: 'y-quantity'
+                }
+            ]
         },
         options: {
             responsive: true,
             scales: {
-                y: {
-                    beginAtZero: true
+                'y-revenue': {
+                    type: 'linear',
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Revenue'
+                    }
+                },
+                'y-quantity': {
+                    type: 'linear',
+                    position: 'right',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Quantity'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y || 0;
+                            if (label === 'Revenue') {
+                                return `${label}: ${formatCurrency(value)}`;
+                            }
+                            return `${label}: ${value}`;
+                        }
+                    }
                 }
             }
         }

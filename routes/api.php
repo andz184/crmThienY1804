@@ -68,14 +68,17 @@ Route::prefix('reports')->group(function () {
     Route::get('customer-orders', [ReportController::class, 'getCustomerOrderReport']);
 });
 
-// Pancake Webhook Endpoint
-Route::middleware(['api'])->group(function () {
-    // Main webhook endpoint that handles both orders and customers
+
     Route::post('/webhooks/pancake', [App\Http\Controllers\Api\PancakeWebhookController::class, 'handleWebhook']);
-});
+
 
 // For backward compatibility - these will be deprecated
 Route::middleware(['api'])->group(function () {
     Route::post('/webhooks/pancake/order', [PancakeWebhookController::class, 'handleOrderWebhook'])->middleware('can:orders.create');
     Route::post('/webhooks/pancake/customer', [PancakeWebhookController::class, 'handleCustomerWebhook'])->middleware('can:customers.create');
+});
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/dashboard/stats', [App\Http\Controllers\Api\DashboardController::class, 'getStats']);
+    // ... existing routes ...
 });

@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Models\DailyRevenueAggregate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB; // Import DB facade
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon; // Ensure Carbon is imported
 
@@ -19,63 +18,54 @@ class DashboardController extends Controller
         $this->authorize('dashboard.view');
         /** @var \App\Models\User $user */
         $user = Auth::user();
-        $stats = [];
+        $statsData = []; // Renamed from $stats to $statsData to avoid conflict if $stats was used later
 
         $today = Carbon::today();
         $currentMonthStart = Carbon::now()->startOfMonth();
         $currentMonthEnd = Carbon::now()->endOfMonth();
 
-        // Updated cache key for pancake_status logic
-        $cacheKeyBase = 'dashboard_pancake_stats_v1_' . $user->id . '_' . implode('_', $user->getRoleNames()->toArray()) . "_{$today->toDateString()}";
-        
-        $stats = Cache::remember($cacheKeyBase, 900, function() use ($user, $today, $currentMonthStart, $currentMonthEnd) {
-            $statsData = [];
-            
-            // Define Pancake revenue-eligible statuses
-            $revenuePancakeStatuses = [
-                Order::PANCAKE_STATUS_DELIVERED,
-                Order::PANCAKE_STATUS_DONE,
-                Order::PANCAKE_STATUS_COMPLETED
-            ];
+        // Define Pancake revenue-eligible statuses
+        $revenuePancakeStatuses = [
+            Order::PANCAKE_STATUS_DELIVERED,
+            Order::PANCAKE_STATUS_DONE,
+            Order::PANCAKE_STATUS_COMPLETED
+        ];
 
-            // Base Order Query using pancake_status
-            $orderQuery = Order::query()->whereIn('pancake_status', $revenuePancakeStatuses);
+        // Base Order Query using pancake_status
+        $orderQuery = Order::query()->whereIn('pancake_status', $revenuePancakeStatuses);
 
-            if ($user->hasRole('manager')) {
-                $teamId = $user->manages_team_id;
-                if ($teamId) {
-                    $teamMemberIds = User::where('team_id', $teamId)->pluck('id');
-                    $orderQuery->whereIn('user_id', $teamMemberIds);
-                } else {
-                    $orderQuery->whereRaw('1 = 0'); // No results if manager has no team
-                }
-            } elseif ($user->hasRole('staff')) {
-                $orderQuery->where('user_id', $user->id);
+        if ($user->hasRole('manager')) {
+            $teamId = $user->manages_team_id;
+            if ($teamId) {
+                $teamMemberIds = User::where('team_id', $teamId)->pluck('id');
+                $orderQuery->whereIn('user_id', $teamMemberIds);
+            } else {
+                $orderQuery->whereRaw('1 = 0'); // No results if manager has no team
             }
-            // Admin/Super Admin sees all by default
+        } elseif ($user->hasRole('staff')) {
+            $orderQuery->where('user_id', $user->id);
+        }
+        // Admin/Super Admin sees all by default
 
-            // 1. Doanh thu tháng này (Pancake status)
-            // Assuming updated_at reflects the date when pancake_status reached a final state
-            $statsData['monthly_revenue'] = (clone $orderQuery)
-                ->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd]) 
-                ->sum('total_value');
+        // 1. Doanh thu tháng này (Pancake status)
+        // Assuming updated_at reflects the date when pancake_status reached a final state
+        $statsData['monthly_revenue'] = (clone $orderQuery)
+            ->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd])
+            ->sum('total_value');
 
-            // 2. Doanh thu hôm nay (Pancake status)
-            $statsData['today_revenue'] = (clone $orderQuery)
-                ->whereDate('updated_at', $today) 
-                ->sum('total_value');
+        // 2. Doanh thu hôm nay (Pancake status)
+        $statsData['today_revenue'] = (clone $orderQuery)
+            ->whereDate('updated_at', $today)
+            ->sum('total_value');
 
-            // 3. Số đơn hoàn thành hôm nay (Pancake status)
-            $statsData['today_completed_orders'] = (clone $orderQuery)
-                ->whereDate('updated_at', $today) 
-                ->count();
+        // 3. Số đơn hoàn thành hôm nay (Pancake status)
+        $statsData['today_completed_orders'] = (clone $orderQuery)
+            ->whereDate('updated_at', $today)
+            ->count();
 
-            // Format numbers
-            $statsData['monthly_revenue_formatted'] = number_format($statsData['monthly_revenue'] ?? 0, 0, ',', '.');
-            $statsData['today_revenue_formatted'] = number_format($statsData['today_revenue'] ?? 0, 0, ',', '.');
-
-            return $statsData;
-        });
+        // Format numbers
+        $statsData['monthly_revenue_formatted'] = number_format($statsData['monthly_revenue'] ?? 0, 0, ',', '.');
+        $statsData['today_revenue_formatted'] = number_format($statsData['today_revenue'] ?? 0, 0, ',', '.');
 
         // --- Prepare Data for Filter Dropdowns ---
         $filterableStaff = collect();
@@ -94,7 +84,7 @@ class DashboardController extends Controller
                                       ->orderBy('name')
                                       ->pluck('name', 'id');
         }
-        return view('dashboard', compact('stats', 'filterableStaff', 'filterableManagers'));
+        return view('dashboard', ['stats' => $statsData, 'filterableStaff' => $filterableStaff, 'filterableManagers' => $filterableManagers]);
     }
 
     /**
@@ -118,7 +108,7 @@ class DashboardController extends Controller
         try {
             $start = $startDateInput ? \Carbon\Carbon::parse($startDateInput)->startOfDay() : now()->subDays(29)->startOfDay();
             $end = $endDateInput ? \Carbon\Carbon::parse($endDateInput)->endOfDay() : now()->endOfDay();
-            
+
             if ($end->greaterThan(now()->endOfDay())) $end = now()->endOfDay(); // Cap end date to today
             if ($start->greaterThan($end)) $start = $end->copy()->subDays(29)->startOfDay(); // Ensure start is before end
             if ($start->diffInDays($end) > $maxDays) $start = $end->copy()->subDays($maxDays)->startOfDay(); // Limit range
@@ -132,63 +122,76 @@ class DashboardController extends Controller
         Log::info('getChartData: Date range calculated', ['start' => $start->toDateString(), 'end' => $end->toDateString()]);
 
         try {
-            $cacheKey = 'dashboard_simple_revenue_pancake_v2_' . $user->id . '_' . implode('_', $user->getRoleNames()->toArray()) . '_' . md5($start->toDateString() . $end->toDateString());
-            
-            $data = Cache::remember($cacheKey, 300, function() use ($user, $start, $end) {
+            $revenuePancakeStatuses = [
+                Order::PANCAKE_STATUS_DELIVERED,
+                Order::PANCAKE_STATUS_DONE,
+                Order::PANCAKE_STATUS_COMPLETED
+            ];
 
-                $revenuePancakeStatuses = [
-                    Order::PANCAKE_STATUS_DELIVERED,
-                    Order::PANCAKE_STATUS_DONE,
-                    Order::PANCAKE_STATUS_COMPLETED
-                ];
+            $orderQuery = Order::query()
+                ->whereIn('pancake_status', $revenuePancakeStatuses)
+                ->whereBetween('updated_at', [$start, $end]); // Assuming updated_at is when status changed to final
 
-                $orderQuery = Order::query()
-                    ->whereIn('pancake_status', $revenuePancakeStatuses)
-                    ->whereBetween('updated_at', [$start, $end]); // Assuming updated_at is when status changed to final
+            // Apply scoping based on user role and filters from request
+            $selectedSaleId = $request->input('sale_id');
+            $selectedManagerId = $request->input('manager_id');
 
-                // Apply scoping based on user role
-                if ($user->hasRole('manager')) {
-                    $teamId = $user->manages_team_id;
-                    if ($teamId) {
-                        $teamMemberIds = User::where('team_id', $teamId)->pluck('id');
-                        $orderQuery->whereIn('user_id', $teamMemberIds);
-                    } else {
-                        $orderQuery->whereRaw('1 = 0'); // Manager with no team sees no data
-                    }
-                } elseif ($user->hasRole('staff')) {
-                    $orderQuery->where('user_id', $user->id);
+            if ($selectedSaleId) {
+                $orderQuery->where('user_id', $selectedSaleId);
+            } elseif ($selectedManagerId) {
+                $manager = User::find($selectedManagerId);
+                if ($manager && $manager->manages_team_id) {
+                    $teamMemberIds = User::where('team_id', $manager->manages_team_id)->pluck('id');
+                    $orderQuery->whereIn('user_id', $teamMemberIds);
+                } else {
+                    $orderQuery->whereRaw('1 = 0'); // No data if manager not found or no team
                 }
-                // Admin/Super Admin sees all data (no further user_id scoping needed here)
-
-                // 1. Revenue by Day (Pancake Status)
-                $revenueByDaySource = (clone $orderQuery)
-                    ->selectRaw('DATE(updated_at) as order_date, SUM(total_value) as revenue')
-                    ->groupBy('order_date')
-                    ->orderBy('order_date', 'asc')
-                    ->pluck('revenue', 'order_date');
-                
-                $revenueDailyLabels = [];
-                $revenueDailyData = [];
-                $currentDate = $start->copy();
-                while ($currentDate <= $end) {
-                    $formattedDate = $currentDate->format('Y-m-d');
-                    $revenueDailyLabels[] = $currentDate->format('d/m');
-                    $revenueDailyData[] = (float)($revenueByDaySource[$formattedDate] ?? 0);
-                    $currentDate->addDay();
+            } elseif ($user->hasRole('manager')) {
+                $teamId = $user->manages_team_id;
+                if ($teamId) {
+                    $teamMemberIds = User::where('team_id', $teamId)->pluck('id');
+                    $orderQuery->whereIn('user_id', $teamMemberIds);
+                } else {
+                    $orderQuery->whereRaw('1 = 0'); // Manager with no team sees no data
                 }
-                Log::info('getChartData: Revenue by Day calculated from DB', ['count' => count($revenueDailyData)]);
-                
-                return [
-                    'revenueDailyLabels' => $revenueDailyLabels, 
-                    'revenueDailyData' => $revenueDailyData,
-                    // Return empty structures for other charts to prevent JS errors
-                    'revenueMonthlyLabels' => [], 'revenueMonthlyData' => [],
-                    'orderStatusChart' => ['labels' => [], 'data' => [], 'colors' => []],
-                    'staffRevenueChart' => ['enabled' => false, 'labels' => [], 'data' => []],
-                    'staffSpecificStats' => ['show_staff_specific_stats' => false, 'title_name' => null, 'total_revenue_formatted' => '0', 'total_orders' => 0 ],
-                ];
-            });
-            return response()->json($data);
+            } elseif ($user->hasRole('staff')) {
+                $orderQuery->where('user_id', $user->id);
+            }
+            // Admin/Super Admin sees all data if no specific sale/manager filter is applied
+
+            // Calculate Total Filtered Revenue
+            $totalFilteredRevenue = (clone $orderQuery)->sum('total_value');
+
+            // 1. Revenue by Day (Pancake Status)
+            $revenueByDaySource = (clone $orderQuery)
+                ->selectRaw('DATE(updated_at) as order_date, SUM(total_value) as revenue')
+                ->groupBy('order_date')
+                ->orderBy('order_date', 'asc')
+                ->pluck('revenue', 'order_date');
+
+            $revenueDailyLabels = [];
+            $revenueDailyData = [];
+            $currentDate = $start->copy();
+            while ($currentDate <= $end) {
+                $formattedDate = $currentDate->format('Y-m-d');
+                $revenueDailyLabels[] = $currentDate->format('d/m');
+                $revenueDailyData[] = (float)($revenueByDaySource[$formattedDate] ?? 0);
+                $currentDate->addDay();
+            }
+            Log::info('getChartData: Revenue by Day calculated from DB', ['count' => count($revenueDailyData)]);
+
+            $dataToReturn = [
+                'totalFilteredRevenueFormatted' => number_format($totalFilteredRevenue ?? 0, 0, ',', '.'),
+                'revenueDailyLabels' => $revenueDailyLabels,
+                'revenueDailyData' => $revenueDailyData,
+                // Return empty structures for other charts to prevent JS errors
+                'revenueMonthlyLabels' => [], 'revenueMonthlyData' => [],
+                'orderStatusChart' => ['labels' => [], 'data' => [], 'colors' => []],
+                'staffRevenueChart' => ['enabled' => false, 'labels' => [], 'data' => []],
+                'staffSpecificStats' => ['show_staff_specific_stats' => false, 'title_name' => null, 'total_revenue_formatted' => '0', 'total_orders' => 0 ],
+            ];
+            return response()->json($dataToReturn);
+
         } catch (\Throwable $e) { // Changed to Throwable to catch more error types
             Log::error("Dashboard Chart Data (Simplified Dynamic): " . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),

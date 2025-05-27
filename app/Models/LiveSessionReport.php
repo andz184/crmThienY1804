@@ -69,13 +69,13 @@ class LiveSessionReport extends Model
 
                 $reportData['status_revenue'][$status->status_code] = [
                     'name' => $status->name,
-                    'revenue' => $statusRevenue,
+                    'revenue' => $statusRevenue + $ordersWithStatus->sum('shipping_fee'),
                     'color' => $status->color
                 ];
 
                 // Add to total revenue if status indicates completed transaction
                 if (in_array($status->api_name, ['delivered', 'done', 'completed'])) {
-                    $reportData['total_revenue'] += $statusRevenue;
+                    $reportData['total_revenue'] += ($statusRevenue + $ordersWithStatus->sum('shipping_fee'));
                 }
             }
         }

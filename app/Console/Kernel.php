@@ -20,6 +20,7 @@ class Kernel extends ConsoleKernel
         Commands\EnsureSuperAdminPermissions::class,
         Commands\SyncPancakeOrdersByDate::class,
         Commands\RecalculateTopProducts::class,
+        \App\Console\Commands\UpdateLiveSessionProducts::class,
     ];
 
     /**
