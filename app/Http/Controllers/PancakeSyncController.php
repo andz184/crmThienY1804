@@ -440,7 +440,6 @@ class PancakeSyncController extends Controller
         // Tạo đơn hàng mới
         $order = new \App\Models\Order();
         $order->pancake_order_id = $orderData['id'] ?? null;
-        $order->post_id = $orderData['post_id'] ?? null;
         $order->order_code = $orderData['code'] ?? ('PCK-' . \Illuminate\Support\Str::random(8));
         $order->customer_name = $orderData['customer']['name'] ?? ($customer ? $customer->name : '');
         $order->customer_phone = $orderData['customer']['phone'] ?? ($customer ? $customer->phone : '');
@@ -3035,50 +3034,50 @@ private function updateOrderFromPancake(Order $order, array $orderData)
      * @param \Carbon\Carbon $date
      * @return array
      */
-    public function syncOrdersByDate($date)
-    {
-        // Increase execution time limit to 2 hours and memory limit to 1GB
-        set_time_limit(7200);
-        ini_set('memory_limit', '1024M');
+    // public function syncOrdersByDate($date)
+    // {
+    //     // Increase execution time limit to 2 hours and memory limit to 1GB
+    //     set_time_limit(7200);
+    //     ini_set('memory_limit', '1024M');
 
-        // Create a request with the date to reuse the existing method
-        $request = new \Illuminate\Http\Request();
-        $request->merge(['date' => $date->format('Y-m-d')]);
+    //     // Create a request with the date to reuse the existing method
+    //     $request = new \Illuminate\Http\Request();
+    //     $request->merge(['date' => $date->format('Y-m-d')]);
 
-        try {
-            // Call the existing implementation
+    //     try {
+    //         // Call the existing implementation
 
-            $result = $this->syncOrdersByDateManual($request);
+    //         $result = $this->syncOrdersByDateManual($request);
 
-            // Convert response to array format expected by the command
-            if ($result->getStatusCode() === 200) {
-                $data = json_decode($result->getContent(), true);
-                return $data;
-            } else {
-                return [
-                    'success' => false,
-                    'message' => 'Đồng bộ thất bại với mã lỗi: ' . $result->getStatusCode(),
-                    'total_synced' => 0,
-                    'new_orders' => 0,
-                    'updated_orders' => 0
-                ];
-            }
-        } catch (\Exception $e) {
-            Log::error('Lỗi trong quá trình đồng bộ đơn hàng theo ngày', [
-                'date' => $date->format('Y-m-d'),
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+    //         // Convert response to array format expected by the command
+    //         if ($result->getStatusCode() === 200) {
+    //             $data = json_decode($result->getContent(), true);
+    //             return $data;
+    //         } else {
+    //             return [
+    //                 'success' => false,
+    //                 'message' => 'Đồng bộ thất bại với mã lỗi: ' . $result->getStatusCode(),
+    //                 'total_synced' => 0,
+    //                 'new_orders' => 0,
+    //                 'updated_orders' => 0
+    //             ];
+    //         }
+    //     } catch (\Exception $e) {
+    //         Log::error('Lỗi trong quá trình đồng bộ đơn hàng theo ngày', [
+    //             'date' => $date->format('Y-m-d'),
+    //             'error' => $e->getMessage(),
+    //             'trace' => $e->getTraceAsString()
+    //         ]);
 
-            return [
-                'success' => false,
-                'message' => 'Đã xảy ra lỗi: ' . $e->getMessage(),
-                'total_synced' => 0,
-                'new_orders' => 0,
-                'updated_orders' => 0
-            ];
-        }
-    }
+    //         return [
+    //             'success' => false,
+    //             'message' => 'Đã xảy ra lỗi: ' . $e->getMessage(),
+    //             'total_synced' => 0,
+    //             'new_orders' => 0,
+    //             'updated_orders' => 0
+    //         ];
+    //     }
+    // }
 
 
     /**
