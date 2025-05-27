@@ -303,7 +303,7 @@ Route::middleware(['auth'])->group(function () {
 });
 
 // Live Session Revenue Routes
-Route::prefix('reports')->group(function () {
+Route::prefix('reports')->middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::class . ':reports.live-sessions'])->group(function () {
     Route::get('live-sessions', [LiveSessionRevenueController::class, 'index'])->name('reports.live-sessions');
     Route::get('live-sessions/data', [LiveSessionRevenueController::class, 'getData'])->name('reports.live-sessions.data');
     Route::get('live-sessions/filtered', [LiveSessionRevenueController::class, 'getFilteredData'])->name('reports.live-sessions.filtered');
@@ -345,13 +345,13 @@ Route::get('/test-pancake-page', function () {
 Route::get('/debug/live-patterns', [App\Http\Controllers\ReportController::class, 'debugLiveSessions'])->middleware(['auth']);
 
 // Temporary route for debugging
-Route::get('/debug/live-sessions', function() {
-    $data = \App\Models\LiveSessionRevenue::all();
-    dd([
-        'total_records' => $data->count(),
-        'records' => $data->toArray()
-    ]);
-});
+// Route::get('/debug/live-sessions', function() {
+//     $data = \App\Models\LiveSessionRevenue::all();
+//     dd([
+//         'total_records' => $data->count(),
+//         'records' => $data->toArray()
+//     ]);
+// });
 
 // Temporary route for debugging orders
 Route::get('/debug/orders-with-live-session', function() {
