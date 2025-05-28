@@ -3,10 +3,53 @@
 @section('title', 'Báo cáo theo Chiến dịch')
 
 @section('content_header')
+<div class="d-flex justify-content-between align-items-center">
     <h1>Báo cáo theo Chiến dịch (ID Bài Post)</h1>
+    <button type="button" class="btn btn-info" data-toggle="modal" data-target="#helpModal">
+        <i class="fas fa-question-circle"></i> Hướng dẫn
+    </button>
+</div>
 @stop
 
 @section('content')
+<!-- Modal Hướng dẫn -->
+<div class="modal fade" id="helpModal" tabindex="-1" role="dialog" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="helpModalLabel">Hướng dẫn sử dụng báo cáo</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>Thông tin chung:</h5>
+                        <ul>
+                            <li>Báo cáo chỉ hiển thị các đơn hàng có trạng thái Pancake là "Đã giao hàng" (status = 6)</li>
+                            <li>Doanh thu được tính dựa trên giá trị thực tế của đơn hàng</li>
+                            <li>Biểu đồ thể hiện doanh thu theo từng ID bài post</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Cách sử dụng:</h5>
+                        <ul>
+                            <li>Sử dụng bộ lọc thời gian để xem dữ liệu theo khoảng thời gian mong muốn</li>
+                            <li>Lọc theo cửa hàng và trang Facebook để xem chi tiết từng nguồn</li>
+                            <li>Biểu đồ cột thể hiện tổng doanh thu của từng bài post</li>
+                            <li>Bảng chi tiết bên dưới hiển thị thông tin cụ thể về số đơn và doanh thu của từng bài post</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="container-fluid">
     <div class="card card-primary card-outline">
         <div class="card-header">
@@ -103,33 +146,6 @@
                                         Giá Trị TB/Đơn <span class="float-right badge bg-warning">{{ number_format($campaign['average_order_value'], 0, ',', '.') }} VND</span>
                                     </a>
                                 </li>
-                                <li class="nav-item p-2">
-                                    <strong class="d-block mb-1">Top Sản Phẩm:</strong>
-                                    @if(count($campaign['products']) > 0)
-                                        <div class="table-responsive" style="max-height: 150px; overflow-y: auto;">
-                                            <table class="table table-sm table-striped table-hover">
-                                                <thead>
-                                                    <tr>
-                                                        <th>Sản Phẩm</th>
-                                                        <th class="text-right">SL</th>
-                                                        <th class="text-right">Doanh Thu</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    @foreach($campaign['products'] as $product)
-                                                        <tr>
-                                                            <td>{{ Str::limit($product['name'], 30) }} {{ $product['sku'] ? '(' . $product['sku'] . ')' : '' }}</td>
-                                                            <td class="text-right">{{ $product['quantity'] }}</td>
-                                                            <td class="text-right text-nowrap">{{ number_format($product['revenue'], 0, ',', '.') }}</td>
-                                                        </tr>
-                                                    @endforeach
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    @else
-                                        <p class="text-muted mb-0 ml-1">Không có dữ liệu sản phẩm.</p>
-                                    @endif
-                                </li>
                             </ul>
                         </div>
                     </div>
@@ -173,6 +189,51 @@
         $(document).ready(function() {
             // Initialize Select2
             $('.select2').select2();
+
+            // Initialize Campaign Performance Chart
+            if (document.getElementById('campaignPerformanceChart')) {
+                const ctx = document.getElementById('campaignPerformanceChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: {!! json_encode($chartCampaignLabels) !!},
+                        datasets: [{
+                            label: 'Doanh Thu (VND)',
+                            data: {!! json_encode($chartCampaignRevenue) !!},
+                            backgroundColor: 'rgba(60, 141, 188, 0.8)',
+                            borderColor: 'rgba(60, 141, 188, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return new Intl.NumberFormat('vi-VN').format(value) + ' VND';
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top'
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Doanh Thu: ' + new Intl.NumberFormat('vi-VN').format(context.raw) + ' VND';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             // Date Range Picker
             $('#date_range_campaign').daterangepicker({

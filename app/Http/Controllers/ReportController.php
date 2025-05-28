@@ -354,6 +354,7 @@ class ReportController extends Controller
         // Base query for orders within the date range and with a post_id
         $ordersQuery = Order::whereNotNull('post_id')
             ->where('status', '!=', Order::STATUS_DA_HUY) // Exclude cancelled orders
+            ->where('pancake_status', 6) // Only show orders with pancake_status = 6
             ->whereNull('deleted_at')
             ->whereBetween('created_at', [$startDate, $endDate])
             ->with(['items']); // Eager load items
@@ -379,43 +380,12 @@ class ReportController extends Controller
                     'post_id' => $postId,
                     'total_orders' => 0,
                     'total_revenue' => 0,
-                    'products' => [],
-                    'product_summary' => [] // For aggregated product stats
                 ];
             }
             $campaignsData[$postId]['total_orders']++;
             $campaignsData[$postId]['total_revenue'] += $order->total_value;
-
-            foreach ($order->items as $item) {
-                $productName = $item->product_name ?? ($item->name ?? 'Không xác định');
-                $productId = $item->pancake_product_id ?? $item->sku ?? $productName; // Unique key for product
-
-                if (!isset($campaignsData[$postId]['product_summary'][$productId])) {
-                    $campaignsData[$postId]['product_summary'][$productId] = [
-                        'name' => $productName,
-                        'sku' => $item->sku,
-                        'quantity' => 0,
-                        'revenue' => 0
-                    ];
-                }
-                $campaignsData[$postId]['product_summary'][$productId]['quantity'] += $item->quantity;
-                $campaignsData[$postId]['product_summary'][$productId]['revenue'] += ($item->price * $item->quantity);
-            }
+            $campaignsData[$postId]['average_order_value'] = $campaignsData[$postId]['total_revenue'] / $campaignsData[$postId]['total_orders'];
         }
-
-        // Process product summaries and get top N for each campaign
-        $topNProducts = 3; // Show top 3 products per campaign
-        foreach ($campaignsData as $postId => &$campaign) { // Use reference to modify directly
-            // Sort products by revenue (descending)
-            uasort($campaign['product_summary'], function ($a, $b) {
-                return $b['revenue'] <=> $a['revenue'];
-            });
-            // Get top N products
-            $campaign['products'] = array_slice($campaign['product_summary'], 0, $topNProducts, true);
-            $campaign['average_order_value'] = $campaign['total_orders'] > 0 ? $campaign['total_revenue'] / $campaign['total_orders'] : 0;
-            // unset($campaign['product_summary']); // Optionally remove the full summary to save memory if not needed elsewhere
-        }
-        unset($campaign); // Unset reference
 
         // Sort campaigns by total revenue (descending)
         uasort($campaignsData, function ($a, $b) {
@@ -441,13 +411,12 @@ class ReportController extends Controller
             $chartCampaignRevenue[] = $campaign['total_revenue'];
         }
 
-
         return view('reports.campaigns', compact(
             'campaignsData',
             'startDate',
             'endDate',
             'shops',
-            'pages', // Pass pages for the selected shop
+            'pages',
             'chartCampaignLabels',
             'chartCampaignRevenue'
         ));
