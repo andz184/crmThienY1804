@@ -102,7 +102,6 @@ class ReportController extends Controller
                     $endDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[1]))->endOfDay();
                 } catch (\Exception $e) {
                     Log::error('ReportController@productGroupsPage: Invalid date_range format. Value: ' . $request->input('date_range') . ' Error: ' . $e->getMessage());
-                    // Fallback to default if parsing fails
                     $startDate = Carbon::now()->startOfMonth()->startOfDay();
                     $endDate = Carbon::now()->endOfDay();
                 }
@@ -111,35 +110,99 @@ class ReportController extends Controller
 
         Log::info("ReportController@productGroupsPage: Processing report for date range: {$startDate->toDateTimeString()} to {$endDate->toDateTimeString()}");
 
-        // Fetch orders with items and variants within the date range
-        $orders = Order::whereBetween('created_at', [$startDate, $endDate])
-            ->whereNull('deleted_at')
-            ->where(function ($query) {
-                $query->where('status', '!=', Order::STATUS_DA_HUY)
-                      ->orWhereNull('status');
-            })
-            ->with(['items.variants'])
+        // Fetch orders with products_data within the date range
+        $orders = Order::where('pancake_status', 6) // Only completed orders
+            ->whereNotNull('products_data')
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->get();
 
         Log::info("ReportController@productGroupsPage: Found " . $orders->count() . " orders for the period.");
 
         $categoryData = [];
-        // Fetch Pancake categories, mapping pancake_id to name
         $categoryMap = \App\Models\PancakeCategory::pluck('name', 'pancake_id')->all();
+        $processedOrderIds = []; // Track processed order IDs for accurate order counting
 
         foreach ($orders as $order) {
-            $orderCategoriesProcessed = []; // To count each category once per order for order count metric
+            $productsData = json_decode($order->products_data, true);
+            if (!is_array($productsData)) {
+                Log::warning("Invalid products_data for order ID: {$order->id}");
+                continue;
+            }
 
-            foreach ($order->items as $item) {
-                // Process variants if available
-                if ($item->variants->isNotEmpty()) {
-                    foreach ($item->variants as $variant) {
-                        $this->processVariantForReport($variant, $item, $order, $categoryMap, $categoryData, $orderCategoriesProcessed);
-                    }
-                } else {
-                    // Fallback to product_info if no variants
-                    $this->processProductInfoForReport($item, $order, $categoryMap, $categoryData, $orderCategoriesProcessed);
+            $orderProcessed = []; // Track which categories have been counted for this order
+
+            foreach ($productsData as $item) {
+                if (empty($item['variation_info']['category_ids'])) {
+                    Log::warning("Missing category_ids for item in order ID: {$order->id}");
+                    continue;
                 }
+
+                // Validate and get quantity and price
+                $quantity = isset($item['quantity']) && is_numeric($item['quantity']) ? (int)$item['quantity'] : 1;
+                $price = isset($item['price']) && is_numeric($item['price']) ? (float)$item['price'] : 0;
+
+                if ($price <= 0) {
+                    Log::warning("Invalid price (0 or negative) for item in order ID: {$order->id}");
+                    continue;
+                }
+
+                $totalAmount = $quantity * $price;
+
+                foreach ($item['variation_info']['category_ids'] as $categoryId) {
+                    if (!isset($categoryMap[$categoryId])) {
+                        Log::warning("Category ID {$categoryId} not found in category map");
+                        continue;
+                    }
+
+                    // Initialize category data if not exists
+                    if (!isset($categoryData[$categoryId])) {
+                        $categoryData[$categoryId] = [
+                            'id' => $categoryId,
+                            'name' => $categoryMap[$categoryId],
+                            'total_revenue' => 0,
+                            'total_orders' => 0,
+                            'total_quantity_sold' => 0,
+                            'products' => [],
+                            'average_order_value' => 0
+                        ];
+                    }
+
+                    // Update category totals
+                    $categoryData[$categoryId]['total_revenue'] += $totalAmount;
+                    $categoryData[$categoryId]['total_quantity_sold'] += $quantity;
+
+                    // Count unique orders per category
+                    if (!isset($orderProcessed[$categoryId])) {
+                        $categoryData[$categoryId]['total_orders']++;
+                        $orderProcessed[$categoryId] = true;
+                    }
+
+                    // Track product details
+                    $productId = $item['product_id'] ?? null;
+                    if ($productId) {
+                        if (!isset($categoryData[$categoryId]['products'][$productId])) {
+                            $categoryData[$categoryId]['products'][$productId] = [
+                                'id' => $productId,
+                                'name' => $item['variation_info']['name'] ?? 'Unknown Product',
+                                'total_quantity' => 0,
+                                'total_revenue' => 0,
+                                'average_price' => 0
+                            ];
+                        }
+                        $categoryData[$categoryId]['products'][$productId]['total_quantity'] += $quantity;
+                        $categoryData[$categoryId]['products'][$productId]['total_revenue'] += $totalAmount;
+                        $categoryData[$categoryId]['products'][$productId]['average_price'] =
+                            $categoryData[$categoryId]['products'][$productId]['total_revenue'] /
+                            $categoryData[$categoryId]['products'][$productId]['total_quantity'];
+                    }
+                }
+            }
+        }
+
+        // Calculate average order value for each category
+        foreach ($categoryData as &$category) {
+            if ($category['total_orders'] > 0) {
+                $category['average_order_value'] = $category['total_revenue'] / $category['total_orders'];
             }
         }
 
@@ -283,30 +346,15 @@ class ReportController extends Controller
         $chartRevenueData = [];
         $chartOrderCountData = [];
         $chartQuantityData = [];
-        $chartVariantData = [];
 
-        foreach ($categoryData as $cat) {
-            $chartCategoryNames[] = $cat['name'];
-            $chartRevenueData[] = $cat['total_revenue'];
-            $chartOrderCountData[] = $cat['total_orders'];
-            $chartQuantityData[] = $cat['total_quantity_sold'];
-
-            // Prepare variant data for charts
-            if (!empty($cat['variants'])) {
-                $variantStats = [];
-                foreach ($cat['variants'] as $variant) {
-                    $variantStats[] = [
-                        'name' => $variant['name'],
-                        'revenue' => $variant['total_revenue'],
-                        'quantity' => $variant['total_quantity'],
-                        'orders' => $variant['orders_count'],
-                    ];
-                }
-                $chartVariantData[$cat['name']] = $variantStats;
-            }
+        foreach ($categoryData as $category) {
+            $chartCategoryNames[] = $category['name'];
+            $chartRevenueData[] = $category['total_revenue'];
+            $chartOrderCountData[] = $category['total_orders'];
+            $chartQuantityData[] = $category['total_quantity_sold'];
         }
 
-        return compact('chartCategoryNames', 'chartRevenueData', 'chartOrderCountData', 'chartQuantityData', 'chartVariantData');
+        return compact('chartCategoryNames', 'chartRevenueData', 'chartOrderCountData', 'chartQuantityData');
     }
 
     /**
@@ -314,16 +362,17 @@ class ReportController extends Controller
      */
     private function calculateSummaryStats($categoryData)
     {
-        $totalRevenueAllGroups = array_sum(array_column($categoryData, 'total_revenue'));
-        $totalOrdersAllGroups = array_sum(array_column($categoryData, 'total_orders'));
-        $totalQuantityAllGroups = array_sum(array_column($categoryData, 'total_quantity_sold'));
-        $totalVariants = 0;
+        $totalRevenueAllGroups = 0;
+        $totalOrdersAllGroups = 0;
+        $totalQuantityAllGroups = 0;
 
         foreach ($categoryData as $category) {
-            $totalVariants += count($category['variants'] ?? []);
+            $totalRevenueAllGroups += $category['total_revenue'];
+            $totalOrdersAllGroups += $category['total_orders'];
+            $totalQuantityAllGroups += $category['total_quantity_sold'];
         }
 
-        return compact('totalRevenueAllGroups', 'totalOrdersAllGroups', 'totalQuantityAllGroups', 'totalVariants');
+        return compact('totalRevenueAllGroups', 'totalOrdersAllGroups', 'totalQuantityAllGroups');
     }
 
     /**

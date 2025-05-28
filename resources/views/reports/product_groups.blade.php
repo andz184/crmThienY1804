@@ -41,39 +41,62 @@
                                             <li class="mb-3">
                                                 <i class="fas fa-info-circle text-primary mr-2"></i>
                                                 <strong>Tổng Doanh Thu:</strong><br>
-                                                <span class="text-muted ml-4">Tổng giá trị đơn hàng của tất cả sản phẩm trong nhóm hàng hóa.</span>
+                                                <span class="text-muted ml-4">Tổng giá trị đơn hàng của tất cả sản phẩm trong nhóm hàng hóa (chỉ tính đơn hàng đã giao thành công).</span>
                                             </li>
                                             <li class="mb-3">
                                                 <i class="fas fa-info-circle text-success mr-2"></i>
                                                 <strong>Số Lượng Đơn Hàng:</strong><br>
-                                                <span class="text-muted ml-4">Số lượng đơn hàng có chứa ít nhất một sản phẩm thuộc nhóm hàng hóa.</span>
+                                                <span class="text-muted ml-4">Số lượng đơn hàng thành công có chứa ít nhất một sản phẩm thuộc nhóm hàng hóa.</span>
                                             </li>
                                             <li class="mb-3">
                                                 <i class="fas fa-info-circle text-info mr-2"></i>
                                                 <strong>Số Lượng Sản Phẩm Bán:</strong><br>
-                                                <span class="text-muted ml-4">Tổng số lượng sản phẩm đã bán ra từ nhóm hàng hóa.</span>
+                                                <span class="text-muted ml-4">Tổng số lượng sản phẩm đã bán ra từ nhóm hàng hóa trong các đơn hàng thành công.</span>
+                                            </li>
+                                            <li class="mb-3">
+                                                <i class="fas fa-info-circle text-warning mr-2"></i>
+                                                <strong>Giá Trị TB/Đơn:</strong><br>
+                                                <span class="text-muted ml-4">Giá trị trung bình của mỗi đơn hàng trong nhóm hàng (Tổng doanh thu / Số lượng đơn).</span>
+                                            </li>
+                                            <li class="mb-3">
+                                                <i class="fas fa-info-circle text-danger mr-2"></i>
+                                                <strong>Số Lượng TB/Đơn:</strong><br>
+                                                <span class="text-muted ml-4">Số lượng sản phẩm trung bình trong mỗi đơn hàng (Tổng số lượng / Số lượng đơn).</span>
                                             </li>
                                         </ul>
                                     </div>
                                     <div class="col-md-6">
-                                        <h5 class="text-muted font-weight-bold mb-3">Lưu ý quan trọng:</h5>
+                                        <h5 class="text-muted font-weight-bold mb-3">Hướng dẫn sử dụng:</h5>
                                         <ul class="list-unstyled">
                                             <li class="mb-3">
-                                                <i class="fas fa-exclamation-circle text-warning mr-2"></i>
-                                                <strong>Hiển thị biểu đồ:</strong><br>
-                                                <span class="text-muted ml-4">Biểu đồ chỉ hiển thị top 10 nhóm hàng có doanh thu cao nhất.</span>
+                                                <i class="fas fa-chart-bar text-primary mr-2"></i>
+                                                <strong>Biểu đồ doanh thu:</strong><br>
+                                                <span class="text-muted ml-4">Hiển thị top 10 nhóm hàng có doanh thu cao nhất. Di chuột qua cột để xem chi tiết.</span>
                                             </li>
                                             <li class="mb-3">
-                                                <i class="fas fa-exclamation-circle text-warning mr-2"></i>
+                                                <i class="fas fa-chart-pie text-success mr-2"></i>
+                                                <strong>Biểu đồ phân bổ:</strong><br>
+                                                <span class="text-muted ml-4">Thể hiện tỷ lệ đóng góp doanh thu của từng nhóm hàng. Di chuột qua để xem phần trăm.</span>
+                                            </li>
+                                            <li class="mb-3">
+                                                <i class="fas fa-table text-info mr-2"></i>
                                                 <strong>Bảng chi tiết:</strong><br>
-                                                <span class="text-muted ml-4">Bảng chi tiết bên dưới hiển thị đầy đủ tất cả các nhóm hàng.</span>
+                                                <span class="text-muted ml-4">Hiển thị thông tin chi tiết của tất cả nhóm hàng. Nhấn vào nút "sản phẩm" để xem chi tiết từng sản phẩm.</span>
                                             </li>
                                             <li class="mb-3">
-                                                <i class="fas fa-exclamation-circle text-warning mr-2"></i>
-                                                <strong>Đơn hàng và nhóm hàng:</strong><br>
-                                                <span class="text-muted ml-4">Một đơn hàng có thể chứa nhiều sản phẩm từ nhiều nhóm hàng khác nhau.</span>
+                                                <i class="fas fa-filter text-warning mr-2"></i>
+                                                <strong>Bộ lọc thời gian:</strong><br>
+                                                <span class="text-muted ml-4">Chọn khoảng thời gian để xem báo cáo. Có sẵn các mốc thời gian phổ biến hoặc tùy chọn tự do.</span>
                                             </li>
                                         </ul>
+                                        <div class="alert alert-info mt-3">
+                                            <i class="fas fa-lightbulb mr-2"></i>
+                                            <strong>Mẹo:</strong> Bạn có thể sắp xếp bảng theo bất kỳ cột nào bằng cách nhấp vào tiêu đề cột.
+                                        </div>
+                                        <div class="alert alert-warning mt-3">
+                                            <i class="fas fa-exclamation-circle mr-2"></i>
+                                            <strong>Lưu ý:</strong> Báo cáo chỉ tính các đơn hàng có trạng thái Pancake là "Đã giao hàng" (status = 6).
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -154,13 +177,21 @@
                 @if(!empty($categoryData))
                     <!-- Charts Row -->
                     <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-8">
                             <div class="card">
                                 <div class="card-header border-0">
                                     <h3 class="card-title">
                                         <i class="fas fa-chart-bar mr-1"></i>
-                                        Top 10 Doanh Thu theo Nhóm Hàng Hóa
+                                        Doanh Thu theo Nhóm Hàng Hóa (Top 10)
                                     </h3>
+                                    <div class="card-tools">
+                                        <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                                            <i class="fas fa-minus"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-tool" data-card-widget="maximize">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="card-body">
                                     <div class="chart-container">
@@ -170,17 +201,25 @@
                             </div>
                         </div>
 
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="card">
                                 <div class="card-header border-0">
                                     <h3 class="card-title">
-                                        <i class="fas fa-chart-line mr-1"></i>
-                                        Top 10 Số Lượng Đơn Hàng theo Nhóm
+                                        <i class="fas fa-chart-pie mr-1"></i>
+                                        Phân Bổ Doanh Thu theo Nhóm
                                     </h3>
+                                    <div class="card-tools">
+                                        <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                                            <i class="fas fa-minus"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-tool" data-card-widget="maximize">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="card-body">
                                     <div class="chart-container">
-                                        <canvas id="orderCountByGroupChart"></canvas>
+                                        <canvas id="revenueDistributionChart"></canvas>
                                     </div>
                                 </div>
                             </div>
@@ -204,17 +243,60 @@
                                         <th class="text-right">Tổng Doanh Thu (VND)</th>
                                         <th class="text-right">Số Lượng Đơn Hàng</th>
                                         <th class="text-right">Số Lượng Sản Phẩm Bán</th>
+                                        <th class="text-right">Giá Trị TB/Đơn (VND)</th>
+                                        <th class="text-right">Số Lượng TB/Đơn</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach($categoryData as $category)
                                         <tr>
                                             <td>{{ $category['id'] }}</td>
-                                            <td>{{ $category['name'] }}</td>
+                                            <td>
+                                                <strong>{{ $category['name'] }}</strong>
+                                                @if(!empty($category['products']))
+                                                    <button type="button" class="btn btn-xs btn-info ml-2" data-toggle="collapse" data-target="#products-{{ $category['id'] }}">
+                                                        <i class="fas fa-list"></i> {{ count($category['products']) }} sản phẩm
+                                                    </button>
+                                                @endif
+                                            </td>
                                             <td class="text-right">{{ number_format($category['total_revenue'], 0, ',', '.') }}</td>
                                             <td class="text-right">{{ number_format($category['total_orders'], 0, ',', '.') }}</td>
                                             <td class="text-right">{{ number_format($category['total_quantity_sold'], 0, ',', '.') }}</td>
+                                            <td class="text-right">{{ number_format($category['total_orders'] > 0 ? $category['total_revenue'] / $category['total_orders'] : 0, 0, ',', '.') }}</td>
+                                            <td class="text-right">{{ number_format($category['total_orders'] > 0 ? $category['total_quantity_sold'] / $category['total_orders'] : 0, 1, ',', '.') }}</td>
                                         </tr>
+                                        @if(!empty($category['products']))
+                                            <tr>
+                                                <td colspan="7" class="p-0">
+                                                    <div id="products-{{ $category['id'] }}" class="collapse">
+                                                        <div class="table-responsive">
+                                                            <table class="table table-sm table-bordered bg-light mb-0">
+                                                                <thead>
+                                                                    <tr class="bg-secondary">
+                                                                        <th>ID Sản phẩm</th>
+                                                                        <th>Tên sản phẩm</th>
+                                                                        <th class="text-right">Số lượng bán</th>
+                                                                        <th class="text-right">Doanh thu</th>
+                                                                        <th class="text-right">Giá TB/Sản phẩm</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    @foreach($category['products'] as $product)
+                                                                        <tr>
+                                                                            <td>{{ $product['id'] }}</td>
+                                                                            <td>{{ $product['name'] }}</td>
+                                                                            <td class="text-right">{{ number_format($product['total_quantity'], 0, ',', '.') }}</td>
+                                                                            <td class="text-right">{{ number_format($product['total_revenue'], 0, ',', '.') }}</td>
+                                                                            <td class="text-right">{{ number_format($product['total_quantity'] > 0 ? $product['total_revenue'] / $product['total_quantity'] : 0, 0, ',', '.') }}</td>
+                                                                        </tr>
+                                                                    @endforeach
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        @endif
                                     @endforeach
                                 </tbody>
                             </table>
@@ -509,55 +591,240 @@
                 type: 'bar',
                 data: {
                     labels: categoryNames,
-                    datasets: [{
-                        label: 'Doanh Thu theo Nhóm Hàng',
+                    datasets: [
+                        {
+                            label: 'Doanh Thu (VND)',
                         data: revenueByGroupData,
-                        backgroundColor: chartColors.primary,
+                            backgroundColor: 'rgba(0, 123, 255, 0.2)',
                         borderColor: chartColors.primary,
-                        borderWidth: 1,
+                            borderWidth: 2,
                         barPercentage: 0.6,
-                        categoryPercentage: 0.7
-                    }]
-                },
-                options: { ...commonChartOptions }
-            });
-
-            // 2. Order Count by Product Group (Bar Chart)
-            // We can make this one a line chart if preferred for variety
-            renderChartOrNoDataMessage('orderCountByGroupChart', {
-                type: 'line', // Changed to Line for variety, like daily orders on live sessions
-                data: {
-                    labels: categoryNames,
-                    datasets: [{
-                        label: 'Số Lượng Đơn Hàng',
+                            categoryPercentage: 0.7,
+                            hoverBackgroundColor: 'rgba(0, 123, 255, 0.4)',
+                            hoverBorderColor: chartColors.primary,
+                            hoverBorderWidth: 3,
+                            order: 1
+                        },
+                        {
+                            label: 'Số Đơn Hàng',
                         data: orderCountByGroupData,
-                        backgroundColor: 'rgba(40, 167, 69, 0.2)', // success with alpha
+                            type: 'line',
                         borderColor: chartColors.success,
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            pointBackgroundColor: chartColors.success,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            yAxisID: 'y1',
+                            order: 0
+                        },
+                        {
+                            label: 'Số Lượng Sản Phẩm',
+                            data: quantitySoldByGroupData,
+                            type: 'line',
+                            borderColor: chartColors.warning,
+                            backgroundColor: 'transparent',
                         borderWidth: 2,
-                        fill: true,
-                        tension: 0.3
-                    }]
+                            pointBackgroundColor: chartColors.warning,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            yAxisID: 'y1',
+                            order: 0
+                        }
+                    ]
                 },
-                options: { ...commonChartOptions }
+                options: {
+                    ...commonChartOptions,
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Doanh Thu (VND)',
+                                color: chartColors.primary,
+                                font: {
+                                    size: 12,
+                                    weight: 'bold'
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)',
+                                drawBorder: false,
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    if (value >= 1000000000) return (value / 1000000000).toFixed(1) + ' Tỷ';
+                                    if (value >= 1000000) return (value / 1000000).toFixed(1) + ' Tr';
+                                    if (value >= 1000) return (value / 1000).toFixed(1) + ' K';
+                                    return number_format(value);
+                                },
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Số lượng',
+                                color: chartColors.success,
+                                font: {
+                                    size: 12,
+                                    weight: 'bold'
+                                }
+                            },
+                            grid: {
+                                display: false,
+                                drawBorder: false
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
+                                    return number_format(value);
+                                },
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 11
+                                },
+                                maxRotation: 45,
+                                minRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        ...commonChartOptions.plugins,
+                        tooltip: {
+                            ...commonChartOptions.plugins.tooltip,
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleFont: {
+                                size: 13,
+                                weight: 'bold'
+                            },
+                            bodyFont: {
+                                size: 12
+                            },
+                            padding: 12,
+                            displayColors: true,
+                            callbacks: {
+                                title: function(tooltipItems) {
+                                    return tooltipItems[0].label;
+                                },
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.dataset.yAxisID === 'y') {
+                                        if (context.parsed.y >= 1000000000) {
+                                            label += (context.parsed.y / 1000000000).toFixed(1) + ' Tỷ VND';
+                                        } else if (context.parsed.y >= 1000000) {
+                                            label += (context.parsed.y / 1000000).toFixed(1) + ' Triệu VND';
+                                        } else {
+                                            label += number_format(context.parsed.y) + ' VND';
+                                        }
+                                    } else {
+                                        if (context.parsed.y >= 1000) {
+                                            label += (context.parsed.y / 1000).toFixed(1) + 'K';
+                                        } else {
+                                            label += number_format(context.parsed.y);
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        },
+                        legend: {
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        }
+                    }
+                }
             });
 
-            // 3. Quantity Sold by Product Group (Bar Chart)
-            renderChartOrNoDataMessage('quantitySoldByGroupChart', {
-                type: 'bar',
+            // 2. Revenue Distribution by Product Group (Pie Chart)
+            if (document.getElementById('revenueDistributionChart') && revenueByGroupData.length > 0) {
+                const totalRevenue = revenueByGroupData.reduce((sum, val) => sum + val, 0);
+                if (totalRevenue > 0) {
+                    renderChartOrNoDataMessage('revenueDistributionChart', {
+                        type: 'doughnut', // Changed to doughnut for better visualization
                 data: {
                     labels: categoryNames,
                     datasets: [{
-                        label: 'Số Lượng Sản Phẩm Bán',
-                        data: quantitySoldByGroupData,
-                        backgroundColor: chartColors.info,
-                        borderColor: chartColors.info,
+                                label: 'Phân Bổ Doanh Thu',
+                                data: revenueByGroupData,
+                                backgroundColor: getColors(categoryNames.length).map(color => {
+                                    // Make colors slightly transparent
+                                    return color.replace('rgb', 'rgba').replace(')', ', 0.8)');
+                                }),
+                                borderColor: getColors(categoryNames.length),
                         borderWidth: 1,
-                        barPercentage: 0.6,
-                        categoryPercentage: 0.7
-                    }]
-                },
-                options: { ...commonChartOptions }
-            });
+                                hoverOffset: 8,
+                                hoverBorderWidth: 2
+                            }]
+                        },
+                        options: {
+                            ...pieChartOptions,
+                            cutout: '60%', // Makes the doughnut thinner
+                            radius: '90%', // Makes the chart slightly smaller to fit labels
+                            plugins: {
+                                ...pieChartOptions.plugins,
+                                legend: {
+                                    position: 'right',
+                                    labels: {
+                                        padding: 15,
+                                        usePointStyle: true,
+                                        pointStyle: 'circle',
+                                        font: {
+                                            size: 11
+                                        }
+                                    }
+                                },
+                                tooltip: {
+                                    ...pieChartOptions.plugins.tooltip,
+                                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                    titleFont: {
+                                        size: 13,
+                                        weight: 'bold'
+                                    },
+                                    bodyFont: {
+                                        size: 12
+                                    },
+                                    padding: 12,
+                                    callbacks: {
+                                        label: function(context) {
+                                            const value = context.raw;
+                                            const percentage = ((value / totalRevenue) * 100).toFixed(1);
+                                            return [
+                                                `Doanh thu: ${number_format(value)} VND`,
+                                                `Tỷ lệ: ${percentage}%`
+                                            ];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
 
             // 4. Optional: Order Distribution by Product Group (Pie Chart)
             // This requires an additional canvas in the HTML, e.g., id="orderDistributionByGroupChart"

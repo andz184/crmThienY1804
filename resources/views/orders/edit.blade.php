@@ -143,12 +143,12 @@
                                 <label for="pancake_push_status_display">Trạng thái đẩy Pancake</label>
                                 <input type="text" id="pancake_push_status_display" class="form-control" value="{{ $order->pancake_push_status ? ucfirst(str_replace('_', ' ', $order->pancake_push_status)) : 'Chưa đẩy' }}" readonly>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="pancake_order_id">ID đơn hàng trên Pancake</label>
                                 <input type="text" name="pancake_order_id" id="pancake_order_id" class="form-control" value="{{ $order->pancake_order_id }}" readonly>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="pancake_status">Trạng thái đơn trên Pancake</label>
                                 <select name="pancake_status" id="pancake_status" class="form-control select2 @error('pancake_status') is-invalid @enderror">
@@ -230,56 +230,43 @@
                             <div id="items_container">
                                 @php
                                     $currentItems = old('items', $order->items->map(function($item) {
-                                        // Chuẩn hóa dữ liệu sản phẩm từ Pancake
-                                        $itemData = [
-                                            'code' => $item->pancake_variant_id ?? $item->code ?? null,
-                                            'product_code' => $item->product_code ?? null,
-                                            'name' => $item->product_name ?? $item->name ?? 'Unknown Product',
-                                            'quantity' => $item->quantity,
-                                            'price' => $item->price ?? 0,
-                                            'pancake_variant_id' => $item->pancake_variant_id ?? null,
+                                        // Get data from product_data field
+                                        $productData = is_string($item->product_data) ? json_decode($item->product_data, true) : ($item->product_data ?? []);
+
+                                        return [
+                                            'code' => $productData['variation_id'] ?? $item->code ?? null,
+                                            'product_code' => $productData['product_code'] ?? null,
+                                            'name' => $productData['name'] ?? $item->product_name ?? 'Unknown Product',
+                                            'quantity' => $productData['quantity'] ?? $item->quantity ?? 1,
+                                            'price' => $productData['price'] ?? $item->price ?? 0,
+                                            'pancake_variant_id' => $productData['variation_id'] ?? $item->pancake_variant_id ?? null,
+                                            'variation_detail' => $productData['variation_detail'] ?? null,
+                                            'image_url' => $productData['image_url'] ?? null,
+                                            'added_by_cart_quantity' => $productData['added_by_cart_quantity'] ?? 0,
+                                            'discount_percentage' => $productData['discount_percentage'] ?? 0,
+                                            'measure_group_id' => $productData['measure_group_id'] ?? null,
+                                            'package_count' => $productData['package_count'] ?? 0,
+                                            'return_quantity' => $productData['return_quantity'] ?? 0,
+                                            'total_discount' => $productData['total_discount'] ?? 0,
+                                            'product_data' => $productData // Store the entire product_data for reference
                                         ];
-                                        
-                                        // Extract additional information from product_info if available
-                                        if ($item->product_info) {
-                                            $productInfo = is_string($item->product_info) ? json_decode($item->product_info, true) : $item->product_info;
-                                            
-                                            // Check if product_info contains processed component data
-                                            if (!empty($productInfo['processed_component'])) {
-                                                $component = $productInfo['processed_component'];
-                                                $itemData['code'] = $component['variation_id'] ?? $itemData['code'];
-                                                $itemData['pancake_variant_id'] = $component['variation_id'] ?? $itemData['pancake_variant_id'];
-                                                $itemData['component_id'] = $component['component_id'] ?? null;
-                                                $itemData['quantity'] = $component['quantity'] ?? $itemData['quantity'];
-                                            }
-                                            
-                                            // Check if product_info contains variation_info
-                                            if (!empty($productInfo['processed_variation_info'])) {
-                                                $variationInfo = $productInfo['processed_variation_info'];
-                                                $itemData['name'] = $variationInfo['name'] ?? $itemData['name'];
-                                                $itemData['price'] = $variationInfo['retail_price'] ?? $itemData['price'];
-                                                $itemData['product_id'] = $variationInfo['product_id'] ?? null;
-                                                $itemData['variation_detail'] = $variationInfo['detail'] ?? null;
-                                                
-                                                // Add image if available
-                                                if (!empty($variationInfo['images']) && is_array($variationInfo['images'])) {
-                                                    $itemData['image_url'] = $variationInfo['images'][0] ?? null;
-                                                }
-                                            }
-                                        }
-                                        
-                                        return $itemData;
                                     })->toArray());
                                 @endphp
                                 @foreach($currentItems as $index => $item)
                                 <div class="row item-row mb-2 align-items-center">
-                                    <div class="col-md-3">
+                                    <div class="col-md-2">
                                         <label for="items{{ $index }}_code" class="small">Pancake Variation ID</label>
                                         <input type="text" id="items{{ $index }}_code" name="items[{{ $index }}][code]" class="form-control @error("items.{$index}.code") is-invalid @enderror"
-                                               placeholder="Mã sản phẩm" value="{{ $item['pancake_variant_id'] ?? $item['code'] ?? '' }}">
+                                               placeholder="Pancake Variation ID" value="{{ $item['pancake_variant_id'] ?? '' }}">
                                         @error("items.{$index}.code") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-2">
+                                        <label for="items{{ $index }}_product_code" class="small">Mã sản phẩm</label>
+                                        <input type="text" id="items{{ $index }}_product_code" name="items[{{ $index }}][product_code]" class="form-control @error("items.{$index}.product_code") is-invalid @enderror"
+                                               placeholder="Mã sản phẩm" value="{{ $item['code'] ?? '' }}" readonly>
+                                        @error("items.{$index}.product_code") <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                    <div class="col-md-4">
                                         <label for="items{{ $index }}_name" class="small">Tên sản phẩm</label>
                                         <input type="text" id="items{{ $index }}_name" name="items[{{ $index }}][name]" class="form-control @error("items.{$index}.name") is-invalid @enderror"
                                                placeholder="Tên sản phẩm" value="{{ $item['name'] ?? '' }}">
@@ -294,22 +281,18 @@
                                                placeholder="Đơn giá" value="{{ $item['price'] ?? 0 }}" min="0">
                                         @error("items.{$index}.price") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
-                                    <div class="col-md-2">
+                                    <div class="col-md-1">
                                         <label for="items{{ $index }}_quantity" class="small">Số lượng</label>
                                         <input type="number" id="items{{ $index }}_quantity" name="items[{{ $index }}][quantity]" class="form-control @error("items.{$index}.quantity") is-invalid @enderror item-quantity"
                                                placeholder="Số lượng" value="{{ $item['quantity'] ?? 1 }}" min="1">
                                         @error("items.{$index}.quantity") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
-                                    <div class="col-md-2 align-self-end">
-                                        <input type="hidden" name="items[{{ $index }}][product_code]" value="{{ $item['product_code'] ?? '' }}">
-                                        <input type="hidden" name="items[{{ $index }}][pancake_variant_id]" value="{{ $item['pancake_variant_id'] ?? $item['code'] ?? '' }}">
-                                        @if(isset($item['variation_detail']))
-                                        <input type="hidden" name="items[{{ $index }}][variation_detail]" value="{{ $item['variation_detail'] }}">
-                                        @endif
+                                    <div class="col-md-1 align-self-end">
+                                        <input type="hidden" name="items[{{ $index }}][product_data]" value="{{ json_encode($item['product_data'] ?? []) }}">
                                         @if($index == 0 && count($currentItems) == 1)
                                             {{-- No remove button for the first row if it's the only one --}}
                                         @else
-                                            <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i> Xóa</button>
+                                            <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i></button>
                                         @endif
                                     </div>
                                     @if(!empty($item['image_url']))
@@ -330,7 +313,7 @@
                                     <div class="font-weight-bold">Tổng giá trị: <span id="total_value_display">{{ number_format($order->total_value) }}</span> đ</div>
                                 </div>
                             </div>
-                             @error('items') <div class="text-danger mb-2">{{ $message }}</div> @enderror
+                            @error('items') <div class="text-danger mb-2">{{ $message }}</div> @enderror
                         </div>
                     </div>
 
@@ -431,7 +414,7 @@
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    
+
                                 </div>
                             </div>
                         </div>
@@ -513,10 +496,10 @@
         $('#push_now_btn').on('click', function() {
             const orderId = $(this).data('order-id');
             const button = $(this);
-            
+
             // Disable button and show loading state
             button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy đơn hàng...');
-            
+
             // Confirm push action
             Swal.fire({
                 title: 'Xác nhận đẩy đơn hàng',
@@ -577,7 +560,7 @@
 
         // Item management
         let itemCount = {{ count($order->items) > 0 ? count($order->items) : 1 }};
-        
+
         // Auto-populate billing information if empty
         $('#customer_name, #customer_phone, #customer_email').on('change', function() {
             const fieldMap = {
@@ -585,7 +568,7 @@
                 'customer_phone': 'bill_phone_number',
                 'customer_email': 'bill_email'
             };
-            
+
             const targetField = fieldMap[this.id];
             if (targetField && $('#' + targetField).val() === '') {
                 $('#' + targetField).val($(this).val());
@@ -596,11 +579,15 @@
         $('#add_item_row').click(function() {
             let newRow = `
                 <div class="row item-row mb-2 align-items-center">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="small">Pancake Variation ID</label>
-                        <input type="text" name="items[${itemCount}][code]" class="form-control" placeholder="Mã sản phẩm">
+                        <input type="text" name="items[${itemCount}][code]" class="form-control" placeholder="Pancake Variation ID">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
+                        <label class="small">Mã sản phẩm</label>
+                        <input type="text" name="items[${itemCount}][product_code]" class="form-control" placeholder="Mã sản phẩm" readonly>
+                    </div>
+                    <div class="col-md-4">
                         <label class="small">Tên sản phẩm</label>
                         <input type="text" name="items[${itemCount}][name]" class="form-control" placeholder="Tên sản phẩm">
                     </div>
@@ -608,21 +595,72 @@
                         <label class="small">Đơn giá</label>
                         <input type="number" step="any" name="items[${itemCount}][price]" class="form-control item-price" placeholder="Đơn giá" value="0" min="0">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-1">
                         <label class="small">Số lượng</label>
                         <input type="number" name="items[${itemCount}][quantity]" class="form-control item-quantity" placeholder="Số lượng" value="1" min="1">
                     </div>
-                    <div class="col-md-2 align-self-end">
-                        <input type="hidden" name="items[${itemCount}][product_code]" value="">
-                        <input type="hidden" name="items[${itemCount}][pancake_variant_id]" value="">
-                        <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i> Xóa</button>
+                    <div class="col-md-1 align-self-end">
+                        <input type="hidden" name="items[${itemCount}][product_data]" value="${JSON.stringify({
+                            variation_id: '',
+                            code: '',
+                            name: '',
+                            price: 0,
+                            quantity: 1,
+                            added_by_cart_quantity: 0,
+                            discount_percentage: 0,
+                            measure_group_id: null,
+                            package_count: 0,
+                            return_quantity: 0,
+                            total_discount: 0
+                        })}">
+                        <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
             `;
-            
+
             $('#items_container').append(newRow);
             itemCount++;
-            calculateTotal(); // Recalculate total after adding row
+            calculateTotal();
+
+            // Update product_data when fields change
+            const $newRow = $('#items_container').children().last();
+            $newRow.find('input[type="text"], input[type="number"]').on('change', function() {
+                updateProductData($newRow);
+            });
+        });
+
+        // Function to update product_data when fields change
+        function updateProductData($row) {
+            const code = $row.find('input[name$="[code]"]').val();
+            const name = $row.find('input[name$="[name]"]').val();
+            const price = parseFloat($row.find('input[name$="[price]"]').val()) || 0;
+            const quantity = parseInt($row.find('input[name$="[quantity]"]').val()) || 1;
+
+            const productData = {
+                variation_id: code,
+                code: code, // Set code same as variation_id
+                name: name,
+                price: price,
+                quantity: quantity,
+                added_by_cart_quantity: 0,
+                discount_percentage: 0,
+                measure_group_id: null,
+                package_count: 0,
+                return_quantity: 0,
+                total_discount: 0
+            };
+
+            $row.find('input[name$="[product_data]"]').val(JSON.stringify(productData));
+            // Update product_code field to show the code
+            $row.find('input[name$="[product_code]"]').val(code);
+        }
+
+        // Add change event handler to existing rows
+        $('.item-row').each(function() {
+            const $row = $(this);
+            $row.find('input[type="text"], input[type="number"]').on('change', function() {
+                updateProductData($row);
+            });
         });
 
         // Remove item row
@@ -640,7 +678,7 @@
         $('#shipping_fee').on('change', function() {
             calculateTotal();
         });
-        
+
         // Free shipping checkbox handling
         $('#is_free_shipping').on('change', function() {
             if ($(this).is(':checked')) {
@@ -660,17 +698,17 @@
         // Function to calculate total
         function calculateTotal() {
             let total = 0;
-            
+
             // Sum all line items
             $('.item-row').each(function() {
                 const price = parseFloat($(this).find('.item-price').val()) || 0;
                 const quantity = parseInt($(this).find('.item-quantity').val()) || 0;
                 total += price * quantity;
             });
-            
+
             // Add shipping fee
             const shippingFee = parseFloat($('#shipping_fee').val()) || 0;
-            
+
             // Calculate and display total with shipping
             const grandTotal = total + shippingFee;
             $('#total_value').val(grandTotal);
@@ -716,7 +754,7 @@
                         $('#district_code').append('<option value="'+ code +'">'+ name +'</option>');
                     });
                     $('#district_code').prop('disabled', false);
-                    
+
                     // If we have a previously selected district, select it again
                     @if(old('district_code', $order->district_code))
                     $('#district_code').val('{{ old('district_code', $order->district_code) }}');
@@ -737,7 +775,7 @@
                         $('#ward_code').append('<option value="'+ code +'">'+ name +'</option>');
                     });
                     $('#ward_code').prop('disabled', false);
-                    
+
                     // If we have a previously selected ward, select it again
                     @if(old('ward_code', $order->ward_code))
                     $('#ward_code').val('{{ old('ward_code', $order->ward_code) }}');
@@ -768,7 +806,7 @@
                         $('#pancake_page_id').append('<option value="'+ id +'">'+ name +'</option>');
                     });
                     $('#pancake_page_id').prop('disabled', false);
-                    
+
                     // If we have a previously selected page, select it again
                     @if(old('pancake_page_id', $order->pancake_page_id))
                     $('#pancake_page_id').val('{{ old('pancake_page_id', $order->pancake_page_id) }}');
