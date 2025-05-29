@@ -340,45 +340,16 @@ class OrderController extends Controller
      */
     public function create()
     {
-        $this->authorize('orders.create');
-        $users = User::whereHas('roles', function ($query) {
-            $query->whereIn('name', ['staff', 'manager']);
-        })->pluck('name', 'id');
+        $data = [
+            'provinces' => Province::pluck('name', 'code'),
+            'statuses' => Order::getAllStatuses(),
+            'pancakeShops' => PancakeShop::pluck('name', 'id'),
+            'warehouses' => Warehouse::pluck('name', 'id'),
+            'shippingProviders' => ShippingProvider::pluck('name', 'id'),
+            'users' => User::whereNotNull('pancake_uuid')->orWhereNotNull('pancake_care_uuid')->get(),
+        ];
 
-        $provinces = Province::orderBy('name')->pluck('name', 'code');
-        $warehouses = Warehouse::orderBy('name')->pluck('name', 'id');
-        $shippingProviders = ShippingProvider::orderBy('name')->pluck('name', 'id');
-
-        $pancakeShops = PancakeShop::orderBy('name')->pluck('name', 'id');
-        $pancakePages = PancakePage::orderBy('name')->get()->pluck('name', 'id');
-
-        $allSystemStatuses = Order::getAllStatuses();
-        $allowedStatusCodes = $this->validStatuses;
-        $statusesForView = [];
-        foreach ($allowedStatusCodes as $code) {
-            if (isset($allSystemStatuses[$code])) {
-                $statusesForView[$code] = $allSystemStatuses[$code];
-            } else {
-                $statusesForView[$code] = ucfirst(str_replace(['-', '_'], ' ', $code));
-                Log::warning("Status code '{$code}' from validStatuses not found in Order::getAllStatuses(). Using fallback name.");
-            }
-        }
-
-        $assignableUsersList = User::whereNotNull('pancake_uuid')
-                                    ->where('pancake_uuid', '!=', '')
-                                    ->orderBy('name')
-                                    ->pluck('name', 'id');
-
-        return view('orders.create', [
-            'users' => $users,
-            'provinces' => $provinces,
-            'warehouses' => $warehouses,
-            'statuses' => $statusesForView,
-            'shippingProviders' => $shippingProviders,
-            'pancakeShops' => $pancakeShops,
-            'pancakePages' => $pancakePages,
-            'assignableUsersList' => $assignableUsersList,
-        ]);
+        return view('orders.create', $data);
     }
 
     /**
@@ -399,7 +370,7 @@ class OrderController extends Controller
             'notes' => 'nullable|string',
             'additional_notes' => 'nullable|string',
             'user_id' => 'required|exists:users,id',
-            'assigning_seller_id' => 'nullable|exists:users,id',
+            'assigning_seller_id' => 'required|string', // ID từ Pancake
             'warehouse_id' => 'required|exists:warehouses,id',
             'status' => ['required', 'string', Rule::in($this->validStatuses)],
             'province_code' => 'nullable|string',
@@ -438,7 +409,7 @@ class OrderController extends Controller
         // Add shipping fee to total value
         $totalValue += $validatedData['shipping_fee'] ?? 0;
 
-        $assigningSellerId = $validatedData['assigning_seller_id'] ?? null;
+        $assigningSellerId = $validatedData['assigning_seller_id'];
         $assigningSellerName = null;
         if ($assigningSellerId) {
             $seller = User::find($assigningSellerId);
@@ -446,7 +417,7 @@ class OrderController extends Controller
                 $assigningSellerName = $seller->name;
             } else {
                 // This case should ideally not happen due to 'exists' validation
-                $assigningSellerId = null; 
+                $assigningSellerId = null;
             }
         }
 
@@ -512,66 +483,20 @@ class OrderController extends Controller
      */
     public function edit(Order $order)
     {
-        $this->authorize('orders.edit', $order);
-
-        $users = User::whereHas('roles', function ($query) {
-            $query->whereIn('name', ['staff', 'manager']);
-        })->pluck('name', 'id');
-
-        $provinces = Province::orderBy('name')->pluck('name', 'code');
-        $districts = collect();
-        if ($order->province_code) {
-            $districts = District::where('province_code', $order->province_code)->orderBy('name')->pluck('name', 'code');
-        }
-        $wards = collect();
-        if ($order->district_code) {
-            $wards = Ward::where('district_code', $order->district_code)->orderBy('name')->pluck('name', 'code');
-        }
-
-        $order->load('items');
-        $warehouses = Warehouse::orderBy('name')->pluck('name', 'id');
-        $shippingProviders = ShippingProvider::orderBy('name')->pluck('name', 'id');
-
-        $pancakeShops = PancakeShop::orderBy('name')->pluck('name', 'id');
-        $pancakePages = collect();
-        if ($order->pancake_shop_id) {
-            $pancakePages = PancakePage::where('pancake_shop_table_id', $order->pancake_shop_id)
-                                   ->orderBy('name')->pluck('name', 'id');
-        } else if (old('pancake_shop_id')){
-             $pancakePages = PancakePage::where('pancake_shop_table_id', old('pancake_shop_id'))
-                                   ->orderBy('name')->pluck('name', 'id');
-        }
-
-        $allSystemStatuses = Order::getAllStatuses();
-        $allowedStatusCodes = $this->validStatuses;
-        $statusesForView = [];
-        foreach ($allowedStatusCodes as $code) {
-            if (isset($allSystemStatuses[$code])) {
-                $statusesForView[$code] = $allSystemStatuses[$code];
-            } else {
-                $statusesForView[$code] = ucfirst(str_replace(['-', '_'], ' ', $code));
-                Log::warning("Status code '{$code}' from validStatuses not found in Order::getAllStatuses() for editing order ID {$order->id}. Using fallback name.");
-            }
-        }
-
-        $assignableUsersList = User::whereNotNull('pancake_uuid')
-                                     ->where('pancake_uuid', '!=', '')
-                                     ->orderBy('name')
-                                     ->pluck('name', 'id');
-
-        return view('orders.edit', [
+        $data = [
             'order' => $order,
-            'users' => $users,
-            'provinces' => $provinces,
-            'districts' => $districts,
-            'wards' => $wards,
-            'warehouses' => $warehouses,
-            'statuses' => $statusesForView,
-            'shippingProviders' => $shippingProviders,
-            'pancakeShops' => $pancakeShops,
-            'pancakePages' => $pancakePages,
-            'assignableUsersList' => $assignableUsersList,
-        ]);
+            'provinces' => Province::pluck('name', 'code'),
+            'districts' => $order->province_code ? District::where('province_code', $order->province_code)->pluck('name', 'code') : collect(),
+            'wards' => $order->district_code ? Ward::where('district_code', $order->district_code)->pluck('name', 'code') : collect(),
+            'statuses' => Order::getAllStatuses(),
+            'pancakeShops' => PancakeShop::pluck('name', 'id'),
+            'pancakePages' => $order->pancake_shop_id ? PancakePage::where('shop_id', $order->pancake_shop_id)->pluck('name', 'id') : collect(),
+            'warehouses' => Warehouse::pluck('name', 'id'),
+            'shippingProviders' => ShippingProvider::pluck('name', 'id'),
+            'users' => User::whereNotNull('pancake_uuid')->orWhereNotNull('pancake_care_uuid')->get(),
+        ];
+
+        return view('orders.edit', $data);
     }
 
     /**
@@ -595,7 +520,7 @@ class OrderController extends Controller
             'ward_code' => 'nullable|string',
             'street_address' => 'nullable|string',
             'user_id' => 'required|exists:users,id',
-            'assigning_seller_id' => 'nullable|exists:users,id',
+            'assigning_seller_id' => 'required|string', // ID từ Pancake
             'status' => ['required', 'string', Rule::in($this->validStatuses)],
             'items' => 'required|array|min:1',
             'items.*.code' => 'required|string',

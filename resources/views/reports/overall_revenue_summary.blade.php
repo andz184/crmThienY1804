@@ -36,6 +36,8 @@
             <thead>
                 <tr>
                                     <th>Ngày</th>
+                                    <th>Doanh số dự kiến</th>
+                                    <th>Doanh số thực tế</th>
                                     <th>Doanh thu dự kiến</th>
                                     <th>Doanh thu thực tế</th>
                                     <th>Tổng đơn</th>
@@ -53,6 +55,8 @@
                                 @foreach($revenueData as $data)
                 <tr>
                                     <td>{{ $data['date'] }}</td>
+                                    <td class="text-right">{{ number_format($data['expected_total']) }}</td>
+                                    <td class="text-right">{{ number_format($data['actual_total']) }}</td>
                                     <td class="text-right">{{ number_format($data['expected_revenue']) }}</td>
                                     <td class="text-right">{{ number_format($data['actual_revenue']) }}</td>
                                     <td class="text-center">{{ $data['total_orders'] }}</td>
@@ -70,6 +74,8 @@
             <tfoot>
                 <tr class="font-weight-bold">
                     <td>Tổng cộng</td>
+                    <td class="text-right">{{ number_format($totals['expected_total']) }}</td>
+                    <td class="text-right">{{ number_format($totals['actual_total']) }}</td>
                     <td class="text-right">{{ number_format($totals['expected_revenue']) }}</td>
                     <td class="text-right">{{ number_format($totals['actual_revenue']) }}</td>
                     <td class="text-center">{{ $totals['total_orders'] }}</td>

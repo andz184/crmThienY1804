@@ -303,38 +303,38 @@ class PancakeSyncController extends Controller
     protected function createOrderFromPancakeData(array $orderData)
     {
         // Tìm hoặc tạo khách hàng
-    $customer = null;
-    if (!empty($orderData['customer'])) {
-        $customerData = $orderData['customer'];
+        $customer = null;
+        if (!empty($orderData['customer'])) {
+            $customerData = $orderData['customer'];
 
             // Tìm khách hàng theo Pancake ID
-        if (!empty($customerData['id'])) {
+            if (!empty($customerData['id'])) {
                 $customer = \App\Models\Customer::where('pancake_id', $customerData['id'])->first();
-        }
+            }
 
             // Nếu không tìm thấy, thử tìm theo số điện thoại
-        if (!$customer && !empty($customerData['phone'])) {
+            if (!$customer && !empty($customerData['phone'])) {
                 $customer = \App\Models\Customer::where('phone', $customerData['phone'])->first();
-        }
+            }
 
             // Nếu vẫn không tìm thấy, tạo khách hàng mới
-        if (!$customer) {
+            if (!$customer) {
                 $customer = new \App\Models\Customer();
-            $customer->name = $customerData['name'] ?? '';
+                $customer->name = $customerData['name'] ?? '';
                 $customer->phone = $customerData['phone'] ?? '';
                 $customer->email = $customerData['email'] ?? '';
-            $customer->pancake_id = $customerData['id'] ?? null;
+                $customer->pancake_id = $customerData['id'] ?? null;
                 // Xóa dòng này gây lỗi, column 'address' không tồn tại
                 // $customer->address = $customerData['address'] ?? '';
-            $customer->save();
+                $customer->save();
             }
         }
 
         // Tìm hoặc tạo shop và page
-    $shopId = null;
-    $pageId = null;
+        $shopId = null;
+        $pageId = null;
 
-    if (!empty($orderData['shop_id'])) {
+        if (!empty($orderData['shop_id'])) {
             $shop = \App\Models\PancakeShop::where('pancake_id', $orderData['shop_id'])->first();
             if (!$shop) {
                 // Tạo shop mới nếu không tồn tại
@@ -343,14 +343,14 @@ class PancakeSyncController extends Controller
                 $shop->name = $orderData['shop_name'] ?? 'Shop ' . $orderData['shop_id'];
                 $shop->save();
             }
-        if ($shop) {
-            $shopId = $shop->id;
+            if ($shop) {
+                $shopId = $shop->id;
+            }
         }
-    }
 
         if (!empty($orderData['page_id'])) {
             $page = \App\Models\PancakePage::where('pancake_id', $orderData['page_id'])->first();
-        if (!$page) {
+            if (!$page) {
                 // Tạo page mới nếu không tồn tại
                 $page = new \App\Models\PancakePage();
                 $page->pancake_id = $orderData['page_id'];
@@ -359,10 +359,10 @@ class PancakeSyncController extends Controller
                 $page->pancake_shop_table_id = $shopId; // Liên kết với shop
                 $page->save();
             }
-        if ($page) {
-            $pageId = $page->id;
+            if ($page) {
+                $pageId = $page->id;
+            }
         }
-    }
 
         // Tìm hoặc tạo kho hàng
         $warehouseId = null;
@@ -557,7 +557,9 @@ class PancakeSyncController extends Controller
         // Lưu thời gian tạo đơn từ Pancake
         if (!empty($orderData['inserted_at'])) {
             try {
-                $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
+
+                $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7)->format('Y-m-d H:i:s');
+
             } catch (\Exception $e) {
                 Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
             }
@@ -812,7 +814,8 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 // Update Pancake insertion timestamp if available and not already set
                 if (!empty($orderData['inserted_at']) && empty($order->pancake_inserted_at)) {
                     try {
-                        $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
+                        $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7)->format('Y-m-d H:i:s');
+
                     } catch (\Exception $e) {
                         Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
                     }

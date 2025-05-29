@@ -6,6 +6,8 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\Api\PancakeWebhookController;
+use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\LocationController;
 
 // Authentication Routes
 Route::group([
@@ -82,3 +84,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/dashboard/stats', [App\Http\Controllers\Api\DashboardController::class, 'getStats']);
     // ... existing routes ...
 });
+
+// Customer search
+Route::get('/customers/search', [CustomerController::class, 'search']);
+
+// Location data
+Route::get('/districts', [LocationController::class, 'getDistricts']);
+Route::get('/wards', [LocationController::class, 'getWards']);

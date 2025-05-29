@@ -2509,8 +2509,10 @@ class ReportController extends Controller
             $dailyRevenueQuery = DB::table('orders')
                 ->select(
                     DB::raw('DATE(pancake_inserted_at) as date'),
-                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (5, 6, 15, 4) THEN total_value + shipping_fee ELSE 0 END) as expected_revenue'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as actual_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value + shipping_fee ELSE 0 END) as expected_total'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value ELSE 0 END) as expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as actual_total'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value ELSE 0 END) as actual_revenue'),
                     DB::raw('COUNT(*) as total_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN 1 ELSE 0 END) as successful_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 5 THEN 1 ELSE 0 END) as canceled_orders'),
@@ -2524,8 +2526,10 @@ class ReportController extends Controller
             // Get totals for the entire period
             $totals = DB::table('orders')
                 ->select(
-                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (5, 6, 15, 4) THEN total_value + shipping_fee ELSE 0 END) as total_expected_revenue'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as total_actual_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value + shipping_fee ELSE 0 END) as total_expected_total'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value ELSE 0 END) as total_expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as total_actual_total'),
+                    DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value ELSE 0 END) as total_actual_revenue'),
                     DB::raw('COUNT(*) as total_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN 1 ELSE 0 END) as total_successful_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 5 THEN 1 ELSE 0 END) as total_canceled_orders'),
@@ -2587,7 +2591,9 @@ class ReportController extends Controller
 
                 return [
                     'date' => Carbon::parse($date)->format('d/m/Y'),
+                    'expected_total' => $row->expected_total,
                     'expected_revenue' => $row->expected_revenue,
+                    'actual_total' => $row->actual_total,
                     'actual_revenue' => $row->actual_revenue,
                     'total_orders' => $totalOrders,
                     'successful_orders' => $successfulOrders,
@@ -2622,7 +2628,9 @@ class ReportController extends Controller
                     'links' => $dailyRevenue->links()
                 ],
                 'totals' => [
+                    'expected_total' => $totals->total_expected_total,
                     'expected_revenue' => $totals->total_expected_revenue,
+                    'actual_total' => $totals->total_actual_total,
                     'actual_revenue' => $totals->total_actual_revenue,
                     'total_orders' => $totals->total_orders,
                     'successful_orders' => $totals->total_successful_orders,
@@ -3560,10 +3568,14 @@ class ReportController extends Controller
 
             $dailyStats[$dateStr] = [
                 'date' => $currentDate->format('d/m/Y'),
+                'expected_total' => $dailyOrders->whereNotIn('pancake_status', [5, 6, 15, 4])
+                    ->sum(DB::raw('total_value + shipping_fee')),
                 'expected_revenue' => $dailyOrders->whereNotIn('pancake_status', [5, 6, 15, 4])
+                    ->sum('total_value'),
+                'actual_total' => $dailyOrders->where('pancake_status', 3)
                     ->sum(DB::raw('total_value + shipping_fee')),
                 'actual_revenue' => $dailyOrders->where('pancake_status', 3)
-                    ->sum(DB::raw('total_value + shipping_fee')),
+                    ->sum('total_value'),
                 'total_orders' => $dailyOrders->count(),
                 'successful_orders' => $dailyOrders->where('pancake_status', 3)->count(),
                 'canceled_orders' => $dailyOrders->where('pancake_status', Order::PANCAKE_STATUS_CANCELED)->count(),
@@ -3654,12 +3666,14 @@ class ReportController extends Controller
             ->toArray();
 
         $summary = [
+            'expected_total' => array_sum(array_column($dailyStats, 'expected_total')),
             'expected_revenue' => array_sum(array_column($dailyStats, 'expected_revenue')),
+            'actual_total' => array_sum(array_column($dailyStats, 'actual_total')),
             'actual_revenue' => array_sum(array_column($dailyStats, 'actual_revenue')),
             'total_orders' => $totalOrders,
-                'successful_orders' => $successfulOrders,
-                'canceled_orders' => $canceledOrders,
-                'delivering_orders' => $deliveringOrders,
+            'successful_orders' => $successfulOrders,
+            'canceled_orders' => $canceledOrders,
+            'delivering_orders' => $deliveringOrders,
             'conversion_rate' => $totalOrders > 0 ? ($successfulOrders / ($totalOrders - $deliveringOrders)) * 100 : 0,
             'cancellation_rate' => $totalOrders > 0 ? ($canceledOrders / $totalOrders) * 100 : 0,
             'new_customers' => $customerStats->new_customers ?? 0,

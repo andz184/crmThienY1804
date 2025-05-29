@@ -143,12 +143,12 @@
                                 <label for="pancake_push_status_display">Trạng thái đẩy Pancake</label>
                                 <input type="text" id="pancake_push_status_display" class="form-control" value="{{ $order->pancake_push_status ? ucfirst(str_replace('_', ' ', $order->pancake_push_status)) : 'Chưa đẩy' }}" readonly>
                             </div>
-                            
+
                             <div class="form-group">
-                                <label for="pancake_order_id">ID đơn hàng trên Pancake</label>
-                                <input type="text" name="pancake_order_id" id="pancake_order_id" class="form-control" value="{{ $order->pancake_order_id }}" readonly>
+                                <label for="pancake_order_id">Mã đơn hàng Pancake</label>
+                                <input type="text" id="pancake_order_id" class="form-control" value="{{ $order->pancake_order_id }}" readonly>
                             </div>
-                            
+
                             <div class="form-group">
                                 <label for="pancake_status">Trạng thái đơn trên Pancake</label>
                                 <select name="pancake_status" id="pancake_status" class="form-control select2 @error('pancake_status') is-invalid @enderror">
@@ -188,110 +188,64 @@
                                 <input type="text" id="order_code_display" class="form-control" value="{{ $order->order_code }}" readonly>
                             </div>
                             <div class="row">
+
                                 <div class="col-md-6">
                                     <div class="form-group">
-                                        <label for="user_id">Nhân viên Sale (Xử lý chính) <span class="text-danger">*</span></label>
-                                        <select name="user_id" id="user_id" class="form-control select2 @error('user_id') is-invalid @enderror" required>
-                                            <option value="">-- Chọn nhân viên --</option>
-                                            @foreach($users as $id => $name)
-                                                <option value="{{ $id }}" {{ old('user_id', $order->user_id) == $id ? 'selected' : '' }}>{{ $name }}</option>
+                                        <label for="assigning_seller_id">Nhân viên Sale (Pancake) <span class="text-danger">*</span></label>
+                                        <select name="assigning_seller_id" id="assigning_seller_id" class="form-control select2 @error('assigning_seller_id') is-invalid @enderror" required>
+                                            <option value="">-- Chọn nhân viên sale --</option>
+                                            @foreach($users->whereNotNull('pancake_uuid') as $user)
+                                                <option value="{{ $user->pancake_uuid }}" {{ old('assigning_seller_id', $order->assigning_seller_id) == $user->pancake_uuid ? 'selected' : '' }}>
+                                                    {{ $user->name }}
+                                                </option>
                                             @endforeach
-                                        </select>
-                                        @error('user_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label for="assigning_seller_id">Nhân viên Sale được gán (Pancake)</label>
-                                        <select name="assigning_seller_id" id="assigning_seller_id" class="form-control select2 @error('assigning_seller_id') is-invalid @enderror">
-                                            <option value="">-- Không gán --</option>
-                                            @if(isset($assignableUsersList))
-                                                @foreach($assignableUsersList as $id => $name)
-                                                    <option value="{{ $id }}" {{ old('assigning_seller_id', $order->assigning_seller_id) == $id ? 'selected' : '' }}>{{ $name }}</option>
-                                                @endforeach
-                                            @endif
                                         </select>
                                         @error('assigning_seller_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                 </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label for="assigning_care_id">Nhân viên Hỗ trợ (Pancake) <span class="text-danger">*</span></label>
+                                        <select name="assigning_care_id" id="assigning_care_id" class="form-control select2 @error('assigning_care_id') is-invalid @enderror" required>
+                                            <option value="">-- Chọn nhân viên hỗ trợ --</option>
+                                            @foreach($users->whereNotNull('pancake_care_uuid') as $user)
+                                                <option value="{{ $user->pancake_care_uuid }}" {{ old('assigning_care_id', $order->assigning_care_id) == $user->pancake_care_uuid ? 'selected' : '' }}>
+                                                    {{ $user->name }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @error('assigning_care_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="status">Trạng thái đơn hàng <span class="text-danger">*</span></label>
-                                <select name="status" id="status" class="form-control select2 @error('status') is-invalid @enderror" required>
-                                    <option value="">-- Chọn trạng thái --</option>
-                                    @foreach($statuses as $statusCode => $statusName)
-                                        <option value="{{ $statusCode }}" {{ old('status', $order->status) == $statusCode ? 'selected' : '' }}>{{ $statusName }}</option>
-                                    @endforeach
-                                </select>
-                                @error('status') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
+
                             <hr>
                             <h5>Sản phẩm <span class="text-danger">*</span></h5>
                             <div id="items_container">
                                 @php
-                                    $currentItems = old('items', $order->items->map(function($item) {
-                                        // Chuẩn hóa dữ liệu sản phẩm từ Pancake
-                                        $itemData = [
-                                            'code' => $item->pancake_variant_id ?? $item->code ?? null,
-                                            'product_code' => $item->product_code ?? null,
-                                            'name' => $item->product_name ?? $item->name ?? 'Unknown Product',
-                                            'quantity' => $item->quantity,
-                                            'price' => $item->price ?? 0,
-                                            'pancake_variant_id' => $item->pancake_variant_id ?? null,
-                                        ];
-                                        
-                                        // Extract additional information from product_info if available
-                                        if ($item->product_info) {
-                                            $productInfo = is_string($item->product_info) ? json_decode($item->product_info, true) : $item->product_info;
-                                            
-                                            // Check if product_info contains processed component data
-                                            if (!empty($productInfo['processed_component'])) {
-                                                $component = $productInfo['processed_component'];
-                                                $itemData['code'] = $component['variation_id'] ?? $itemData['code'];
-                                                $itemData['pancake_variant_id'] = $component['variation_id'] ?? $itemData['pancake_variant_id'];
-                                                $itemData['component_id'] = $component['component_id'] ?? null;
-                                                $itemData['quantity'] = $component['quantity'] ?? $itemData['quantity'];
-                                            }
-                                            
-                                            // Check if product_info contains variation_info
-                                            if (!empty($productInfo['processed_variation_info'])) {
-                                                $variationInfo = $productInfo['processed_variation_info'];
-                                                $itemData['name'] = $variationInfo['name'] ?? $itemData['name'];
-                                                $itemData['price'] = $variationInfo['retail_price'] ?? $itemData['price'];
-                                                $itemData['product_id'] = $variationInfo['product_id'] ?? null;
-                                                $itemData['variation_detail'] = $variationInfo['detail'] ?? null;
-                                                
-                                                // Add image if available
-                                                if (!empty($variationInfo['images']) && is_array($variationInfo['images'])) {
-                                                    $itemData['image_url'] = $variationInfo['images'][0] ?? null;
-                                                }
-                                            }
-                                        }
-                                        
-                                        return $itemData;
-                                    })->toArray());
+                                    $currentItems = old('items', json_decode($order->products_data, true) ?? []);
                                 @endphp
                                 @foreach($currentItems as $index => $item)
                                 <div class="row item-row mb-2 align-items-center">
                                     <div class="col-md-3">
                                         <label for="items{{ $index }}_code" class="small">Pancake Variation ID</label>
                                         <input type="text" id="items{{ $index }}_code" name="items[{{ $index }}][code]" class="form-control @error("items.{$index}.code") is-invalid @enderror"
-                                               placeholder="Mã sản phẩm" value="{{ $item['pancake_variant_id'] ?? $item['code'] ?? '' }}">
+                                               placeholder="Mã sản phẩm" value="{{ $item['variation_id'] ?? '' }}">
                                         @error("items.{$index}.code") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                     <div class="col-md-3">
                                         <label for="items{{ $index }}_name" class="small">Tên sản phẩm</label>
                                         <input type="text" id="items{{ $index }}_name" name="items[{{ $index }}][name]" class="form-control @error("items.{$index}.name") is-invalid @enderror"
-                                               placeholder="Tên sản phẩm" value="{{ $item['name'] ?? '' }}">
-                                        @if(!empty($item['variation_detail']))
-                                        <small class="text-muted">{{ $item['variation_detail'] }}</small>
+                                               placeholder="Tên sản phẩm" value="{{ $item['variation_info']['name'] ?? $item['name'] ?? '' }}">
+                                        @if(!empty($item['variation_info']['detail']))
+                                        <small class="text-muted">{{ $item['variation_info']['detail'] }}</small>
                                         @endif
                                         @error("items.{$index}.name") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                     <div class="col-md-2">
                                         <label for="items{{ $index }}_price" class="small">Đơn giá</label>
                                         <input type="number" id="items{{ $index }}_price" step="any" name="items[{{ $index }}][price]" class="form-control @error("items.{$index}.price") is-invalid @enderror item-price"
-                                               placeholder="Đơn giá" value="{{ $item['price'] ?? 0 }}" min="0">
+                                               placeholder="Đơn giá" value="{{ $item['variation_info']['retail_price'] ?? $item['price'] ?? 0 }}" min="0">
                                         @error("items.{$index}.price") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                     <div class="col-md-2">
@@ -301,10 +255,10 @@
                                         @error("items.{$index}.quantity") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
                                     <div class="col-md-2 align-self-end">
-                                        <input type="hidden" name="items[{{ $index }}][product_code]" value="{{ $item['product_code'] ?? '' }}">
-                                        <input type="hidden" name="items[{{ $index }}][pancake_variant_id]" value="{{ $item['pancake_variant_id'] ?? $item['code'] ?? '' }}">
-                                        @if(isset($item['variation_detail']))
-                                        <input type="hidden" name="items[{{ $index }}][variation_detail]" value="{{ $item['variation_detail'] }}">
+                                        <input type="hidden" name="items[{{ $index }}][product_id]" value="{{ $item['product_id'] ?? '' }}">
+                                        <input type="hidden" name="items[{{ $index }}][variation_id]" value="{{ $item['variation_id'] ?? '' }}">
+                                        @if(isset($item['variation_info']))
+                                        <input type="hidden" name="items[{{ $index }}][variation_info]" value="{{ json_encode($item['variation_info']) }}">
                                         @endif
                                         @if($index == 0 && count($currentItems) == 1)
                                             {{-- No remove button for the first row if it's the only one --}}
@@ -312,9 +266,9 @@
                                             <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i> Xóa</button>
                                         @endif
                                     </div>
-                                    @if(!empty($item['image_url']))
+                                    @if(!empty($item['variation_info']['images'][0]))
                                     <div class="col-12 mt-2">
-                                        <img src="{{ $item['image_url'] }}" alt="{{ $item['name'] }}" class="img-thumbnail" style="max-height: 80px;">
+                                        <img src="{{ $item['variation_info']['images'][0] }}" alt="{{ $item['variation_info']['name'] ?? $item['name'] }}" class="img-thumbnail" style="max-height: 80px;">
                                     </div>
                                     @endif
                                 </div>
@@ -431,7 +385,7 @@
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    
+
                                 </div>
                             </div>
                         </div>
@@ -513,10 +467,10 @@
         $('#push_now_btn').on('click', function() {
             const orderId = $(this).data('order-id');
             const button = $(this);
-            
+
             // Disable button and show loading state
             button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy đơn hàng...');
-            
+
             // Confirm push action
             Swal.fire({
                 title: 'Xác nhận đẩy đơn hàng',
@@ -577,7 +531,7 @@
 
         // Item management
         let itemCount = {{ count($order->items) > 0 ? count($order->items) : 1 }};
-        
+
         // Auto-populate billing information if empty
         $('#customer_name, #customer_phone, #customer_email').on('change', function() {
             const fieldMap = {
@@ -585,7 +539,7 @@
                 'customer_phone': 'bill_phone_number',
                 'customer_email': 'bill_email'
             };
-            
+
             const targetField = fieldMap[this.id];
             if (targetField && $('#' + targetField).val() === '') {
                 $('#' + targetField).val($(this).val());
@@ -619,7 +573,7 @@
                     </div>
                 </div>
             `;
-            
+
             $('#items_container').append(newRow);
             itemCount++;
             calculateTotal(); // Recalculate total after adding row
@@ -640,7 +594,7 @@
         $('#shipping_fee').on('change', function() {
             calculateTotal();
         });
-        
+
         // Free shipping checkbox handling
         $('#is_free_shipping').on('change', function() {
             if ($(this).is(':checked')) {
@@ -660,17 +614,17 @@
         // Function to calculate total
         function calculateTotal() {
             let total = 0;
-            
+
             // Sum all line items
             $('.item-row').each(function() {
                 const price = parseFloat($(this).find('.item-price').val()) || 0;
                 const quantity = parseInt($(this).find('.item-quantity').val()) || 0;
                 total += price * quantity;
             });
-            
+
             // Add shipping fee
             const shippingFee = parseFloat($('#shipping_fee').val()) || 0;
-            
+
             // Calculate and display total with shipping
             const grandTotal = total + shippingFee;
             $('#total_value').val(grandTotal);
@@ -716,7 +670,7 @@
                         $('#district_code').append('<option value="'+ code +'">'+ name +'</option>');
                     });
                     $('#district_code').prop('disabled', false);
-                    
+
                     // If we have a previously selected district, select it again
                     @if(old('district_code', $order->district_code))
                     $('#district_code').val('{{ old('district_code', $order->district_code) }}');
@@ -737,7 +691,7 @@
                         $('#ward_code').append('<option value="'+ code +'">'+ name +'</option>');
                     });
                     $('#ward_code').prop('disabled', false);
-                    
+
                     // If we have a previously selected ward, select it again
                     @if(old('ward_code', $order->ward_code))
                     $('#ward_code').val('{{ old('ward_code', $order->ward_code) }}');
@@ -768,7 +722,7 @@
                         $('#pancake_page_id').append('<option value="'+ id +'">'+ name +'</option>');
                     });
                     $('#pancake_page_id').prop('disabled', false);
-                    
+
                     // If we have a previously selected page, select it again
                     @if(old('pancake_page_id', $order->pancake_page_id))
                     $('#pancake_page_id').val('{{ old('pancake_page_id', $order->pancake_page_id) }}');
