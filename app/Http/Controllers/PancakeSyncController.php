@@ -2721,21 +2721,22 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'page_size'   => 100
             ];
 
-            $apiParams['startDateTime'] = ''.strtotime('2025-03-01').'';
+            // Hardcode startDateTime to Monday of the current week
+            $apiParams['startDateTime'] = (string)Carbon::now()->startOfWeek(Carbon::MONDAY)->timestamp;
+            // Hardcode endDateTime to the current moment
+            $apiParams['endDateTime'] = (string)Carbon::now()->timestamp;
 
-            $apiParams['endDateTime'] = ''.strtotime('2025-05-24').'';
+            // Remove or comment out the previous logic for startDateTime and endDateTime
+            // if ($startDateTime) {
+            //     $apiParams['startDateTime'] = $startDateTime;
+            // }
 
-            // Only include date parameters if provided
-            if ($startDateTime) {
-                $apiParams['startDateTime'] = $startDateTime;
-            }
-
-            if ($endDateTime) {
-                $apiParams['endDateTime'] = $endDateTime;
-            }
+            // if ($endDateTime) {
+            //     $apiParams['endDateTime'] = $endDateTime;
+            // }
 
             // Log API request
-            Log::info('Starting Pancake API sync', [
+            Log::info('Starting Pancake API sync for current week', [
                 'params' => $apiParams,
                 'cache_key' => $cacheKey
             ]);
@@ -2898,6 +2899,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
      */
     private function setOrderItemFields(OrderItem $orderItem, array $itemData): OrderItem
     {
+
         // Process component structure if it exists (new API format)
         if (!empty($itemData['components']) && is_array($itemData['components'])) {
             foreach ($itemData['components'] as $component) {
@@ -3035,59 +3037,6 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
         return $orderItem;
     }
-
-
-    /**
-     * Synchronize orders from Pancake by date
-     * This method is called from the Artisan command
-     *
-     * @param \Carbon\Carbon $date
-     * @return array
-     */
-    // public function syncOrdersByDate($date)
-    // {
-    //     // Increase execution time limit to 2 hours and memory limit to 1GB
-    //     set_time_limit(7200);
-    //     ini_set('memory_limit', '1024M');
-
-    //     // Create a request with the date to reuse the existing method
-    //     $request = new \Illuminate\Http\Request();
-    //     $request->merge(['date' => $date->format('Y-m-d')]);
-
-    //     try {
-    //         // Call the existing implementation
-
-    //         $result = $this->syncOrdersByDateManual($request);
-
-    //         // Convert response to array format expected by the command
-    //         if ($result->getStatusCode() === 200) {
-    //             $data = json_decode($result->getContent(), true);
-    //             return $data;
-    //         } else {
-    //             return [
-    //                 'success' => false,
-    //                 'message' => 'Đồng bộ thất bại với mã lỗi: ' . $result->getStatusCode(),
-    //                 'total_synced' => 0,
-    //                 'new_orders' => 0,
-    //                 'updated_orders' => 0
-    //             ];
-    //         }
-    //     } catch (\Exception $e) {
-    //         Log::error('Lỗi trong quá trình đồng bộ đơn hàng theo ngày', [
-    //             'date' => $date->format('Y-m-d'),
-    //             'error' => $e->getMessage(),
-    //             'trace' => $e->getTraceAsString()
-    //         ]);
-
-    //         return [
-    //             'success' => false,
-    //             'message' => 'Đã xảy ra lỗi: ' . $e->getMessage(),
-    //             'total_synced' => 0,
-    //             'new_orders' => 0,
-    //             'updated_orders' => 0
-    //         ];
-    //     }
-    // }
 
 
     /**

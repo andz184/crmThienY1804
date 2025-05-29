@@ -223,17 +223,52 @@
                             <h5>Sản phẩm <span class="text-danger">*</span></h5>
                             <div id="items_container">
                                 @php
+<<<<<<< HEAD
                                     $currentItems = old('items', json_decode($order->products_data, true) ?? []);
+=======
+                                    $currentItems = old('items', $order->items->map(function($item) {
+                                        // Get data from product_data field
+                                        $productData = is_string($item->product_data) ? json_decode($item->product_data, true) : ($item->product_data ?? []);
+
+                                        return [
+                                            'code' => $productData['variation_id'] ?? $item->code ?? null,
+                                            'product_code' => $productData['product_code'] ?? null,
+                                            'name' => $productData['name'] ?? $item->product_name ?? 'Unknown Product',
+                                            'quantity' => $productData['quantity'] ?? $item->quantity ?? 1,
+                                            'price' => $productData['price'] ?? $item->price ?? 0,
+                                            'pancake_variant_id' => $productData['variation_id'] ?? $item->pancake_variant_id ?? null,
+                                            'variation_detail' => $productData['variation_detail'] ?? null,
+                                            'image_url' => $productData['image_url'] ?? null,
+                                            'added_by_cart_quantity' => $productData['added_by_cart_quantity'] ?? 0,
+                                            'discount_percentage' => $productData['discount_percentage'] ?? 0,
+                                            'measure_group_id' => $productData['measure_group_id'] ?? null,
+                                            'package_count' => $productData['package_count'] ?? 0,
+                                            'return_quantity' => $productData['return_quantity'] ?? 0,
+                                            'total_discount' => $productData['total_discount'] ?? 0,
+                                            'product_data' => $productData // Store the entire product_data for reference
+                                        ];
+                                    })->toArray());
+>>>>>>> e19b00653c82d7dfc73e2eaf4d2d78f3cbb7b643
                                 @endphp
                                 @foreach($currentItems as $index => $item)
                                 <div class="row item-row mb-2 align-items-center">
-                                    <div class="col-md-3">
+                                    <div class="col-md-2">
                                         <label for="items{{ $index }}_code" class="small">Pancake Variation ID</label>
                                         <input type="text" id="items{{ $index }}_code" name="items[{{ $index }}][code]" class="form-control @error("items.{$index}.code") is-invalid @enderror"
+<<<<<<< HEAD
                                                placeholder="Mã sản phẩm" value="{{ $item['variation_id'] ?? '' }}">
+=======
+                                               placeholder="Pancake Variation ID" value="{{ $item['pancake_variant_id'] ?? '' }}">
+>>>>>>> e19b00653c82d7dfc73e2eaf4d2d78f3cbb7b643
                                         @error("items.{$index}.code") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-2">
+                                        <label for="items{{ $index }}_product_code" class="small">Mã sản phẩm</label>
+                                        <input type="text" id="items{{ $index }}_product_code" name="items[{{ $index }}][product_code]" class="form-control @error("items.{$index}.product_code") is-invalid @enderror"
+                                               placeholder="Mã sản phẩm" value="{{ $item['code'] ?? '' }}" readonly>
+                                        @error("items.{$index}.product_code") <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                                    <div class="col-md-4">
                                         <label for="items{{ $index }}_name" class="small">Tên sản phẩm</label>
                                         <input type="text" id="items{{ $index }}_name" name="items[{{ $index }}][name]" class="form-control @error("items.{$index}.name") is-invalid @enderror"
                                                placeholder="Tên sản phẩm" value="{{ $item['variation_info']['name'] ?? $item['name'] ?? '' }}">
@@ -248,22 +283,27 @@
                                                placeholder="Đơn giá" value="{{ $item['variation_info']['retail_price'] ?? $item['price'] ?? 0 }}" min="0">
                                         @error("items.{$index}.price") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
-                                    <div class="col-md-2">
+                                    <div class="col-md-1">
                                         <label for="items{{ $index }}_quantity" class="small">Số lượng</label>
                                         <input type="number" id="items{{ $index }}_quantity" name="items[{{ $index }}][quantity]" class="form-control @error("items.{$index}.quantity") is-invalid @enderror item-quantity"
                                                placeholder="Số lượng" value="{{ $item['quantity'] ?? 1 }}" min="1">
                                         @error("items.{$index}.quantity") <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
+<<<<<<< HEAD
                                     <div class="col-md-2 align-self-end">
                                         <input type="hidden" name="items[{{ $index }}][product_id]" value="{{ $item['product_id'] ?? '' }}">
                                         <input type="hidden" name="items[{{ $index }}][variation_id]" value="{{ $item['variation_id'] ?? '' }}">
                                         @if(isset($item['variation_info']))
                                         <input type="hidden" name="items[{{ $index }}][variation_info]" value="{{ json_encode($item['variation_info']) }}">
                                         @endif
+=======
+                                    <div class="col-md-1 align-self-end">
+                                        <input type="hidden" name="items[{{ $index }}][product_data]" value="{{ json_encode($item['product_data'] ?? []) }}">
+>>>>>>> e19b00653c82d7dfc73e2eaf4d2d78f3cbb7b643
                                         @if($index == 0 && count($currentItems) == 1)
                                             {{-- No remove button for the first row if it's the only one --}}
                                         @else
-                                            <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i> Xóa</button>
+                                            <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i></button>
                                         @endif
                                     </div>
                                     @if(!empty($item['variation_info']['images'][0]))
@@ -284,7 +324,7 @@
                                     <div class="font-weight-bold">Tổng giá trị: <span id="total_value_display">{{ number_format($order->total_value) }}</span> đ</div>
                                 </div>
                             </div>
-                             @error('items') <div class="text-danger mb-2">{{ $message }}</div> @enderror
+                            @error('items') <div class="text-danger mb-2">{{ $message }}</div> @enderror
                         </div>
                     </div>
 
@@ -550,11 +590,15 @@
         $('#add_item_row').click(function() {
             let newRow = `
                 <div class="row item-row mb-2 align-items-center">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="small">Pancake Variation ID</label>
-                        <input type="text" name="items[${itemCount}][code]" class="form-control" placeholder="Mã sản phẩm">
+                        <input type="text" name="items[${itemCount}][code]" class="form-control" placeholder="Pancake Variation ID">
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
+                        <label class="small">Mã sản phẩm</label>
+                        <input type="text" name="items[${itemCount}][product_code]" class="form-control" placeholder="Mã sản phẩm" readonly>
+                    </div>
+                    <div class="col-md-4">
                         <label class="small">Tên sản phẩm</label>
                         <input type="text" name="items[${itemCount}][name]" class="form-control" placeholder="Tên sản phẩm">
                     </div>
@@ -562,21 +606,72 @@
                         <label class="small">Đơn giá</label>
                         <input type="number" step="any" name="items[${itemCount}][price]" class="form-control item-price" placeholder="Đơn giá" value="0" min="0">
                     </div>
-                    <div class="col-md-2">
+                    <div class="col-md-1">
                         <label class="small">Số lượng</label>
                         <input type="number" name="items[${itemCount}][quantity]" class="form-control item-quantity" placeholder="Số lượng" value="1" min="1">
                     </div>
-                    <div class="col-md-2 align-self-end">
-                        <input type="hidden" name="items[${itemCount}][product_code]" value="">
-                        <input type="hidden" name="items[${itemCount}][pancake_variant_id]" value="">
-                        <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i> Xóa</button>
+                    <div class="col-md-1 align-self-end">
+                        <input type="hidden" name="items[${itemCount}][product_data]" value="${JSON.stringify({
+                            variation_id: '',
+                            code: '',
+                            name: '',
+                            price: 0,
+                            quantity: 1,
+                            added_by_cart_quantity: 0,
+                            discount_percentage: 0,
+                            measure_group_id: null,
+                            package_count: 0,
+                            return_quantity: 0,
+                            total_discount: 0
+                        })}">
+                        <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i></button>
                     </div>
                 </div>
             `;
 
             $('#items_container').append(newRow);
             itemCount++;
-            calculateTotal(); // Recalculate total after adding row
+            calculateTotal();
+
+            // Update product_data when fields change
+            const $newRow = $('#items_container').children().last();
+            $newRow.find('input[type="text"], input[type="number"]').on('change', function() {
+                updateProductData($newRow);
+            });
+        });
+
+        // Function to update product_data when fields change
+        function updateProductData($row) {
+            const code = $row.find('input[name$="[code]"]').val();
+            const name = $row.find('input[name$="[name]"]').val();
+            const price = parseFloat($row.find('input[name$="[price]"]').val()) || 0;
+            const quantity = parseInt($row.find('input[name$="[quantity]"]').val()) || 1;
+
+            const productData = {
+                variation_id: code,
+                code: code, // Set code same as variation_id
+                name: name,
+                price: price,
+                quantity: quantity,
+                added_by_cart_quantity: 0,
+                discount_percentage: 0,
+                measure_group_id: null,
+                package_count: 0,
+                return_quantity: 0,
+                total_discount: 0
+            };
+
+            $row.find('input[name$="[product_data]"]').val(JSON.stringify(productData));
+            // Update product_code field to show the code
+            $row.find('input[name$="[product_code]"]').val(code);
+        }
+
+        // Add change event handler to existing rows
+        $('.item-row').each(function() {
+            const $row = $(this);
+            $row.find('input[type="text"], input[type="number"]').on('change', function() {
+                updateProductData($row);
+            });
         });
 
         // Remove item row

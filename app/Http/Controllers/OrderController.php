@@ -1113,4 +1113,47 @@ class OrderController extends Controller
 
         return view('orders.consolidated', compact('orders', 'statuses', 'pancakeConfig'));
     }
+
+    protected function processOrderItems($order, $items)
+    {
+        foreach ($items as $itemData) {
+            // Decode product_data if it exists
+            $productData = !empty($itemData['product_data']) ?
+                (is_string($itemData['product_data']) ? json_decode($itemData['product_data'], true) : $itemData['product_data'])
+                : [];
+
+            // Create or update order item
+            $orderItem = $order->items()->updateOrCreate(
+                [
+                    'id' => $itemData['id'] ?? null,
+                ],
+                [
+                    'product_name' => $itemData['name'] ?? 'Unknown Product',
+                    'quantity' => $itemData['quantity'] ?? 1,
+                    'price' => $itemData['price'] ?? 0,
+                    'code' => $itemData['code'] ?? null,
+                    'product_code' => $itemData['product_code'] ?? null,
+                    'product_data' => $productData, // Store the complete product data
+                ]
+            );
+        }
+
+        // Remove items that are no longer in the request
+        $itemIds = array_filter(array_column($items, 'id'));
+        if (!empty($itemIds)) {
+            $order->items()->whereNotIn('id', $itemIds)->delete();
+        }
+    }
+
+    protected function recalculateOrderTotal(Order $order)
+    {
+        $total = $order->items->sum(function ($item) {
+            return $item->price * $item->quantity;
+        });
+
+        // Add shipping fee if exists
+        $total += $order->shipping_fee ?? 0;
+
+        $order->update(['total_value' => $total]);
+    }
 }
