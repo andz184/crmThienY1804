@@ -28,12 +28,10 @@
                     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
                         <h3 class="card-title m-0 font-weight-bold text-primary">
                             <i class="fas fa-shopping-cart mr-2"></i>Sản phẩm
+                            @if($order->pancake_order_id)
+                                <small class="text-muted">(Tự động cập nhật lên Pancake)</small>
+                            @endif
                         </h3>
-                        @if($order->pancake_order_id)
-                            <button type="button" class="btn btn-info btn-sm update-on-pancake" data-order-id="{{ $order->id }}">
-                                <i class="fas fa-sync-alt"></i> Cập nhật lên Pancake
-                            </button>
-                        @endif
                     </div>
                     <div class="card-body">
                     {{-- Product Source Selection --}}
@@ -1407,6 +1405,31 @@ textarea.form-control {
             });
         });
 
+        // If order has pancake_order_id, set up auto-update
+        @if($order->pancake_order_id)
+        $('#orderCreateForm').on('submit', function(e) {
+            // Don't prevent form submission, but trigger Pancake update after successful save
+            $(this).one('ajaxSuccess', function(event, xhr, settings) {
+                $.ajax({
+                    url: "{{ route('orders.updateOnPancake', $order->id) }}",
+                    type: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            toastr.success('Đơn hàng đã được cập nhật trên Pancake');
+                        } else {
+                            toastr.error('Không thể cập nhật đơn hàng trên Pancake: ' + response.message);
+                        }
+                    },
+                    error: function(xhr) {
+                        toastr.error('Lỗi khi cập nhật đơn hàng trên Pancake');
+                    }
+                });
+            });
+        });
+        @endif
     });
     </script>
 @endpush

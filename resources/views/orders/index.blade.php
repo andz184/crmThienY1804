@@ -633,37 +633,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Initialize Push to Pancake buttons
+    // Handle push to Pancake
     $(document).on('click', '.btn-push-pancake', function(e) {
         e.preventDefault();
-        var orderId = $(this).data('order-id');
-        var url = $(this).data('url');
-        var button = $(this);
+        const btn = $(this);
+        const url = btn.data('url');
+        const orderId = btn.data('order-id');
+        const isUpdate = btn.find('i').hasClass('fa-sync');
 
         Swal.fire({
-            title: 'Xác nhận đẩy đơn?',
-            text: "Bạn có chắc chắn muốn đẩy đơn hàng #" + orderId + " lên Pancake không?",
+            title: isUpdate ? 'Xác nhận cập nhật?' : 'Xác nhận đẩy đơn?',
+            text: isUpdate
+                ? "Bạn có chắc chắn muốn cập nhật đơn hàng #" + orderId + " trên Pancake không?"
+                : "Bạn có chắc chắn muốn đẩy đơn hàng #" + orderId + " lên Pancake không?",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#3085d6',
             cancelButtonColor: '#d33',
-            confirmButtonText: 'Đồng ý, đẩy ngay!',
+            confirmButtonText: isUpdate ? 'Đồng ý, cập nhật!' : 'Đồng ý, đẩy ngay!',
             cancelButtonText: 'Hủy bỏ'
         }).then((result) => {
             if (result.isConfirmed) {
-                button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy...');
+                // Disable button and show loading state
+                btn.prop('disabled', true)
+                   .html('<i class="fas fa-spinner fa-spin"></i> ' + (isUpdate ? 'Đang cập nhật...' : 'Đang đẩy...'));
 
                 $.ajax({
                     url: url,
                     type: 'POST',
                     data: {
-                        _token: $('meta[name="csrf-token"]').attr('content')
+                        _token: '{{ csrf_token() }}'
                     },
                     success: function(response) {
                         if (response.success) {
                             Swal.fire({
                                 title: 'Thành công!',
-                                text: response.message || 'Đã đẩy đơn hàng lên Pancake thành công.',
+                                text: response.message || (isUpdate
+                                    ? 'Đã cập nhật đơn hàng trên Pancake thành công.'
+                                    : 'Đã đẩy đơn hàng lên Pancake thành công.'),
                                 icon: 'success'
                             }).then(() => {
                                 window.location.reload();
@@ -671,14 +678,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         } else {
                             Swal.fire({
                                 title: 'Lỗi!',
-                                text: response.message || 'Có lỗi xảy ra khi đẩy đơn hàng.',
+                                text: response.message || (isUpdate
+                                    ? 'Có lỗi xảy ra khi cập nhật đơn hàng.'
+                                    : 'Có lỗi xảy ra khi đẩy đơn hàng.'),
                                 icon: 'error'
                             });
-                            button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i>');
+                            btn.prop('disabled', false)
+                               .html('<i class="fas fa-' + (isUpdate ? 'sync' : 'rocket') + ' fa-fw"></i>');
                         }
                     },
                     error: function(xhr) {
-                        let errorMsg = 'Có lỗi xảy ra khi đẩy đơn hàng.';
+                        let errorMsg = isUpdate
+                            ? 'Có lỗi xảy ra khi cập nhật đơn hàng.'
+                            : 'Có lỗi xảy ra khi đẩy đơn hàng.';
                         if (xhr.responseJSON && xhr.responseJSON.message) {
                             errorMsg = xhr.responseJSON.message;
                         }
@@ -687,7 +699,70 @@ document.addEventListener('DOMContentLoaded', () => {
                             text: errorMsg,
                             icon: 'error'
                         });
-                        button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i>');
+                        btn.prop('disabled', false)
+                           .html('<i class="fas fa-' + (isUpdate ? 'sync' : 'rocket') + ' fa-fw"></i>');
+                    }
+                });
+            }
+        });
+    });
+
+    // Handle update on Pancake
+    $(document).on('click', '.btn-update-pancake', function(e) {
+        e.preventDefault();
+        const btn = $(this);
+        const url = btn.data('url');
+        const orderId = btn.data('order-id');
+
+        Swal.fire({
+            title: 'Xác nhận cập nhật?',
+            text: "Bạn có chắc chắn muốn cập nhật đơn hàng #" + orderId + " trên Pancake không?",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Đồng ý, cập nhật!',
+            cancelButtonText: 'Hủy bỏ'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Disable button and show loading state
+                btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang cập nhật...');
+
+                $.ajax({
+                    url: url,
+                    type: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            Swal.fire({
+                                title: 'Thành công!',
+                                text: response.message || 'Đã cập nhật đơn hàng trên Pancake thành công.',
+                                icon: 'success'
+                            }).then(() => {
+                                window.location.reload();
+                            });
+                        } else {
+                            Swal.fire({
+                                title: 'Lỗi!',
+                                text: response.message || 'Có lỗi xảy ra khi cập nhật đơn hàng.',
+                                icon: 'error'
+                            });
+                            btn.prop('disabled', false).html('<i class="fas fa-sync fa-fw"></i>');
+                        }
+                    },
+                    error: function(xhr) {
+                        let errorMsg = 'Có lỗi xảy ra khi cập nhật đơn hàng.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            errorMsg = xhr.responseJSON.message;
+                        }
+                        Swal.fire({
+                            title: 'Lỗi!',
+                            text: errorMsg,
+                            icon: 'error'
+                        });
+                        btn.prop('disabled', false).html('<i class="fas fa-sync fa-fw"></i>');
                     }
                 });
             }

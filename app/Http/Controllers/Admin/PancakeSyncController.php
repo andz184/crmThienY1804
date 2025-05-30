@@ -1314,6 +1314,12 @@ class PancakeSyncController extends Controller
     public function pushOrderToPancake(Order $order)
     {
         try {
+
+            // If order already has pancake_order_id, update instead of create
+            if ($order->pancake_order_id) {
+                return $this->updateOrderOnPancake($order);
+            }
+
             $apiKey = config('pancake.api_key');
             $baseUrl = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1'), '/');
 
@@ -1354,20 +1360,11 @@ class PancakeSyncController extends Controller
                 ];
             }
 
-            // Check if we're updating an existing Pancake order or creating a new one
-            if ($order->pancake_order_id) {
-                // Update existing order
-                $response = Http::put("{$baseUrl}/orders/{$order->pancake_order_id}", [
-                    'api_key' => $apiKey,
-                    'order' => $orderData
-                ]);
-            } else {
-                // Create new order
-                $response = Http::post("{$baseUrl}/orders", [
-                    'api_key' => $apiKey,
-                    'order' => $orderData
-                ]);
-            }
+            // Create new order
+            $response = Http::post("{$baseUrl}/orders", [
+                'api_key' => $apiKey,
+                'order' => $orderData
+            ]);
 
             if (!$response->successful()) {
                 $errorMsg = $response->json()['message'] ?? $response->body();
@@ -1376,19 +1373,16 @@ class PancakeSyncController extends Controller
 
             $responseData = $response->json();
 
-            // Update order with Pancake ID if it was newly created
-            if (!$order->pancake_order_id && isset($responseData['order']['id'])) {
+            // Update order with Pancake ID
+            if (isset($responseData['order']['id'])) {
                 $order->pancake_order_id = $responseData['order']['id'];
                 $order->internal_status = 'Pushed to Pancake successfully.';
-                $order->save();
-            } else {
-                $order->internal_status = 'Updated in Pancake successfully.';
                 $order->save();
             }
 
             return [
                 'success' => true,
-                'message' => $order->pancake_order_id ? 'Order updated in Pancake' : 'Order created in Pancake',
+                'message' => 'Order created in Pancake',
                 'data' => $responseData
             ];
 
@@ -1965,6 +1959,7 @@ class PancakeSyncController extends Controller
      */
     public function updateOrderOnPancake(Order $order)
     {
+       
         if (empty($order->pancake_order_id)) {
             Log::error('Cannot update order on Pancake: No pancake_order_id found', ['order_id' => $order->id]);
             return [
@@ -1986,9 +1981,10 @@ class PancakeSyncController extends Controller
         }
 
         try {
-          
+
             // Prepare order data for Pancake API
             $orderData = [
+                'id' => $order->pancake_order_id,
                 'customer' => [
                     'name' => $order->customer_name,
                     'phone' => $order->customer_phone,

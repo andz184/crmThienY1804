@@ -121,11 +121,11 @@
                  <a href="{{ route('orders.assign', $order) }}" class="btn btn-secondary btn-xs" title="Gán đơn"><i class="fas fa-user-plus fa-fw"></i></a>
             @endcan
             @can('orders.push_to_pancake')
-                <button class="btn btn-info btn-xs btn-push-pancake"
+                <button class="btn btn-{{ $order->pancake_order_id ? 'secondary' : 'info' }} btn-xs btn-push-pancake"
                         data-order-id="{{ $order->id }}"
                         data-url="{{ route('orders.pushToPancake', $order->id) }}"
-                        title="Đẩy đơn lên Pancake">
-                    <i class="fas fa-rocket fa-fw"></i>
+                        title="{{ $order->pancake_order_id ? 'Cập nhật lên Pancake' : 'Đẩy đơn lên Pancake' }}">
+                    <i class="fas fa-{{ $order->pancake_order_id ? 'sync' : 'rocket' }} fa-fw"></i>
                 </button>
             @endcan
             {{-- Actions from original index.blade.php are preferred here --}}

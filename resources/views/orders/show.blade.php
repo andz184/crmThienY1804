@@ -15,12 +15,14 @@
                         <h3 class="card-title">Chi tiết đơn hàng #{{ $order->order_code }}</h3>
                         <div class="card-tools">
                             @can('orders.push_to_pancake')
-                            <button type="button" class="btn btn-info mr-2 btn-push-pancake"
-                                    data-order-id="{{ $order->id }}"
-                                    data-url="{{ route('orders.pushToPancake', $order->id) }}"
-                                    title="Đẩy đơn hàng này lên Pancake">
-                                <i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake
-                            </button>
+                                @if(!$order->pancake_order_id)
+                                    <button type="button" class="btn btn-info mr-2 btn-push-pancake"
+                                            data-order-id="{{ $order->id }}"
+                                            data-url="{{ route('orders.pushToPancake', $order->id) }}"
+                                            title="Đẩy đơn hàng này lên Pancake">
+                                        <i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake
+                                    </button>
+                                @endif
                             @endcan
                             <a href="{{ route('orders.index') }}" class="btn btn-default">
                                 <i class="fas fa-arrow-left"></i> Quay lại

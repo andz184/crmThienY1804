@@ -252,6 +252,7 @@ class PancakeApiService
      */
     public function updateOrderOnPancake(string $pancakeOrderId, array $orderData): array
     {
+        $shopId = config('pancake.shop_id');
         if (!$this->apiKey) {
             Log::error('Pancake API: API key not configured for updating order.');
             return ['success' => false, 'data' => null, 'message' => 'Pancake API key not configured.'];
@@ -262,7 +263,7 @@ class PancakeApiService
             return ['success' => false, 'data' => null, 'message' => 'Pancake Order ID is required.'];
         }
 
-        $endpoint = $this->baseUrl . '/orders/' . $pancakeOrderId;
+        $endpoint = $this->baseUrl . '/shops/' . $shopId . '/orders/' . $pancakeOrderId;
         Log::info('Pancake API: Attempting to update order.', ['endpoint' => $endpoint, 'pancake_order_id' => $pancakeOrderId, 'payload' => $orderData]);
 
         try {
@@ -273,6 +274,7 @@ class PancakeApiService
             ])->put($endpoint . '?api_key=' . $this->apiKey, $orderData);
 
             $responseData = $response->json();
+
             Log::info('Pancake API: Update order response.', ['status' => $response->status(), 'response_data' => $responseData]);
 
             if ($response->successful() && isset($responseData['success']) && $responseData['success']) {

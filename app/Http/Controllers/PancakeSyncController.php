@@ -3403,11 +3403,14 @@ public function syncCategories(Request $request)
     public function pushOrderToPancake(Order $order): array
     {
         try {
-            $data = $this->prepareDataForPancake($order);
 
+            $data = $this->prepareDataForPancake($order);
+            if($order->pancake_order_id){
+                return $this->pancakeApiService->updateOrderOnPancake($order->pancake_order_id, $data);
+            }else {
             // Call Pancake API to create order
             $response = $this->pancakeApiService->createOrderOnPancake($data);
-
+            }
 
             if (!empty($response['success'])) {
                 // Update order status
