@@ -562,7 +562,7 @@ class OrderController extends Controller
 
         $order = Order::create([
             'order_code' => $request->input('order_code', 'ORD-' . time() . rand(1000, 9999)),
-            'customer_id' => $validatedData['customer_id'],
+            // 'customer_id' => $validatedData['customer_id'],
             'customer_name' => $validatedData['customer_name'],
             'customer_phone' => $validatedData['customer_phone'],
             'customer_email' => $validatedData['customer_email'] ?? null,
