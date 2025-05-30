@@ -3360,21 +3360,36 @@ public function syncCategories(Request $request)
         if (empty($notes)) {
             return null;
         }
-        // Example parsing, adjust to your actual note format
+
         // Pattern to match "LIVE X DD/MM" or "LIVE X DD/MM/YY" or "LIVE X DD/MM/YYYY"
-        // This was the original logic before the faulty edit, restoring it.
         $pattern = '/LIVE\s*(\d+)\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i';
+
         if (preg_match($pattern, $notes, $matches)) {
-            $day = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
-            $month = str_pad($matches[3], 2, '0', STR_PAD_LEFT);
-            $year = !empty($matches[4]) ? (strlen($matches[4]) == 2 ? '20' . $matches[4] : $matches[4]) : date('Y');
-            return [
-                'live_session_id' => $matches[1],
-                'live_date' => "{$year}-{$month}-{$day}"
-            ];
+            $liveNumber = $matches[1];
+            $day = $matches[2];
+            $month = $matches[3];
+            $year = isset($matches[4]) ? $matches[4] : null;
+
+            // If year is not provided or is 2-digit
+            if (!$year) {
+                $year = date('Y');
+            } elseif (strlen($year) == 2) {
+                $year = '20' . $year;
+            }
+
+            // Validate date
+            if (checkdate($month, $day, (int)$year)) {
+                return [
+                    'live_number' => $liveNumber,
+                    'session_date' => sprintf('%s-%02d-%02d', $year, $month, $day),
+                    'original_text' => trim($matches[0])
+                ];
+            }
         }
+
         return null;
     }
+
 
     // =========== ADDED METHODS START HERE ===========
 
