@@ -418,7 +418,7 @@ class OrderController extends Controller
         $this->authorize('orders.create');
 
         $validatedData = $request->validate([
-            'customer_id' => 'required|exists:customers,id',
+            // 'customer_id' => 'required|exists:customers,id',
             'customer_name' => 'required|string|max:255',
             'customer_phone' => 'required|string|max:20',
             'customer_email' => 'nullable|email|max:255',
