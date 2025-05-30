@@ -109,7 +109,7 @@ class CustomerController extends Controller
         if ($request->filled('max_spent')) {
             $query->where('total_spent', '<=', $request->input('max_spent'));
         }
-        
+
         if ($request->filled('last_order_status')) {
             $status = $request->input('last_order_status');
             $query->whereHas('orders', function($q) use ($status) {
@@ -117,7 +117,7 @@ class CustomerController extends Controller
                   ->whereRaw('orders.id = (SELECT MAX(id) FROM orders WHERE customer_id = customers.id)');
             });
         }
-        
+
         if ($request->filled('tag')) {
             $tag = $request->input('tag');
             $query->whereJsonContains('tags', $tag);
@@ -429,7 +429,7 @@ class CustomerController extends Controller
         // Increase execution time limit to 2 hours and memory limit to 1GB
         set_time_limit(7200);
         ini_set('memory_limit', '1024M');
-        
+
         $this->authorize('customers.sync');
         $user = Auth::user();
         $isAjax = $request->ajax();
@@ -677,7 +677,7 @@ class CustomerController extends Controller
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
             ini_set('memory_limit', '1024M');
-            
+
             // Bắt đầu đồng bộ trong queue
             dispatch(function() {
                 $this->pancakeService->syncCustomers();
@@ -713,6 +713,44 @@ class CustomerController extends Controller
             'success' => true,
             'message' => 'Đã hủy đồng bộ'
         ]);
+    }
+
+    /**
+     * API: Gợi ý khách hàng theo tên hoặc SĐT
+     */
+    public function search(Request $request)
+    {
+        $query = $request->input('query');
+        if (!$query) {
+            return response()->json(['success' => true, 'data' => []]);
+        }
+        $customers = Customer::with('phones')
+            ->where(function($q) use ($query) {
+                $q->where('name', 'like', "%$query%")
+                  ->orWhere('email', 'like', "%$query%")
+                  ->orWhereHas('phones', function($q2) use ($query) {
+                      $q2->where('phone_number', 'like', "%$query%") ;
+                  });
+            })
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
+        $result = $customers->map(function($customer) {
+            return [
+                'id' => $customer->id,
+                'name' => $customer->name,
+                'phone' => optional($customer->phones->first())->phone_number,
+                'email' => $customer->email,
+                'street_address' => $customer->street_address,
+                'province' => $customer->province,
+                'district' => $customer->district,
+                'ward' => $customer->ward,
+                'purchase_count' => $customer->total_orders_count ?? 0,
+                'total_spent' => $customer->total_spent ?? 0,
+            ];
+        });
+        return response()->json(['success' => true, 'data' => $result]);
     }
 }
 

@@ -19,6 +19,7 @@ use App\Models\Customer;
 use App\Models\User;
 use App\Jobs\ProcessPancakeOrder;
 use App\Jobs\ProcessPancakePages;
+use App\Models\PancakeProductSource;
 
 class PancakeSyncController extends Controller
 {
@@ -28,8 +29,7 @@ class PancakeSyncController extends Controller
     public function index()
     {
         $shops = PancakeShop::with('pages')->orderBy('name')->get();
-        $lastSyncTime = PancakeShop::max('updated_at'); // A simple way to get a recent sync time
-        // If no shops, maybe check PancakePage or a dedicated log table in the future
+        $lastSyncTime = PancakeShop::max('updated_at');
         if (!$lastSyncTime && PancakePage::count() > 0) {
             $lastSyncTime = PancakePage::max('updated_at');
         }
@@ -38,7 +38,18 @@ class PancakeSyncController extends Controller
         $lastEmployeeSyncTime = Cache::get('last_employee_sync_time');
         $employeeCount = User::whereNotNull('pancake_uuid')->count();
 
-        return view('admin.pancake.sync', compact('shops', 'lastSyncTime', 'lastEmployeeSyncTime', 'employeeCount'));
+        // Get product sources data
+        $productSources = \App\Models\PancakeProductSource::orderBy('name')->get();
+        $lastProductSourcesSyncTime = Cache::get('last_product_sources_sync_time');
+
+        return view('admin.pancake.sync', compact(
+            'shops',
+            'lastSyncTime',
+            'lastEmployeeSyncTime',
+            'employeeCount',
+            'productSources',
+            'lastProductSourcesSyncTime'
+        ));
     }
 
     /**
@@ -1841,5 +1852,225 @@ class PancakeSyncController extends Controller
             'skipped_reasons' => $skippedReasons,
             'has_raw_data' => !empty($rawApiData)
         ]);
+    }
+
+    /**
+     * Đồng bộ nguồn hàng từ Pancake API
+     */
+    public function syncProductSources(Request $request)
+    {
+        try {
+            $apiKey = config('pancake.api_key');
+            $baseUri = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1/'), '/');
+            $shopId = config('pancake.shop_id');
+
+            if (empty($apiKey)) {
+                Log::error('Pancake API key is not configured for product sources sync.');
+                return response()->json(['success' => false, 'message' => 'Pancake API key is not configured.'], 500);
+            }
+
+            if (empty($shopId)) {
+                Log::error('Pancake shop ID is not configured for product sources sync.');
+                return response()->json(['success' => false, 'message' => 'Pancake shop ID is not configured.'], 500);
+            }
+
+            $endpoint = $baseUri . '/shops/' . $shopId . '/order_source?api_key=' . $apiKey;
+            Log::info('Pancake Sync: Fetching product sources from endpoint');
+
+            $response = Http::get($endpoint);
+            $data = $response->json();
+
+            if (!$response->successful()) {
+                Log::error('Pancake Sync: Failed to fetch product sources.', [
+                    'status' => $response->status(),
+                    'response_body' => $response->body()
+                ]);
+                return response()->json(['success' => false, 'message' => 'Failed to fetch product sources from Pancake API.'], $response->status());
+            }
+
+            if (!isset($data['data']) || !is_array($data['data'])) {
+                Log::error('Pancake Sync: Invalid response format - missing data array');
+                return response()->json(['success' => false, 'message' => 'Invalid response format from Pancake API.'], 500);
+            }
+
+            $stats = [
+                'created' => 0,
+                'updated' => 0,
+                'errors' => 0
+            ];
+
+            foreach ($data['data'] as $sourceData) {
+                try {
+                    $source = PancakeProductSource::updateOrCreate(
+                        ['pancake_id' => $sourceData['id']],
+                        [
+                            'name' => $sourceData['name'],
+                            'type' => $sourceData['link_source_id'] ? 'external' : 'internal',
+                            'is_active' => !($sourceData['is_removed'] ?? false),
+                            'raw_data' => json_encode($sourceData),
+                            'custom_id' => $sourceData['custom_id'],
+                            'parent_id' => $sourceData['parent_id'],
+                            'project_id' => $sourceData['project_id'],
+                            'shop_id' => $sourceData['shop_id'],
+                            'link_source_id' => $sourceData['link_source_id'],
+                            'inserted_at' => $sourceData['inserted_at'] ? Carbon::parse($sourceData['inserted_at']) : null,
+                            'updated_at' => $sourceData['updated_at'] ? Carbon::parse($sourceData['updated_at']) : now()
+                        ]
+                    );
+
+                    if ($source->wasRecentlyCreated) {
+                        $stats['created']++;
+                    } else {
+                        $stats['updated']++;
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Pancake Sync: Error processing product source.', [
+                        'source_id' => $sourceData['id'] ?? 'unknown',
+                        'error' => $e->getMessage()
+                    ]);
+                    $stats['errors']++;
+                }
+            }
+
+            // Update last sync time
+            Cache::put('last_product_sources_sync_time', now(), now()->addDays(30));
+
+            return response()->json([
+                'success' => true,
+                'message' => sprintf(
+                    'Product sources sync completed. Created: %d, Updated: %d, Errors: %d',
+                    $stats['created'],
+                    $stats['updated'],
+                    $stats['errors']
+                ),
+                'stats' => $stats
+            ]);
+
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            DB::rollBack();
+            Log::error('Pancake Sync: ConnectionException during product sources sync - ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Không thể kết nối đến Pancake API: ' . $e->getMessage()], 503);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Pancake Sync: General Exception during product sources sync - ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return response()->json(['success' => false, 'message' => 'Lỗi đồng bộ nguồn hàng: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Update an order on Pancake API
+     *
+     * @param Order $order
+     * @return array
+     */
+    public function updateOrderOnPancake(Order $order)
+    {
+        if (empty($order->pancake_order_id)) {
+            Log::error('Cannot update order on Pancake: No pancake_order_id found', ['order_id' => $order->id]);
+            return [
+                'success' => false,
+                'message' => 'Không thể cập nhật đơn hàng lên Pancake: Không tìm thấy pancake_order_id'
+            ];
+        }
+
+        $apiKey = config('pancake.api_key');
+        $baseUri = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1/'), '/');
+        $shopId = config('pancake.shop_id');
+
+        if (empty($apiKey) || empty($shopId)) {
+            Log::error('Pancake API configuration missing', ['api_key_exists' => !empty($apiKey), 'shop_id_exists' => !empty($shopId)]);
+            return [
+                'success' => false,
+                'message' => 'Thiếu cấu hình Pancake API (api_key hoặc shop_id)'
+            ];
+        }
+
+        try {
+          
+            // Prepare order data for Pancake API
+            $orderData = [
+                'customer' => [
+                    'name' => $order->customer_name,
+                    'phone' => $order->customer_phone,
+                    'email' => $order->customer_email,
+                ],
+                'shipping_address' => [
+                    'name' => $order->bill_full_name ?: $order->customer_name,
+                    'phone' => $order->bill_phone_number ?: $order->customer_phone,
+                    'address' => $order->street_address,
+                    'province' => $order->province_code ? \App\Models\Province::where('code', $order->province_code)->value('name') : null,
+                    'district' => $order->district_code ? \App\Models\District::where('code', $order->district_code)->value('name') : null,
+                    'ward' => $order->ward_code ? \App\Models\Ward::where('code', $order->ward_code)->value('name') : null,
+                ],
+                'items' => $order->items->map(function ($item) {
+                    return [
+                        'product_id' => $item->pancake_product_id,
+                        'variation_id' => $item->pancake_variation_id,
+                        'quantity' => $item->quantity,
+                        'price' => $item->price,
+                        'note' => null,
+                    ];
+                })->toArray(),
+                'shipping_fee' => $order->shipping_fee,
+                'note' => $order->notes,
+                'partner_note' => $order->additional_notes,
+                'source' => $order->source,
+                'shipping_partner_id' => $order->pancake_shipping_provider_id,
+                'warehouse_id' => $order->pancake_warehouse_id,
+                'status' => $this->mapInternalStatusToPancake($order->status),
+                'assigning_seller_id' => $order->assigning_seller_id,
+                'assigning_care_id' => $order->assigning_care_id,
+            ];
+
+            // Make API call to update order
+            $endpoint = "{$baseUri}/shops/{$shopId}/orders/{$order->pancake_order_id}?api_key={$apiKey}";
+            $response = Http::put($endpoint, $orderData);
+
+            if (!$response->successful()) {
+                Log::error('Failed to update order on Pancake API', [
+                    'order_id' => $order->id,
+                    'pancake_order_id' => $order->pancake_order_id,
+                    'status' => $response->status(),
+                    'response' => $response->json()
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => 'Lỗi khi cập nhật đơn hàng trên Pancake: ' . ($response->json()['message'] ?? 'Unknown error'),
+                    'errors' => $response->json()['errors'] ?? null
+                ];
+            }
+
+            $responseData = $response->json();
+
+            // Update local order with response data if needed
+            $order->update([
+                'internal_status' => 'Updated on Pancake successfully at ' . now(),
+                'last_synced_at' => now(),
+            ]);
+
+            Log::info('Successfully updated order on Pancake', [
+                'order_id' => $order->id,
+                'pancake_order_id' => $order->pancake_order_id
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Đơn hàng đã được cập nhật thành công trên Pancake',
+                'data' => $responseData
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Exception while updating order on Pancake', [
+                'order_id' => $order->id,
+                'exception' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Lỗi khi cập nhật đơn hàng: ' . $e->getMessage()
+            ];
+        }
     }
 }

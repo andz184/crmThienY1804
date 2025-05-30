@@ -636,14 +636,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize Push to Pancake buttons
     $(document).on('click', '.btn-push-pancake', function(e) {
         e.preventDefault();
-        const orderId = $(this).data('order-id');
-        const url = $(this).data('url');
-        const button = $(this);
+        var orderId = $(this).data('order-id');
+        var url = $(this).data('url');
+        var button = $(this);
 
         Swal.fire({
             title: 'Xác nhận đẩy đơn?',
-            text: `Bạn có chắc muốn đẩy đơn hàng #${orderId} lên Pancake không?`,
-            icon: 'question',
+            text: "Bạn có chắc chắn muốn đẩy đơn hàng #" + orderId + " lên Pancake không?",
+            icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#3085d6',
             cancelButtonColor: '#d33',
@@ -651,42 +651,43 @@ document.addEventListener('DOMContentLoaded', () => {
             cancelButtonText: 'Hủy bỏ'
         }).then((result) => {
             if (result.isConfirmed) {
-                // Show loading state on button
-                button.html('<i class="fas fa-spinner fa-spin fa-fw"></i> Đang đẩy...').prop('disabled', true);
+                button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy...');
 
                 $.ajax({
                     url: url,
                     type: 'POST',
+                    data: {
+                        _token: $('meta[name="csrf-token"]').attr('content')
+                    },
                     success: function(response) {
-                        button.html('<i class="fas fa-rocket fa-fw"></i>').prop('disabled', false);
                         if (response.success) {
-                            Swal.fire(
-                                'Thành công!',
-                                response.message || 'Đơn hàng đã được đẩy lên Pancake.',
-                                'success'
-                            ).then(() => {
-                                location.reload();
+                            Swal.fire({
+                                title: 'Thành công!',
+                                text: response.message || 'Đã đẩy đơn hàng lên Pancake thành công.',
+                                icon: 'success'
+                            }).then(() => {
+                                window.location.reload();
                             });
                         } else {
-                            Swal.fire(
-                                'Lỗi!',
-                                response.message || 'Không thể đẩy đơn hàng lên Pancake.',
-                                'error'
-                            );
+                            Swal.fire({
+                                title: 'Lỗi!',
+                                text: response.message || 'Có lỗi xảy ra khi đẩy đơn hàng.',
+                                icon: 'error'
+                            });
+                            button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i>');
                         }
                     },
-                    error: function(xhr, status, error) {
-                        button.html('<i class="fas fa-rocket fa-fw"></i>').prop('disabled', false);
-                        let errorMessage = 'Lỗi không xác định khi đẩy đơn hàng.';
+                    error: function(xhr) {
+                        let errorMsg = 'Có lỗi xảy ra khi đẩy đơn hàng.';
                         if (xhr.responseJSON && xhr.responseJSON.message) {
-                            errorMessage = xhr.responseJSON.message;
+                            errorMsg = xhr.responseJSON.message;
                         }
-                        Swal.fire(
-                            'Lỗi Máy Chủ!',
-                            errorMessage,
-                            'error'
-                        );
-                        console.error("Pancake push error:", xhr.responseText);
+                        Swal.fire({
+                            title: 'Lỗi!',
+                            text: errorMsg,
+                            icon: 'error'
+                        });
+                        button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i>');
                     }
                 });
             }

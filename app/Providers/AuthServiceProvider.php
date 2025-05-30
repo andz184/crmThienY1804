@@ -91,5 +91,92 @@ class AuthServiceProvider extends ServiceProvider
         Gate::define('view-own-logs', function (User $user) {
             return $user->hasRole('staff');
         });
+
+        // Gate for viewing orders
+        Gate::define('orders.view', function (User $user, $order = null) {
+            if ($user->hasAnyRole(['super-admin', 'admin', 'manager'])) {
+                return true;
+            }
+            if ($user->hasRole('staff')) {
+                // If an order instance is passed, check if it belongs to the staff
+                if ($order instanceof \App\Models\Order) {
+                    return $order->user_id === $user->id;
+                }
+                // If no order instance, staff can generally view the order list (filtered by controller)
+                return true;
+            }
+            return false;
+        });
+
+        // Gate for creating orders
+        Gate::define('orders.create', function (User $user) {
+            return $user->hasAnyRole(['super-admin', 'admin', 'manager', 'staff']);
+        });
+
+        // Gate for editing/updating orders (and by extension, pushing to Pancake)
+        Gate::define('orders.update', function (User $user, \App\Models\Order $order) {
+            if ($user->hasAnyRole(['super-admin', 'admin'])) {
+                return true;
+            }
+            if ($user->hasRole('manager')) {
+                // Manager can update orders of their team members or orders not assigned to any specific staff in their team (if applicable)
+                // This might require more complex logic depending on your team structure
+                // For now, let's say manager can update any order (same as admin for simplicity here)
+                // OR: return $order->user?->team_id === $user->manages_team_id;
+                return true; // Simplified for now
+            }
+            if ($user->hasRole('staff')) {
+                return $order->user_id === $user->id;
+            }
+            return false;
+        });
+
+        // Gate for deleting orders
+        Gate::define('orders.delete', function (User $user) {
+            // Typically only admins or super-admins
+            return $user->hasAnyRole(['super-admin', 'admin']);
+        });
+
+        // Gate for assigning orders (if different from general update)
+        Gate::define('teams.assign', function(User $user){
+             return $user->hasAnyRole(['super-admin', 'admin', 'manager']);
+        });
+
+        // Gate for call management
+        Gate::define('calls.manage', function(User $user, $order = null) {
+             if ($user->hasAnyRole(['super-admin', 'admin', 'manager'])) {
+                return true;
+            }
+            if ($user->hasRole('staff')) {
+                if ($order instanceof \App\Models\Order) {
+                    return $order->user_id === $user->id;
+                }
+                return true; // Staff can generally manage calls, specific order check is fine
+            }
+            return false;
+        });
+
+        // Gate for Pancake sync functions (general sync, not specific order push)
+        Gate::define('sync-pancake', function(User $user){
+            return $user->hasAnyRole(['super-admin', 'admin', 'manager']);
+        });
+
+        // Gate for pushing individual orders to Pancake
+        Gate::define('orders.push_to_pancake', function(User $user, $order = null) {
+            if ($user->hasAnyRole(['super-admin', 'admin'])) {
+                return true;
+            }
+            if ($user->hasRole('manager')) {
+                return true; // Managers can push any order
+            }
+            if ($user->hasRole('staff')) {
+                // Staff can only push their own orders
+                if ($order instanceof \App\Models\Order) {
+                    return $order->user_id === $user->id;
+                }
+                return true; // Allow staff to see the button, actual permission check happens with specific order
+            }
+            return false;
+        });
     }
 }

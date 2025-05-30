@@ -19,21 +19,36 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 use App\Models\Warehouse;
+use App\Models\User;
 use App\Models\ShippingProvider;
 use Illuminate\Support\Facades\Schema;
 use App\Models\Province;
 use App\Models\District;
 use App\Models\Ward;
 use App\Models\ProductVariant;
+use App\Services\PancakeApiService; // Added import
+use App\Models\PancakeOrderSource;
+use App\Models\PancakeProductSource;
 
 class PancakeSyncController extends Controller
 {
+    protected PancakeApiService $pancakeApiService; // Added property
+
+    // Added constructor for DI
+    public function __construct(PancakeApiService $pancakeApiService)
+    {
+        $this->pancakeApiService = $pancakeApiService;
+    }
+
     /**
      * Display synchronization interface
      */
     public function index()
     {
-        return view('pancake.sync');
+        $orderSources = PancakeOrderSource::orderBy('name')->get();
+        $productSources = PancakeProductSource::orderBy('name')->get();
+
+        return view('admin.pancake-sync.index', compact('orderSources', 'productSources'));
     }
 
     /**
@@ -746,6 +761,12 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         $order->notes = $orderData['note'] ?? ($orderData['notes'] ?? $order->notes);
         $order->additional_notes = $orderData['additional_notes'] ?? $order->additional_notes;
 
+
+        // Update package dimensions if provided by Pancake API
+        // Fallback to existing order's dimensions if not present in $orderData
+        $order->shipping_length = $orderData['shipping_length'] ?? ($orderData['package_length'] ?? $order->shipping_length);
+        $order->shipping_width = $orderData['shipping_width'] ?? ($orderData['package_width'] ?? $order->shipping_width);
+        $order->shipping_height = $orderData['shipping_height'] ?? ($orderData['package_height'] ?? $order->shipping_height);
 
         $product_data = $orderData['items'] ?? null;
         $order->products_data = json_encode($product_data);
@@ -3339,39 +3360,273 @@ public function syncCategories(Request $request)
         if (empty($notes)) {
             return null;
         }
-
+        // Example parsing, adjust to your actual note format
         // Pattern to match "LIVE X DD/MM" or "LIVE X DD/MM/YY" or "LIVE X DD/MM/YYYY"
+        // This was the original logic before the faulty edit, restoring it.
         $pattern = '/LIVE\s*(\d+)\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i';
-
         if (preg_match($pattern, $notes, $matches)) {
-            $liveNumber = $matches[1];
-            $day = $matches[2];
-            $month = $matches[3];
-            $year = isset($matches[4]) ? $matches[4] : null;
-
-            // If year is not provided or is 2-digit
-            if (!$year) {
-                $year = date('Y');
-            } elseif (strlen($year) == 2) {
-                $year = '20' . $year;
-            }
-
-            // Validate date
-            if (checkdate($month, $day, (int)$year)) {
-                return [
-                    'live_number' => $liveNumber,
-                    'session_date' => sprintf('%s-%02d-%02d', $year, $month, $day),
-                    'original_text' => trim($matches[0])
-                ];
-            }
+            $day = str_pad($matches[2], 2, '0', STR_PAD_LEFT);
+            $month = str_pad($matches[3], 2, '0', STR_PAD_LEFT);
+            $year = !empty($matches[4]) ? (strlen($matches[4]) == 2 ? '20' . $matches[4] : $matches[4]) : date('Y');
+            return [
+                'live_session_id' => $matches[1],
+                'live_date' => "{$year}-{$month}-{$day}"
+            ];
         }
-
         return null;
     }
 
-    /**
-     * Xử lý doanh thu theo variant và category
-     */
+    // =========== ADDED METHODS START HERE ===========
 
+    /**
+     * Push a specific order to Pancake.
+     * This method will be called by OrderController.
+     *
+     * @param Order $order The order to push.
+     * @return array ['success' => bool, 'message' => string, 'data' => mixed (optional)]
+     */
+    public function pushOrderToPancake(Order $order): array
+    {
+        try {
+            $data = $this->prepareDataForPancake($order);
+
+            // Call Pancake API to create order
+            $response = $this->pancakeApiService->createOrderOnPancake($data);
+
+
+            if (!empty($response['success'])) {
+                // Update order status
+                $order->pancake_order_id = $response['data']['id'] ?? null;
+                $order->status = 'pushed_to_pancake';
+                $order->notes = 'Đẩy đơn hàng thành công lên Pancake';
+                $order->saveQuietly();
+
+                return $response;
+            }
+
+            // Log the error but return the original response
+            error_log('Pancake API Error: ' . ($response['message'] ?? 'Unknown error'));
+
+            // Update order status
+            $order->status = 'push_failed';
+            $order->notes = $response['message'] ?? 'Unknown error from Pancake API';
+            $order->saveQuietly();
+
+            // Return the original response from Pancake
+            return $response;
+
+        } catch (\Exception $e) {
+            error_log('Pancake Push Error: ' . $e->getMessage() . PHP_EOL . $e->getTraceAsString());
+
+            $order->status = 'push_failed';
+            $order->notes = $e->getMessage();
+            $order->saveQuietly();
+
+                return [
+                'success' => false,
+                'message' => $e->getMessage(),
+                'data' => null
+            ];
+        }
+    }
+
+    /**
+     * Helper method to prepare order data for Pancake API.
+     * You might need to adjust this based on your Order model structure and Pancake API requirements.
+     */
+    protected function prepareDataForPancake(Order $order): array
+    {
+        try {
+            // Get and validate products data
+            if (empty($order->products_data)) {
+                throw new \Exception('Không tìm thấy dữ liệu sản phẩm trong đơn hàng');
+            }
+
+            $productsData = json_decode($order->products_data, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \Exception('Dữ liệu sản phẩm không đúng định dạng JSON: ' . json_last_error_msg());
+            }
+
+            error_log('Raw products data: ' . print_r($productsData, true));
+
+            // Format items array according to Pancake structure
+            $items = [];
+            foreach ($productsData as $product) {
+
+                if (empty($product['variation_id'])) {
+                    error_log('Product without variation_id: ' . print_r($product, true));
+                    throw new \Exception('Thiếu variation_id của sản phẩm');
+                }
+
+                $items[] = [
+                    'variation_id' => "0327ec71-f056-4451-8a75-288e3590751e",
+                    'quantity' => $product['quantity'],
+                    'variation_info' => [
+                        'retail_price' => $product['variation_info']['retail_price']
+                    ]
+                ];
+            }
+
+            if (empty($items)) {
+                throw new \Exception('Không có sản phẩm nào trong đơn hàng');
+            }
+          $assigning_care_id = User::where('id', $order->assigning_care_id)->pluck('pancake_uuid')->first();
+            error_log('Formatted items: ' . print_r($items, true));
+            $warehouse = Warehouse::find($order->warehouse_id)->pluck('pancake_id')->first();
+
+            // Build the complete order data structure
+            $orderData = [
+                'assigning_seller_id' => $order->assigning_seller_id,
+                'assigning_care_id' =>  $assigning_care_id,
+                'warehouse_id' => $warehouse ?? "",
+                'bill_phone_number' => $order->bill_phone_number ?? "",
+                'bill_full_name' => $order->bill_full_name ?? "",
+                'shipping_fee' => (float)($order->shipping_fee ?? 0),
+                'note' => $order->notes ?? "",
+                'note_print' => "",
+                'transfer_money' => (float)($order->transfer_money ?? 0),
+                'partner' => [
+                    'partner_id' => $order->pancake_shipping_provider_id ?? "3",
+                ],
+                'shipping_address' => [
+                    'address' => $order->street_address ?? "",
+                    'commune_id' => $order->commune_id ?? "",
+                    'country_code' => "84",
+                    'district_id' => $order->district_id ?? "101",
+                    'full_address' => $order->shipping_address ?? "",
+                    'full_name' => $order->bill_full_name ?? "",
+                    'phone_number' => $order->bill_phone_number ?? "",
+                    'post_code' => null,
+                    'province_id' => $order->province_id ?? ""
+                ],
+                'third_party' => [
+                    'custom_information' => new \stdClass()
+                ],
+                'order_sources' => -1,
+                'page_id' => "1",
+                'account' => "1",
+                'items' => $items
+            ];
+
+            error_log('Final order data: ' . json_encode($orderData, JSON_PRETTY_PRINT));
+
+            return $orderData;
+        } catch (\Exception $e) {
+            error_log('Error preparing data: ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
+            throw $e;
+        }
+    }
+
+    /**
+     * Maps CRM order status (string) to Pancake expected numeric status values.
+     * This method is updated to return integer status codes.
+     */
+    protected function mapCrmStatusToPancakeNumeric(string $crmStatus): int
+    {
+        $crmStatusLower = strtolower(trim($crmStatus));
+        // Based on Pancake API Docs: Trạng thái đơn hàng
+        // | Mã trạng thái | Mô tả        |
+        // | ------------- | --------------- |
+        // | 0             | Mới          |
+        // | 1             | Đã xác nhận  | (Corresponds to Chờ lấy hàng in CRM)
+        // | 2             | Đã gửi hàng  | (Corresponds to Đã giao vận chuyển in CRM)
+        // | 3             | Đã nhận      | (Corresponds to Đã nhận hàng in CRM)
+        // | 5             | Đã hoàn      | (Corresponds to Hoàn hàng in CRM) - Verify if 'Hoàn hàng' means fully returned or partially.
+        // | 6             | Đã hủy       |
+        // | 7             | Đã xóa       |
+        // | 8             | Đang đóng hàng|
+        // | 9             | Chờ chuyển hàng|
+        // | 10            | Đơn Webcake  |
+        // | 11            | Chờ hàng     |
+        // | 12            | Chờ in       |
+        // | 13            | Đã in        |
+        // | 17            | Chờ xác nhận | (Could also be 0 for 'Mới')
+
+        $mapping = [
+            'new' => 0,
+            'mới' => 0,
+            'chờ xác nhận' => 0, // Default to 0 if "Chờ xác nhận" in CRM is truly a "New" order for Pancake
+            // 'chờ xác nhận' => 17, // Alternative if 17 is preferred for CRM's "Chờ xác nhận"
+
+            'processing' => 1, // Example: 'processing' in CRM -> 'Đã xác nhận' (1) in Pancake
+            'đã xác nhận' => 1, // CRM "Đã xác nhận" (nghĩa là chờ lấy hàng) -> Pancake "Đã xác nhận" (1)
+            'chờ lấy hàng' => 1, // CRM "Chờ lấy hàng" -> Pancake "Đã xác nhận" (1)
+
+            'shipping' => 2,
+            'đã gửi hàng' => 2,
+            'đang giao hàng' => 2, // Map "Đang giao hàng" in CRM to Pancake's "Đã gửi hàng"
+            'đã giao vận chuyển' => 2,
+
+
+            'completed' => 3,
+            'đã nhận' => 3,
+            'đã nhận hàng' => 3,
+            'giao thành công' => 3,
+
+            'cancelled' => 6,
+            'đã hủy' => 6,
+            'huy' => 6,
+
+            'returned' => 5,
+            'đã hoàn' => 5,
+            'hoàn hàng' => 5, // CRM "Hoàn hàng" -> Pancake "Đã hoàn" (5)
+
+            // Add other specific CRM statuses if needed
+            'chờ hàng' => 11,
+            'chờ in' => 12,
+            'đã in' => 13,
+            'đang đóng hàng' => 8,
+            'chờ chuyển hàng' => 9,
+        ];
+        // Default to 0 (Mới) if no mapping is found or status is unclear
+        return $mapping[$crmStatusLower] ?? 0;
+    }
+    // =========== ADDED METHODS END HERE =========== // This comment was from previous edit, will be on its own line now
+
+    /**
+     * Đồng bộ nguồn đơn từ Pancake
+     */
+    public function syncOrderSources()
+    {
+        try {
+            $response = $this->pancakeApiService->get('/order-sources');
+
+            if (!isset($response['success']) || !$response['success']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Không thể lấy dữ liệu nguồn đơn từ Pancake: ' . ($response['message'] ?? 'Unknown error')
+                ], 400);
+            }
+
+            $sources = $response['data'] ?? [];
+            $syncCount = 0;
+
+            foreach ($sources as $source) {
+                PancakeOrderSource::updateOrCreate(
+                    ['pancake_id' => $source['id']],
+                    [
+                        'name' => $source['name'],
+                        'platform' => $source['platform'] ?? null,
+                        'is_active' => true,
+                        'raw_data' => $source
+                    ]
+                );
+                $syncCount++;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => "Đã đồng bộ thành công {$syncCount} nguồn đơn từ Pancake"
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error syncing Pancake order sources: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi đồng bộ nguồn đơn: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 
 }

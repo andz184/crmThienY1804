@@ -67,6 +67,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'logs.view_all', 'logs.view_own',
             // Pancake sync permission
             'sync-pancake',
+            // Product Sources Permissions
+            'product-sources.view',
+            'product-sources.sync',
 
             // Report Permissions
             'reports.view', // Tổng quan báo cáo
@@ -110,6 +113,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'logs.view', 'logs.details', 'logs.view_all',
             'customers.view', 'customers.create', 'customers.edit', 'customers.sync',
             'sync-pancake',
+            'product-sources.view',
+            'product-sources.sync',
             // Thêm quyền báo cáo cho manager
             'reports.view',
             'reports.total_revenue',

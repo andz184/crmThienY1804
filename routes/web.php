@@ -54,7 +54,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/orders/{order}/assign', [OrderController::class, 'updateAssignment'])->name('orders.updateAssignment')->middleware('can:teams.assign');
     Route::get('/orders/{order}/assign', [OrderController::class, 'assign'])->name('orders.assign')->middleware('can:teams.assign');
     Route::post('/orders/{order}/update-status', [OrderController::class, 'updateStatus'])->name('orders.updateStatus')->middleware('can:calls.manage');
-    Route::post('/orders/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])->name('orders.pushToPancake')->middleware('can:orders.push_to_pancake');
+    Route::post('/orders/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])
+        ->name('orders.pushToPancake')
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':orders.push_to_pancake');
 
     // New Filtered Order List Routes
     Route::get('/orders/status/new', [OrderController::class, 'index'])->name('orders.index.new_orders');
@@ -78,7 +80,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/{order}', [OrderController::class, 'show'])->name('show');
         Route::post('/{order}/fetch-voip-history', [OrderController::class, 'fetchVoipHistory'])->name('fetchVoipHistory');
         Route::get('/{order}/call-history-rows', [OrderController::class, 'getCallHistoryTableRows'])->name('callHistoryRows');
-        Route::post('/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])->name('pushToPancake')->middleware('can:orders.push_to_pancake');
+        Route::post('/{order}/push-to-pancake', [OrderController::class, 'pushToPancake'])
+            ->name('pushToPancake')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':orders.push_to_pancake');
+        Route::post('/{order}/update-on-pancake', [OrderController::class, 'updateOnPancake'])
+            ->name('updateOnPancake')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':orders.push_to_pancake');
     });
 
     // Routes for fetching address data for order forms
@@ -194,6 +201,9 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
         Route::post('pancake-sync/employees', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'syncEmployees'])
             ->name('sync.employees')
             ->middleware(['auth', 'can:settings.manage']);
+        Route::post('pancake-sync/product-sources', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'syncProductSources'])
+            ->name('sync.product-sources')
+            ->middleware(['auth', 'can:product-sources.sync']);
         Route::get('pancake-sync/skipped-employees', [\App\Http\Controllers\Admin\PancakeSyncController::class, 'getSkippedEmployeesReasons'])
             ->name('sync.skipped-employees')
             ->middleware(['auth', 'can:settings.manage']);
@@ -213,6 +223,14 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
                     ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':logs.view_all|logs.view_own')
                     ->name('logs.show');
             });
+
+        // Order Sources
+        Route::post('/sync-order-sources', [PancakeSyncController::class, 'syncOrderSources'])->name('pancake.sync.order-sources');
+
+        // New route for syncing product sources
+        Route::post('/admin/pancake-sync/sync-product-sources', [PancakeSyncController::class, 'syncProductSources'])
+            ->name('admin.pancake-sync.sync-product-sources')
+            ->middleware('permission:product-sources.sync');
     });
 
 // Auth routes

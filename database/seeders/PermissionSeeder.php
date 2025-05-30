@@ -15,6 +15,13 @@ class PermissionSeeder extends Seeder
         Permission::create(['name' => 'manage_order_distribution']);
         Permission::create(['name' => 'configure_distribution_settings']);
 
+        // Order permissions
+        Permission::create(['name' => 'orders.view']);
+        Permission::create(['name' => 'orders.create']);
+        Permission::create(['name' => 'orders.edit']);
+        Permission::create(['name' => 'orders.delete']);
+        Permission::create(['name' => 'orders.push_to_pancake']);
+
         // Assign permissions to admin role
         $adminRole = Role::where('name', 'admin')->first();
         if ($adminRole) {

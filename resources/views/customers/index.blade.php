@@ -58,23 +58,23 @@
                 @if(request()->has('quick_filter'))
                     <input type="hidden" name="quick_filter" value="{{ request('quick_filter') }}">
                 @endif
-                
+
                 <div class="row">
                     <div class="col-md-4">
                         <div class="form-group">
                             <label for="search">Tìm kiếm:</label>
-                            <input type="text" name="search" id="search" class="form-control" 
+                            <input type="text" name="search" id="search" class="form-control"
                                 placeholder="Tên, SĐT, email..." value="{{ $filters['search'] ?? '' }}">
                         </div>
                         <div class="form-group">
                             <label>Khoảng thời gian tạo:</label>
                             <div class="input-group">
-                                <input type="date" name="date_from" id="date_from" class="form-control" 
+                                <input type="date" name="date_from" id="date_from" class="form-control"
                                     value="{{ $filters['date_from'] ?? '' }}">
                                 <div class="input-group-append input-group-prepend">
                                     <span class="input-group-text">đến</span>
                                 </div>
-                                <input type="date" name="date_to" id="date_to" class="form-control" 
+                                <input type="date" name="date_to" id="date_to" class="form-control"
                                     value="{{ $filters['date_to'] ?? '' }}">
                             </div>
                         </div>
@@ -83,24 +83,24 @@
                         <div class="form-group">
                             <label>Số lượng đơn hàng:</label>
                             <div class="input-group">
-                                <input type="number" name="min_orders" id="min_orders" class="form-control" 
+                                <input type="number" name="min_orders" id="min_orders" class="form-control"
                                     placeholder="Tối thiểu" value="{{ $filters['min_orders'] ?? '' }}">
                                 <div class="input-group-append input-group-prepend">
                                     <span class="input-group-text">đến</span>
                 </div>
-                                <input type="number" name="max_orders" id="max_orders" class="form-control" 
+                                <input type="number" name="max_orders" id="max_orders" class="form-control"
                                     placeholder="Tối đa" value="{{ $filters['max_orders'] ?? '' }}">
                 </div>
                 </div>
                         <div class="form-group">
                             <label>Tổng chi tiêu:</label>
                             <div class="input-group">
-                                <input type="number" name="min_spent" id="min_spent" class="form-control" 
+                                <input type="number" name="min_spent" id="min_spent" class="form-control"
                                     placeholder="Tối thiểu" value="{{ $filters['min_spent'] ?? '' }}">
                                 <div class="input-group-append input-group-prepend">
                                     <span class="input-group-text">đến</span>
                 </div>
-                                <input type="number" name="max_spent" id="max_spent" class="form-control" 
+                                <input type="number" name="max_spent" id="max_spent" class="form-control"
                                     placeholder="Tối đa" value="{{ $filters['max_spent'] ?? '' }}">
                 </div>
                 </div>
@@ -267,12 +267,12 @@
 $(document).ready(function() {
     // Initialize select2
     $('.select2').select2();
-    
+
     // Apply filters automatically when select boxes change
     $('#last_order_status, #tags').change(function() {
         $('#filter-form').submit();
     });
-    
+
     function fetch_customers(url) {
         $.ajax({
             url: url,

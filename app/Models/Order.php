@@ -14,6 +14,7 @@ use App\Traits\LogsActivity;
 use App\Models\ActivityLog;
 use App\Models\PancakeOrderStatus;
 use App\Models\PancakeStaff;
+use App\Models\PancakeProductSource;
 
 class Order extends Model
 {
@@ -416,5 +417,10 @@ class Order extends Model
             self::PANCAKE_STATUS_CANCELED => 'Đã hủy',
             default => $this->pancake_status ? ucfirst(str_replace('_', ' ', $this->pancake_status)) : 'Không có',
         };
+    }
+
+    public function productSource()
+    {
+        return $this->belongsTo(PancakeProductSource::class, 'source', 'pancake_id');
     }
 }

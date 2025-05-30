@@ -1,10 +1,6 @@
 @extends('adminlte::page')
 
-@section('title', 'Sửa đơn hàng: ' . $order->order_code)
-
-@section('content_header')
-    <h1>Sửa đơn hàng: <small>{{ $order->order_code }}</small></h1>
-@stop
+@section('title', 'Chỉnh sửa Đơn hàng #'. $order->id)
 
 @section('content')
 @if ($errors->any())
@@ -19,511 +15,1314 @@
     </div>
 @endif
 
-<div class="card">
-    <div class="card-body">
-        <form action="{{ route('orders.update', $order->id) }}" method="POST" id="orderEditForm">
+<div class="container-fluid px-4">
+        <form action="{{ route('orders.update', $order->id) }}" method="POST" id="orderCreateForm">
             @csrf
             @method('PUT')
-
+            {{-- @dd($order) --}}
             <div class="row">
-                {{-- Left Column --}}
-                <div class="col-md-6">
-                    <div class="card card-primary card-outline">
-                        <div class="card-header">
-                            <h3 class="card-title">Thông tin khách hàng & Địa chỉ</h3>
+            {{-- Left Column (Products and Payment) --}}
+            <div class="col-lg-8">
+                {{-- Products Section --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                        <h3 class="card-title m-0 font-weight-bold text-primary">
+                            <i class="fas fa-shopping-cart mr-2"></i>Sản phẩm
+                        </h3>
+                        @if($order->pancake_order_id)
+                            <button type="button" class="btn btn-info btn-sm update-on-pancake" data-order-id="{{ $order->id }}">
+                                <i class="fas fa-sync-alt"></i> Cập nhật lên Pancake
+                            </button>
+                        @endif
+                    </div>
+                    <div class="card-body">
+                    {{-- Product Source Selection --}}
+                    <div class="form-group">
+                        <label class="small font-weight-bold">Nguồn đơn hàng</label>
+                        <select name="source" class="form-control select2" data-placeholder="-- Chọn nguồn đơn --">
+                            <option value="">-- Chọn nguồn đơn --</option>
+
+                            @foreach($productSources as $source)
+                                <option value="{{old('source', $order->source) ?? $source->pancake_id }}" {{ $order->source == $source->pancake_id ? 'selected' : '' }}>
+                                    {{ $source->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div id="items_container">
+                        @php
+                            $productsDataSource = old('items');
+                            if (is_null($productsDataSource) && $order->products_data) {
+                                $productsDataSource = json_decode($order->products_data, false);
+                            }
+                            if (is_null($productsDataSource)) {
+                                $productsDataSource = [];
+                            }
+                            $totalAmount = 0;
+                        @endphp
+
+                        @if(!empty($productsDataSource))
+                            @foreach($productsDataSource as $index => $itemData)
+                                @php
+                                    $currentItem = is_object($itemData) ? (array)$itemData : ($itemData ?? []);
+                                    $variationInfo = $currentItem['variation_info'] ?? [];
+                                    if (is_object($variationInfo)) $variationInfo = (array)$variationInfo;
+                                    $productName = $variationInfo['name'] ?? '';
+                                    $price = $variationInfo['retail_price'] ?? 0;
+                                    $quantity = $currentItem['quantity'] ?? 1;
+                                    $variationId = $currentItem['variation_id'] ?? '';
+                                    $code = $currentItem['code'] ?? $variationId;
+                                    $productId = $currentItem['product_id'] ?? '';
+                                    // Đảm bảo variation_info lưu lại đúng dạng string
+                                    $variationInfoForInput = is_array($variationInfo) || is_object($variationInfo) ? json_encode($variationInfo) : strval($variationInfo);
+                                    $subtotal = $price * $quantity;
+                                    $totalAmount += $subtotal;
+                                @endphp
+                                <div class="item-row mb-3">
+                                    <div class="row align-items-end">
+                                        <div class="col-md-3">
+                                            <label class="small font-weight-bold">Mã SP</label>
+                                            <div class="input-group">
+                                                <input type="text" name="items[{{ $index }}][code]" class="form-control product-code" placeholder="Nhập mã SP (code)" value="{{ $code }}">
+                                                <div class="input-group-append">
+                                                    <button type="button" class="btn btn-outline-secondary search-product">
+                                                        <i class="fas fa-search"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="small font-weight-bold">Tên sản phẩm</label>
+                                            <input type="text" name="items[{{ $index }}][name]" class="form-control product-name" placeholder="Tên sản phẩm" value="{{ $productName }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="small font-weight-bold">Đơn giá</label>
+                                            <input type="number" step="any" name="items[{{ $index }}][price]" class="form-control item-price" placeholder="Đơn giá" value="{{ $price }}" min="0">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="small font-weight-bold">Số lượng</label>
+                                            <input type="number" name="items[{{ $index }}][quantity]" class="form-control item-quantity" placeholder="Số lượng" value="{{ $quantity }}" min="1">
+                                        </div>
+                                        <div class="col-md-1 d-flex align-items-center">
+                                            <input type="hidden" name="items[{{ $index }}][product_id]" value="{{ $productId }}">
+                                            <input type="hidden" name="items[{{ $index }}][variation_info]" value="{{ $variationInfoForInput }}">
+                                            <button type="button" class="btn btn-link text-danger remove-row" style="{{ count($productsDataSource) > 1 ? '' : 'display: none;' }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+
+                            @php
+                                $shippingFee = floatval(old('shipping_fee', $order->shipping_fee ?? 0));
+                                $discount = floatval(old('discount_amount', $order->discount_amount ?? 0));
+                                $transferMoney = floatval(old('transfer_money', $order->transfer_money ?? 0));
+                                $partnerFee = floatval(old('partner_fee', $order->partner_fee ?? 0));
+                                $total = $totalAmount + $shippingFee + $partnerFee;
+                                $afterDiscount = $total - $discount;
+                                $remaining = $afterDiscount - $transferMoney;
+                            @endphp
+
+                            <script>
+                                document.addEventListener('DOMContentLoaded', function() {
+                                    document.getElementById('total_amount').textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format({{ $total }});
+                                    document.getElementById('discount_display').textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format({{ $discount }});
+                                    document.getElementById('after_discount').textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format({{ $afterDiscount }});
+                                    document.getElementById('paid_amount').textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format({{ $transferMoney }});
+                                    document.getElementById('remaining_amount').textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format({{ $remaining }});
+                                });
+                            </script>
+                        @else
+                        {{-- Default first empty row if no items --}}
+                        <div class="item-row mb-3">
+                            <div class="row align-items-end">
+                                <div class="col-md-3">
+                                    <label class="small font-weight-bold">Mã SP</label>
+                                    <div class="input-group">
+                                        <input type="text" name="items[0][code]" class="form-control product-code" placeholder="Nhập mã SP (code)">
+                                        <div class="input-group-append">
+                                            <button type="button" class="btn btn-outline-secondary search-product">
+                                                <i class="fas fa-search"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="small font-weight-bold">Tên sản phẩm</label>
+                                    <input type="text" name="items[0][name]" class="form-control product-name" placeholder="Tên sản phẩm" readonly>
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="small font-weight-bold">Đơn giá</label>
+                                    <input type="number" step="any" name="items[0][price]" class="form-control item-price" placeholder="Đơn giá" value="0" min="0">
+                                </div>
+                                <div class="col-md-2">
+                                    <label class="small font-weight-bold">Số lượng</label>
+                                    <input type="number" name="items[0][quantity]" class="form-control item-quantity" placeholder="Số lượng" value="1" min="1">
+                                </div>
+                                <div class="col-md-1 d-flex align-items-center">
+                                    <input type="hidden" name="items[0][product_id]" value="">
+                                    <input type="hidden" name="items[0][variation_info]" value="">
+                                    <button type="button" class="btn btn-link text-danger remove-row" style="display: none;">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
-                        <div class="card-body">
-                            {{-- <div class="form-group">
-                                <label for="customer_name">Tên khách hàng <span class="text-danger">*</span></label>
-                                <input type="text" name="customer_name" id="customer_name" class="form-control @error('customer_name') is-invalid @enderror" required value="{{ old('customer_name', $order->customer_name) }}">
-                                @error('customer_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="customer_phone">Số điện thoại <span class="text-danger">*</span></label>
-                                <input type="text" name="customer_phone" id="customer_phone" class="form-control @error('customer_phone') is-invalid @enderror" required value="{{ old('customer_phone', $order->customer_phone) }}">
-                                @error('customer_phone') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="customer_email">Email khách hàng</label>
-                                <input type="email" name="customer_email" id="customer_email" class="form-control @error('customer_email') is-invalid @enderror" value="{{ old('customer_email', $order->customer_email) }}">
-                                @error('customer_email') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <hr> --}}
-                            <h5>Thông tin hóa đơn</h5>
-                            <div class="form-group">
-                                <label for="bill_full_name">Tên trên hóa đơn (Pancake)</label>
-                                <input type="text" name="bill_full_name" id="bill_full_name" class="form-control @error('bill_full_name') is-invalid @enderror" value="{{ old('bill_full_name', $order->bill_full_name) }}">
-                                @error('bill_full_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="bill_phone_number">SĐT trên hóa đơn (Pancake)</label>
-                                <input type="text" name="bill_phone_number" id="bill_phone_number" class="form-control @error('bill_phone_number') is-invalid @enderror" value="{{ old('bill_phone_number', $order->bill_phone_number) }}">
-                                @error('bill_phone_number') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="bill_email">Email trên hóa đơn</label>
-                                <input type="email" name="bill_email" id="bill_email" class="form-control @error('bill_email') is-invalid @enderror" value="{{ old('bill_email', $order->bill_email) }}">
-                                @error('bill_email') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <hr>
-                            <h5>Địa chỉ giao hàng</h5>
-                            <div class="form-group">
-                                <label for="province_code">Tỉnh/Thành phố</label>
-                                <select name="province_code" id="province_code" class="form-control select2 @error('province_code') is-invalid @enderror" data-placeholder="-- Chọn Tỉnh/Thành phố --">
-                                    <option value="">-- Chọn Tỉnh/Thành phố --</option>
-                                    @foreach($provinces as $code => $name)
-                                        <option value="{{ $code }}" {{ old('province_code', $order->province_code) == $code ? 'selected' : '' }}>{{ $name }}</option>
-                                    @endforeach
-                                </select>
-                                @error('province_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="district_code">Quận/Huyện</label>
-                                <select name="district_code" id="district_code" class="form-control select2 @error('district_code') is-invalid @enderror" data-placeholder="-- Chọn Quận/Huyện --">
-                                    <option value="">-- Chọn Quận/Huyện --</option>
-                                    @if(old('district_code', $order->district_code) && $districts->isNotEmpty())
-                                        @foreach($districts as $code => $name)
-                                            <option value="{{ $code }}" {{ old('district_code', $order->district_code) == $code ? 'selected' : '' }}>{{ $name }}</option>
-                                        @endforeach
-                                    @endif
-                                </select>
-                                @error('district_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="ward_code">Phường/Xã</label>
-                                <select name="ward_code" id="ward_code" class="form-control select2 @error('ward_code') is-invalid @enderror" data-placeholder="-- Chọn Phường/Xã --">
-                                    <option value="">-- Chọn Phường/Xã --</option>
-                                     @if(old('ward_code', $order->ward_code) && $wards->isNotEmpty())
-                                        @foreach($wards as $code => $name)
-                                            <option value="{{ $code }}" {{ old('ward_code', $order->ward_code) == $code ? 'selected' : '' }}>{{ $name }}</option>
-                                        @endforeach
-                                    @endif
-                                </select>
-                                @error('ward_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="street_address">Địa chỉ cụ thể</label>
-                                <input type="text" name="street_address" id="street_address" class="form-control @error('street_address') is-invalid @enderror" value="{{ old('street_address', $order->street_address) }}">
-                                @error('street_address') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
+                        @endif
+                    </div>
+                    <div class="text-left mt-3">
+                        <button type="button" id="add_item_row" class="btn btn-primary btn-sm">
+                            <i class="fas fa-plus"></i> Thêm sản phẩm
+                        </button>
                         </div>
                     </div>
-                     <div class="card card-info card-outline">
-                        <div class="card-header">
-                            <h3 class="card-title">Thông tin Pancake</h3>
+                </div>
+
+                {{-- Payment Information --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h3 class="card-title m-0 font-weight-bold text-success">
+                            <i class="fas fa-money-bill-wave mr-2"></i>Thanh toán
+                        </h3>
                         </div>
                         <div class="card-body">
-                            <div class="form-group">
-                                <label for="pancake_shop_id">Pancake Shop</label>
-                                <select name="pancake_shop_id" id="pancake_shop_id" class="form-control select2 @error('pancake_shop_id') is-invalid @enderror">
-                                    <option value="">-- Chọn Pancake Shop --</option>
-                                    @foreach($pancakeShops as $id => $name)
-                                        <option value="{{ $id }}" {{ old('pancake_shop_id', $order->pancake_shop_id) == $id ? 'selected' : '' }}>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="custom-control custom-switch">
+                                    <input type="checkbox" class="custom-control-input" id="is_free_shipping" name="is_free_shipping" value="1" {{ old('is_free_shipping', $order->is_free_shipping) ? 'checked' : '' }}>
+                                    <label class="custom-control-label" for="is_free_shipping">Miễn phí giao hàng</label>
+                            </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="custom-control custom-switch">
+                                    <input type="checkbox" class="custom-control-input" id="customer_pay_fee" name="customer_pay_fee" value="1" {{ old('customer_pay_fee', $order->customer_pay_fee) ? 'checked' : '' }}>
+                                    <label class="custom-control-label" for="customer_pay_fee">Khách trả phí</label>
+                            </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6" id="shipping_fee_group">
+                                <div class="form-group">
+                                    <label class="small font-weight-bold">Phí vận chuyển</label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text"><i class="fas fa-truck"></i></span>
+                    </div>
+                                        <input type="number" name="shipping_fee" class="form-control" value="{{ old('shipping_fee', $order->shipping_fee ?? 0) }}">
+                </div>
+                        </div>
+                            </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                    <label class="small font-weight-bold">Giảm giá đơn hàng</label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text"><i class="fas fa-percent"></i></span>
+                                    </div>
+                                        <input type="number" name="discount_amount" class="form-control" value="{{ old('discount_amount', $order->discount_amount ?? 0) }}">
+                                </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                    <label class="small font-weight-bold">Tiền chuyển khoản</label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text"><i class="fas fa-money-check"></i></span>
+                                        </div>
+                                        <input type="number" name="transfer_money" class="form-control" value="{{ old('transfer_money', $order->transfer_money ?? 0) }}">
+                                    </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                    <label class="small font-weight-bold">Phí đối tác</label>
+                                    <div class="input-group">
+                                        <div class="input-group-prepend">
+                                            <span class="input-group-text"><i class="fas fa-handshake"></i></span>
+                                    </div>
+                                        <input type="number" name="partner_fee" class="form-control" value="{{ old('partner_fee', $order->partner_fee ?? 0) }}">
+                                </div>
+                            </div>
+                            </div>
+                                    </div>
+                        <div class="table-responsive mt-3">
+                            <table class="table table-bordered table-sm">
+                                <tr class="bg-light">
+                                    <th class="w-50">Tổng tiền:</th>
+                                    <td class="text-right font-weight-bold" id="total_amount">0 đ</td>
+                                </tr>
+                                <tr>
+                                    <th>Giảm giá:</th>
+                                    <td class="text-right text-success font-weight-bold" id="discount_display">0 đ</td>
+                                </tr>
+                                <tr>
+                                    <th>Sau giảm giá:</th>
+                                    <td class="text-right font-weight-bold" id="after_discount">0 đ</td>
+                                </tr>
+                                <tr>
+                                    <th>Đã thanh toán:</th>
+                                    <td class="text-right text-primary font-weight-bold" id="paid_amount">0 đ</td>
+                                </tr>
+                                <tr class="bg-light">
+                                    <th>Còn thiếu:</th>
+                                    <td class="text-right text-danger font-weight-bold" id="remaining_amount">0 đ</td>
+                                </tr>
+                            </table>
+                                    </div>
+                                    </div>
+                                    </div>
+
+                {{-- Shipping & Packaging Section --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h3 class="card-title m-0 font-weight-bold text-primary">
+                            <i class="fas fa-box-open mr-2"></i>Vận chuyển & Đóng gói
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-group">
+                            <label class="small font-weight-bold">Kích thước gói hàng (D x R x C) <small class="text-muted">(cm)</small></label>
+                            <div class="row">
+                                <div class="col-4">
+                                    <input type="number" name="shipping_length" class="form-control" placeholder="Dài" value="{{ old('shipping_length', $order->shipping_length) }}">
+                                </div>
+                                <div class="col-4">
+                                    <input type="number" name="shipping_width" class="form-control" placeholder="Rộng" value="{{ old('shipping_width', $order->shipping_width) }}">
+                                </div>
+                                <div class="col-4">
+                                    <input type="number" name="shipping_height" class="form-control" placeholder="Cao" value="{{ old('shipping_height', $order->shipping_height) }}">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="small font-weight-bold">Đơn vị vận chuyển</label>
+                            <select name="shipping_provider_id" id="shipping_provider_id" class="form-control select2 @error('shipping_provider_id') is-invalid @enderror" data-placeholder="-- Chọn đơn vị vận chuyển --">
+                                <option value="">-- Chọn đơn vị vận chuyển --</option>
+                                @if(isset($shippingProviders))
+                                    @foreach($shippingProviders as $id => $name)
+                                        <option value="{{ $id }}" {{ old('shipping_provider_id', $order->shipping_provider_id) == $id ? 'selected' : '' }}>
                                             {{ $name }}
                                         </option>
                                     @endforeach
-                                </select>
-                                @error('pancake_shop_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="pancake_page_id">Pancake Page</label>
-                                <select name="pancake_page_id" id="pancake_page_id" class="form-control select2 @error('pancake_page_id') is-invalid @enderror">
-                                    <option value="">-- Chọn Pancake Page --</option>
-                                    @if(old('pancake_page_id', $order->pancake_page_id) && $pancakePages->isNotEmpty())
-                                        @foreach($pancakePages as $id => $name)
-                                            <option value="{{ $id }}" {{ old('pancake_page_id', $order->pancake_page_id) == $id ? 'selected' : '' }}>
-                                                {{ $name }}
-                                            </option>
-                                        @endforeach
-                                    @endif
-                                </select>
-                                @error('pancake_page_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-                            <div class="form-group">
-                                <label for="pancake_push_status_display">Trạng thái đẩy Pancake</label>
-                                <input type="text" id="pancake_push_status_display" class="form-control" value="{{ $order->pancake_push_status ? ucfirst(str_replace('_', ' ', $order->pancake_push_status)) : 'Chưa đẩy' }}" readonly>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="pancake_order_id">Mã đơn hàng Pancake</label>
-                                <input type="text" id="pancake_order_id" class="form-control" value="{{ $order->pancake_order_id }}" readonly>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="pancake_status">Trạng thái đơn trên Pancake</label>
-                                <select name="pancake_status" id="pancake_status" class="form-control select2 @error('pancake_status') is-invalid @enderror">
-                                    <option value="">-- Chọn trạng thái Pancake --</option>
-                                    @foreach(App\Models\PancakeOrderStatus::orderBy('status_code')->get() as $status)
-                                        <option value="{{ $status->status_code }}" {{ old('pancake_status', $order->pancake_status) == $status->status_code ? 'selected' : '' }}>
-                                            {{ $status->name }} ({{ $status->status_code }})
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('pancake_status') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                            </div>
-
-                            <hr>
-                            <div class="form-check">
-                                <input type="checkbox" name="is_livestream" id="is_livestream" class="form-check-input" value="1" {{ old('is_livestream', $order->is_livestream) ? 'checked' : '' }}>
-                                <label for="is_livestream" class="form-check-label">Đơn hàng Livestream</label>
-                            </div>
-
-                            <div class="form-check">
-                                <input type="checkbox" name="is_live_shopping" id="is_live_shopping" class="form-check-input" value="1" {{ old('is_live_shopping', $order->is_live_shopping) ? 'checked' : '' }}>
-                                <label for="is_live_shopping" class="form-check-label">Đơn hàng Live Shopping</label>
-                            </div>
+                                @endif
+                            </select>
+                            @error('shipping_provider_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
                         </div>
                     </div>
                 </div>
 
-                {{-- Right Column --}}
-                <div class="col-md-6">
-                    <div class="card card-success card-outline">
-                        <div class="card-header">
-                            <h3 class="card-title">Thông tin đơn hàng & Sản phẩm</h3>
+                {{-- Notes Section --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h3 class="card-title m-0 font-weight-bold text-info">
+                            <i class="fas fa-sticky-note mr-2"></i>Ghi chú
+                        </h3>
+                                    </div>
+                    <div class="card-body">
+                        <ul class="nav nav-tabs" role="tablist">
+                            <li class="nav-item">
+                                <a class="nav-link active" data-toggle="tab" href="#internal_note" role="tab">Nội bộ</a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" data-toggle="tab" href="#external_note" role="tab">Đối tác</a>
+                            </li>
+                        </ul>
+                        <div class="tab-content pt-3">
+                            <div class="tab-pane active" id="internal_note" role="tabpanel">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label class="small font-weight-bold">Ghi chú nội bộ</label>
+                                            <textarea name="notes" class="form-control" rows="2">{{ old('notes', $order->notes ?? '') }}</textarea>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label class="small font-weight-bold">Trạng thái Đơn hàng (CRM)</label>
+                                            <input type="text" class="form-control" value="{{ $statuses[$order->status] ?? ucfirst(str_replace('_', ' ', $order->status ?? 'N/A')) }}" readonly>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="tab-pane" id="external_note" role="tabpanel">
+                                <textarea name="additional_notes" class="form-control" rows="3" placeholder="Ghi chú cho đối tác">{{ old('additional_notes', $order->additional_notes ?? '') }}</textarea>
+                            </div>
+                                </div>
+                            </div>
+                        </div>
+            </div>
+
+            {{-- Right Column (Customer and Shipping Info) --}}
+            <div class="col-lg-4">
+                {{-- Staff Assignment --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h3 class="card-title m-0 font-weight-bold text-primary">
+                            <i class="fas fa-user-tie mr-2"></i>Thông tin xử lý
+                        </h3>
                         </div>
                         <div class="card-body">
-                             <div class="form-group">
-                                <label for="order_code_display">Mã đơn hàng</label>
-                                <input type="text" id="order_code_display" class="form-control" value="{{ $order->order_code }}" readonly>
-                            </div>
-                            <div class="row">
-
-                                <div class="col-md-6">
                                     <div class="form-group">
-                                        <label for="assigning_seller_id">Nhân viên Sale (Pancake) <span class="text-danger">*</span></label>
-                                        <select name="assigning_seller_id" id="assigning_seller_id" class="form-control select2 @error('assigning_seller_id') is-invalid @enderror" required>
-                                            <option value="">-- Chọn nhân viên sale --</option>
-                                            @foreach($users->whereNotNull('pancake_uuid') as $user)
-                                                <option value="{{ $user->pancake_uuid }}" {{ old('assigning_seller_id', $order->assigning_seller_id) == $user->pancake_uuid ? 'selected' : '' }}>
-                                                    {{ $user->name }}
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                        @error('assigning_seller_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label for="assigning_care_id">Nhân viên Hỗ trợ (Pancake) <span class="text-danger">*</span></label>
-                                        <select name="assigning_care_id" id="assigning_care_id" class="form-control select2 @error('assigning_care_id') is-invalid @enderror" required>
-                                            <option value="">-- Chọn nhân viên hỗ trợ --</option>
-                                            @foreach($users->whereNotNull('pancake_care_uuid') as $user)
-                                                <option value="{{ $user->pancake_care_uuid }}" {{ old('assigning_care_id', $order->assigning_care_id) == $user->pancake_care_uuid ? 'selected' : '' }}>
-                                                    {{ $user->name }}
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                        @error('assigning_care_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                </div>
-                            </div>
-
-                            <hr>
-                            <h5>Sản phẩm <span class="text-danger">*</span></h5>
-                            <div id="items_container">
-                                @php
-<<<<<<< HEAD
-                                    $currentItems = old('items', json_decode($order->products_data, true) ?? []);
-=======
-                                    $currentItems = old('items', $order->items->map(function($item) {
-                                        // Get data from product_data field
-                                        $productData = is_string($item->product_data) ? json_decode($item->product_data, true) : ($item->product_data ?? []);
-
-                                        return [
-                                            'code' => $productData['variation_id'] ?? $item->code ?? null,
-                                            'product_code' => $productData['product_code'] ?? null,
-                                            'name' => $productData['name'] ?? $item->product_name ?? 'Unknown Product',
-                                            'quantity' => $productData['quantity'] ?? $item->quantity ?? 1,
-                                            'price' => $productData['price'] ?? $item->price ?? 0,
-                                            'pancake_variant_id' => $productData['variation_id'] ?? $item->pancake_variant_id ?? null,
-                                            'variation_detail' => $productData['variation_detail'] ?? null,
-                                            'image_url' => $productData['image_url'] ?? null,
-                                            'added_by_cart_quantity' => $productData['added_by_cart_quantity'] ?? 0,
-                                            'discount_percentage' => $productData['discount_percentage'] ?? 0,
-                                            'measure_group_id' => $productData['measure_group_id'] ?? null,
-                                            'package_count' => $productData['package_count'] ?? 0,
-                                            'return_quantity' => $productData['return_quantity'] ?? 0,
-                                            'total_discount' => $productData['total_discount'] ?? 0,
-                                            'product_data' => $productData // Store the entire product_data for reference
-                                        ];
-                                    })->toArray());
->>>>>>> e19b00653c82d7dfc73e2eaf4d2d78f3cbb7b643
-                                @endphp
-                                @foreach($currentItems as $index => $item)
-                                <div class="row item-row mb-2 align-items-center">
-                                    <div class="col-md-2">
-                                        <label for="items{{ $index }}_code" class="small">Pancake Variation ID</label>
-                                        <input type="text" id="items{{ $index }}_code" name="items[{{ $index }}][code]" class="form-control @error("items.{$index}.code") is-invalid @enderror"
-<<<<<<< HEAD
-                                               placeholder="Mã sản phẩm" value="{{ $item['variation_id'] ?? '' }}">
-=======
-                                               placeholder="Pancake Variation ID" value="{{ $item['pancake_variant_id'] ?? '' }}">
->>>>>>> e19b00653c82d7dfc73e2eaf4d2d78f3cbb7b643
-                                        @error("items.{$index}.code") <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label for="items{{ $index }}_product_code" class="small">Mã sản phẩm</label>
-                                        <input type="text" id="items{{ $index }}_product_code" name="items[{{ $index }}][product_code]" class="form-control @error("items.{$index}.product_code") is-invalid @enderror"
-                                               placeholder="Mã sản phẩm" value="{{ $item['code'] ?? '' }}" readonly>
-                                        @error("items.{$index}.product_code") <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                    <div class="col-md-4">
-                                        <label for="items{{ $index }}_name" class="small">Tên sản phẩm</label>
-                                        <input type="text" id="items{{ $index }}_name" name="items[{{ $index }}][name]" class="form-control @error("items.{$index}.name") is-invalid @enderror"
-                                               placeholder="Tên sản phẩm" value="{{ $item['variation_info']['name'] ?? $item['name'] ?? '' }}">
-                                        @if(!empty($item['variation_info']['detail']))
-                                        <small class="text-muted">{{ $item['variation_info']['detail'] }}</small>
-                                        @endif
-                                        @error("items.{$index}.name") <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                    <div class="col-md-2">
-                                        <label for="items{{ $index }}_price" class="small">Đơn giá</label>
-                                        <input type="number" id="items{{ $index }}_price" step="any" name="items[{{ $index }}][price]" class="form-control @error("items.{$index}.price") is-invalid @enderror item-price"
-                                               placeholder="Đơn giá" value="{{ $item['variation_info']['retail_price'] ?? $item['price'] ?? 0 }}" min="0">
-                                        @error("items.{$index}.price") <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                    <div class="col-md-1">
-                                        <label for="items{{ $index }}_quantity" class="small">Số lượng</label>
-                                        <input type="number" id="items{{ $index }}_quantity" name="items[{{ $index }}][quantity]" class="form-control @error("items.{$index}.quantity") is-invalid @enderror item-quantity"
-                                               placeholder="Số lượng" value="{{ $item['quantity'] ?? 1 }}" min="1">
-                                        @error("items.{$index}.quantity") <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-<<<<<<< HEAD
-                                    <div class="col-md-2 align-self-end">
-                                        <input type="hidden" name="items[{{ $index }}][product_id]" value="{{ $item['product_id'] ?? '' }}">
-                                        <input type="hidden" name="items[{{ $index }}][variation_id]" value="{{ $item['variation_id'] ?? '' }}">
-                                        @if(isset($item['variation_info']))
-                                        <input type="hidden" name="items[{{ $index }}][variation_info]" value="{{ json_encode($item['variation_info']) }}">
-                                        @endif
-=======
-                                    <div class="col-md-1 align-self-end">
-                                        <input type="hidden" name="items[{{ $index }}][product_data]" value="{{ json_encode($item['product_data'] ?? []) }}">
->>>>>>> e19b00653c82d7dfc73e2eaf4d2d78f3cbb7b643
-                                        @if($index == 0 && count($currentItems) == 1)
-                                            {{-- No remove button for the first row if it's the only one --}}
-                                        @else
-                                            <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i></button>
-                                        @endif
-                                    </div>
-                                    @if(!empty($item['variation_info']['images'][0]))
-                                    <div class="col-12 mt-2">
-                                        <img src="{{ $item['variation_info']['images'][0] }}" alt="{{ $item['variation_info']['name'] ?? $item['name'] }}" class="img-thumbnail" style="max-height: 80px;">
-                                    </div>
-                                    @endif
-                                </div>
+                            <label class="small font-weight-bold">Thời gian tạo</label>
+                            <input type="text" class="form-control" value="{{ $order->created_at->format('d/m/Y H:i') }}" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label class="small font-weight-bold">NV xử lý</label>
+                            <select name="assigning_seller_id" class="form-control select2" required>
+                                <option value="">-- Chọn nhân viên sale --</option>
+                                @foreach($users->whereNotNull('pancake_uuid') as $user)
+                                    <option value="{{ $user->pancake_uuid }}" {{ old('assigning_seller_id', $order->assigning_seller_id) == $user->pancake_uuid ? 'selected' : '' }}>{{ $user->name }}</option>
                                 @endforeach
-                            </div>
-                            <div class="row mb-2">
-                                <div class="col">
-                                    <button type="button" id="add_item_row" class="btn btn-success btn-sm mb-3">
-                                        <i class="fas fa-plus"></i> Thêm sản phẩm
-                                    </button>
-                                </div>
-                                <div class="col text-right">
-                                    <div class="font-weight-bold">Tổng giá trị: <span id="total_value_display">{{ number_format($order->total_value) }}</span> đ</div>
-                                </div>
-                            </div>
-                            @error('items') <div class="text-danger mb-2">{{ $message }}</div> @enderror
+                            </select>
                         </div>
-                    </div>
+                        <div class="form-group">
+                            <label class="small font-weight-bold">NV chăm sóc</label>
+                            <select name="assigning_care_id" class="form-control select2">
+                                <option value="">-- Chọn nhân viên CSKH --</option>
+                                @foreach($users->whereNotNull('pancake_uuid') as $user)
+                                    <option value="{{ $user->id }}" {{ old('assigning_care_id', $order->assigning_care_id) == $user->id ? 'selected' : '' }}>{{ $user->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="form-group mb-0">
+                            <label class="small font-weight-bold">Marketer</label>
+                            <select name="marketer_id" class="form-control select2">
+                                <option value="">-- Chọn Marketer --</option>
+                                @foreach($users->whereNotNull('pancake_uuid') as $user)
+                                    <option value="{{ $user->id }}" {{ old('marketer_id', $order->marketer_id) == $user->id ? 'selected' : '' }}>{{ $user->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
 
-                    <div class="card card-warning card-outline">
-                        <div class="card-header">
-                            <h3 class="card-title">Thanh toán & Vận chuyển</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="row">
-                                <div class="col-md-6">
+                                    {{-- Pancake Shop --}}
                                     <div class="form-group">
-                                        <label for="shipping_provider_id">Đơn vị vận chuyển</label>
-                                        <select name="shipping_provider_id" id="shipping_provider_id" class="form-control select2 @error('shipping_provider_id') is-invalid @enderror">
-                                            <option value="">-- Chọn đơn vị vận chuyển --</option>
-                                            @if(isset($shippingProviders) && $shippingProviders->count() > 0)
-                                                @foreach($shippingProviders as $id => $name)
-                                                    @php
-                                                        $provider = \App\Models\ShippingProvider::find($id);
-                                                        $pancakeId = $provider ? $provider->pancake_partner_id : null;
-                                                    @endphp
-                                                    <option value="{{ $id }}" {{ old('shipping_provider_id', $order->shipping_provider_id) == $id ? 'selected' : '' }} data-pancake-id="{{ $pancakeId }}">
-                                                        {{ $name }} {{ $pancakeId ? '(Pancake ID: '.$pancakeId.')' : '' }}
-                                                    </option>
+                                        <label class="small font-weight-bold" for="pancake_shop_id">Pancake Shop</label>
+                                        <select name="pancake_shop_id" id="pancake_shop_id" class="form-control select2" data-placeholder="-- Chọn Shop Pancake --">
+                                            <option value="">-- Chọn Shop Pancake --</option>
+                                            @if(isset($pancakeShops))
+                                                @foreach($pancakeShops as $id => $name)
+                                                    <option value="{{ $id }}" {{ old('pancake_shop_id', $order->pancake_shop_id) == $id ? 'selected' : '' }}>{{ $name }}</option>
                                                 @endforeach
                                             @endif
                                         </select>
-                                        @error('shipping_provider_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
                                     </div>
+
+                                    {{-- Pancake Page --}}
                                     <div class="form-group">
-                                        <label for="shipping_fee">Phí vận chuyển</label>
-                                        <input type="number" name="shipping_fee" id="shipping_fee" class="form-control @error('shipping_fee') is-invalid @enderror" value="{{ old('shipping_fee', $order->shipping_fee) }}" min="0">
-                                        @error('shipping_fee') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                        <label class="small font-weight-bold" for="pancake_page_id">Pancake Page</label>
+                                        <select name="pancake_page_id" id="pancake_page_id" class="form-control select2" data-placeholder="-- Chọn Page (sau khi chọn Shop) --" {{ !$order->pancake_shop_id ? 'disabled' : '' }}>
+                                            <option value="">-- Chọn Page (sau khi chọn Shop) --</option>
+                                            @if(isset($pancakePages) && $order->pancake_shop_id)
+                                                @foreach($pancakePages as $page)
+                                                    <option value="{{ $page->id }}" {{ old('pancake_page_id', $order->pancake_page_id) == $page->id ? 'selected' : '' }}>{{ $page->name }}</option>
+                                                @endforeach
+                                            @endif
+                                        </select>
                                     </div>
-                                    <div class="form-check mb-3">
-                                        <input type="checkbox" name="is_free_shipping" id="is_free_shipping" class="form-check-input" value="1" {{ old('is_free_shipping', $order->is_free_shipping) ? 'checked' : '' }}>
-                                        <label for="is_free_shipping" class="form-check-label">Free shipping</label>
+
+                                    {{-- Post ID --}}
+                                    <div class="form-group mb-0">
+                                        <label class="small font-weight-bold" for="pancake_post_id">Post ID (Pancake)</label>
+                                        <input type="text" name="pancake_post_id" id="pancake_post_id" class="form-control" placeholder="Nhập Post ID từ Pancake (nếu có)" value="{{ old('pancake_post_id', $order->pancake_post_id) }}">
                                     </div>
+
                                 </div>
-                                <div class="col-md-6">
+                </div>
+
+                {{-- Customer Information --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h3 class="card-title m-0 font-weight-bold text-info">
+                            <i class="fas fa-user mr-2"></i>Thông tin khách hàng
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="customer_suggestions" class="position-absolute bg-white w-100" style="display:none; z-index: 1000; /* Ensure this is properly managed by JS if detached */">
+                            <!-- Customer suggestions will be populated here -->
+                        </div>
+                        <input type="hidden" name="customer_id" id="customer_id" value="{{ old('customer_id', $order->customer_id) }}">
                                     <div class="form-group">
-                                        <label for="transfer_money">Số tiền chuyển khoản (Pancake)</label>
-                                        <input type="text" name="transfer_money" id="transfer_money" class="form-control @error('transfer_money') is-invalid @enderror" value="{{ old('transfer_money', $order->transfer_money) }}">
-                                        @error('transfer_money') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            <label class="small font-weight-bold">Tên khách hàng</label>
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text"><i class="fas fa-user"></i></span>
                                     </div>
+                                <input type="text" name="customer_name" id="customer_name" class="form-control" placeholder="Tên khách hàng" value="{{ old('customer_name', $order->customer_name) }}">
                                 </div>
                             </div>
-                             <div class="form-group">
-                                <label for="payment_method">Phương thức thanh toán</label>
-                                <select name="payment_method" id="payment_method" class="form-control select2 @error('payment_method') is-invalid @enderror">
-                                    <option value="">-- Chọn phương thức --</option>
-                                    <option value="cod" {{ old('payment_method', $order->payment_method) == 'cod' ? 'selected' : '' }}>Thanh toán khi nhận hàng (COD)</option>
-                                    <option value="banking" {{ old('payment_method', $order->payment_method) == 'banking' ? 'selected' : '' }}>Chuyển khoản ngân hàng</option>
-                                    <option value="momo" {{ old('payment_method', $order->payment_method) == 'momo' ? 'selected' : '' }}>Ví MoMo</option>
-                                    <option value="zalopay" {{ old('payment_method', $order->payment_method) == 'zalopay' ? 'selected' : '' }}>ZaloPay</option>
-                                    <option value="other" {{ old('payment_method', $order->payment_method) == 'other' ? 'selected' : '' }}>Khác</option>
+                                    <div class="form-group">
+                            <label class="small font-weight-bold">Số điện thoại</label>
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text"><i class="fas fa-phone"></i></span>
+                                    </div>
+                                <input type="text" name="billing_phone" id="customer_phone" class="form-control" placeholder="SĐT" value="{{ old('billing_phone', $order->bill_phone_number ?? ($order->customer_phone ?? '')) }}">
+                                    </div>
+                                </div>
+                        <div class="form-group mb-0">
+                            <label class="small font-weight-bold">Email</label>
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text"><i class="fas fa-envelope"></i></span>
+                                </div>
+                                <input type="email" name="customer_email" id="customer_email" class="form-control" placeholder="Email" value="{{ old('customer_email', $order->customer_email) }}">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Shipping Information --}}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white py-3">
+                        <h3 class="card-title m-0 font-weight-bold text-success">
+                            <i class="fas fa-shipping-fast mr-2"></i>Thông tin giao hàng
+                        </h3>
+                    </div>
+                    <div class="card-body">
+                                    <div class="form-group">
+                            <label class="small font-weight-bold">Tỉnh/Thành phố <span class="text-danger">*</span></label>
+                            <select name="province_code" id="province_code" class="form-control select2 @error('province_code') is-invalid @enderror" required data-placeholder="-- Chọn Tỉnh/Thành phố --">
+                                <option value="">-- Chọn Tỉnh/Thành phố --</option>
+                                @foreach($provinces as $code => $name)
+                                    <option value="{{ $code }}" {{ old('province_code', $order->province_code) == $code ? 'selected' : '' }}>{{ $name }}</option>
+                                @endforeach
+                                        </select>
+                            @error('province_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                    </div>
+                        <div class="form-group">
+                            <label class="small font-weight-bold">Quận/Huyện <span class="text-danger">*</span></label>
+                            <select name="district_code" id="district_code" class="form-control select2 @error('district_code') is-invalid @enderror" required data-placeholder="-- Chọn Quận/Huyện --" {{ old('province_code', $order->province_code) ? '' : 'disabled' }}>
+                                <option value="">-- Chọn Quận/Huyện --</option>
+                                {{-- Districts will be loaded by JS, but if there's an old value or $order value, we might need to pre-populate or ensure JS selects it --}}
+                                @if(old('district_code', $order->district_code) && isset($districts))
+                                    @foreach($districts as $code => $name) {{-- Assuming $districts is passed for the selected province if available --}}
+                                        <option value="{{ $code }}" {{ old('district_code', $order->district_code) == $code ? 'selected' : '' }}>{{ $name }}</option>
+                                    @endforeach
+                                @elseif($order->district_code && $order->district_name) {{-- Fallback to direct order data if $districts not available --}}
+                                     <option value="{{ $order->district_code }}" selected>{{ $order->district_name }}</option>
+                                @endif
+                            </select>
+                            @error('district_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                </div>
+                        <div class="form-group">
+                            <label class="small font-weight-bold">Phường/Xã <span class="text-danger">*</span></label>
+                            <select name="ward_code" id="ward_code" class="form-control select2 @error('ward_code') is-invalid @enderror" required data-placeholder="-- Chọn Phường/Xã --" {{ old('district_code', $order->district_code) ? '' : 'disabled' }}>
+                                <option value="">-- Chọn Phường/Xã --</option>
+                                {{-- Wards will be loaded by JS --}}
+                                @if(old('ward_code', $order->ward_code) && isset($wards))
+                                    @foreach($wards as $code => $name) {{-- Assuming $wards is passed for the selected district if available --}}
+                                        <option value="{{ $code }}" {{ old('ward_code', $order->ward_code) == $code ? 'selected' : '' }}>{{ $name }}</option>
+                                    @endforeach
+                                @elseif($order->ward_code && $order->ward_name)
+                                    <option value="{{ $order->ward_code }}" selected>{{ $order->ward_name }}</option>
+                                @endif
+                            </select>
+                            @error('ward_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                            </div>
+                            <div class="form-group">
+                            <label class="small font-weight-bold">Địa chỉ cụ thể <span class="text-danger">*</span></label>
+                            <textarea name="street_address" id="street_address" class="form-control @error('street_address') is-invalid @enderror" rows="2" required>{{ old('street_address', $order->street_address) }}</textarea>
+                            @error('street_address') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        </div>
+                        <div class="form-group mb-0">
+                            <label class="small font-weight-bold">Kho xuất hàng <span class="text-danger">*</span></label>
+                            <select name="warehouse_id" id="warehouse_id" class="form-control select2 @error('warehouse_id') is-invalid @enderror" required data-placeholder="-- Chọn kho hàng --">
+                                    <option value="">-- Chọn kho hàng --</option>
+                                @if(isset($warehouses))
+                                    @foreach($warehouses as $id => $name)
+                                        <option value="{{ $id }}" {{ old('warehouse_id', $order->warehouse_id) == $id ? 'selected' : '' }}>{{ $name }}</option>
+                                    @endforeach
+                                @endif
                                 </select>
-                                @error('payment_method') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                                @error('warehouse_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
-
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label for="partner_fee">Phí đối tác</label>
-                                        <input type="number" name="partner_fee" id="partner_fee" class="form-control @error('partner_fee') is-invalid @enderror" value="{{ old('partner_fee', $order->partner_fee) }}" min="0">
-                                        @error('partner_fee') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                    <div class="form-check mb-3">
-                                        <input type="checkbox" name="customer_pay_fee" id="customer_pay_fee" class="form-check-input" value="1" {{ old('customer_pay_fee', $order->customer_pay_fee) ? 'checked' : '' }}>
-                                        <label for="customer_pay_fee" class="form-check-label">Khách hàng trả phí</label>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label for="returned_reason">Lý do hoàn/hủy đơn</label>
-                                        <select name="returned_reason" id="returned_reason" class="form-control select2 @error('returned_reason') is-invalid @enderror">
-                                            <option value="">Không áp dụng</option>
-                                            <option value="1" {{ old('returned_reason', $order->returned_reason) == '1' ? 'selected' : '' }}>Đổi ý</option>
-                                            <option value="2" {{ old('returned_reason', $order->returned_reason) == '2' ? 'selected' : '' }}>Lỗi sản phẩm</option>
-                                            <option value="3" {{ old('returned_reason', $order->returned_reason) == '3' ? 'selected' : '' }}>Giao hàng sai</option>
-                                            <option value="4" {{ old('returned_reason', $order->returned_reason) == '4' ? 'selected' : '' }}>Giao hàng chậm</option>
-                                            <option value="5" {{ old('returned_reason', $order->returned_reason) == '5' ? 'selected' : '' }}>Khác</option>
-                                        </select>
-                                        @error('returned_reason') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="form-group">
-                                        <label for="warehouse_id">Kho hàng <span class="text-danger">*</span></label>
-                                        <select name="warehouse_id" id="warehouse_id" class="form-control select2 @error('warehouse_id') is-invalid @enderror" required>
-                                            <option value="">-- Chọn kho hàng --</option>
-                                            @foreach($warehouses as $id => $name)
-                                                <option value="{{ $id }}" {{ old('warehouse_id', $order->warehouse_id) == $id ? 'selected' : '' }}>{{ $name }}</option>
-                                            @endforeach
-                                        </select>
-                                        @error('warehouse_id') <div class="invalid-feedback">{{ $message }}</div> @enderror
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-
-                                </div>
                             </div>
                         </div>
                     </div>
-
-                    <div class="card card-secondary card-outline">
-                        <div class="card-header">
-                            <h3 class="card-title">Ghi chú & Trạng thái nội bộ</h3>
                         </div>
+
+        {{-- Form Actions --}}
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm">
                         <div class="card-body">
-                            <div class="form-group">
-                                <label for="internal_status">Trạng thái nội bộ CRM</label>
-                                <input type="text" name="internal_status" id="internal_status" class="form-control @error('internal_status') is-invalid @enderror" value="{{ old('internal_status', $order->internal_status) }}">
-                                @error('internal_status') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        <div class="custom-control custom-switch float-left">
+                            <input type="checkbox" name="push_to_pancake" id="push_to_pancake" class="custom-control-input" value="1" {{ old('push_to_pancake', $order->pushed_to_pancake_at ? true : false) ? 'checked' : '' }}>
+                            <label for="push_to_pancake" class="custom-control-label">Đẩy đơn hàng đến Pancake sau khi cập nhật</label>
                             </div>
-                             <div class="form-group">
-                                <label for="notes">Ghi chú khách hàng</label>
-                                <textarea name="notes" id="notes" class="form-control @error('notes') is-invalid @enderror" rows="2">{{ old('notes', $order->notes) }}</textarea>
-                                @error('notes') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                        <div class="float-right">
+                            <a href="{{ route('orders.index') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left mr-1"></i>Quay lại
+                            </a>
+                            @can('orders.push_to_pancake')
+                            <button type="button" class="btn btn-info mr-2 btn-push-pancake"
+                                    data-order-id="{{ $order->id }}"
+                                    data-url="{{ route('orders.pushToPancake', $order->id) }}"
+                                    title="Đẩy đơn hàng này lên Pancake">
+                                <i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake
+                            </button>
+                            @endcan
+                            <button type="submit" class="btn btn-primary ml-2">
+                                <i class="fas fa-save mr-1"></i>Cập nhật đơn hàng
+                            </button>
                             </div>
-                            <div class="form-group">
-                                <label for="additional_notes">Ghi chú nội bộ (cho sale)</label>
-                                <textarea name="additional_notes" id="additional_notes" class="form-control @error('additional_notes') is-invalid @enderror" rows="2">{{ old('additional_notes', $order->additional_notes) }}</textarea>
-                                @error('additional_notes') <div class="invalid-feedback">{{ $message }}</div> @enderror
                             </div>
-                            <!-- Tags field removed to avoid errors -->
                         </div>
                     </div>
-                </div>
-            </div>
-
-            <div class="mt-4">
-                <div class="form-check mb-3">
-                    <input type="checkbox" name="push_to_pancake" id="push_to_pancake" class="form-check-input" value="1" {{ old('push_to_pancake', true) ? 'checked' : '' }}>
-                    <label for="push_to_pancake" class="form-check-label">Đẩy đơn hàng đến Pancake sau khi cập nhật</label>
-                </div>
-                <button type="submit" class="btn btn-primary">Cập nhật Đơn hàng</button>
-                <a href="{{ route('orders.index') }}" class="btn btn-secondary">Quay lại</a>
-                @can('orders.push_to_pancake')
-                <button type="button" id="push_now_btn" class="btn btn-warning" data-order-id="{{ $order->id }}">
-                    <i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay
-                </button>
-                @endcan
             </div>
         </form>
-    </div>
 </div>
 @stop
 
 @push('css')
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@ttskch/select2-bootstrap4-theme@x.x.x/dist/select2-bootstrap4.min.css" rel="stylesheet" />
     <style>
-        .select2-container--bootstrap4 .select2-selection--single { height: calc(2.25rem + 2px) !important; }
-        .select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered { line-height: calc(2.25rem + 2px) !important; padding-left: 0.75rem !important; padding-right: 1.75rem !important; }
-        .select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow { height: calc(2.25rem + 0px) !important; }
-        .select2-container--bootstrap4 .select2-selection { border: 1px solid #ced4da; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: border-color .15s ease-in-out, box-shadow .15s ease-in-out; border-radius: 0.25rem; }
-        .select2-container--bootstrap4.select2-container--focus .select2-selection { border-color: #80bdff; box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25); }
-        .select2-dropdown { border: 1px solid #ced4da; border-radius: 0.25rem; box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15); margin-top: 2px; }
-        .select2-results__option { padding: 0.4rem 0.75rem; font-size: 0.9rem; }
-        .select2-container--bootstrap4 .select2-results__option--highlighted { background-color: #007bff; color: white; }
-        .select2-results__options { max-height: 250px; overflow-y: auto; }
-        .product-item .form-control { margin-bottom: 0; }
-        .col-md-6 > .card { margin-bottom: 1rem; }
+/* General Styles */
+body {
+    background-color: #f8f9fc;
+}
+
+.container-fluid {
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+}
+
+/* Card Styles */
+.card {
+    border: none;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15) !important;
+}
+
+.card-header {
+    background-color: #fff;
+    border-bottom: 1px solid #e3e6f0;
+    padding: 1rem 1.25rem;
+}
+
+.card-header .card-title {
+    font-size: 1rem;
+    font-weight: 700 !important;
+    margin: 0;
+    color: #4e73df;
+}
+
+.card-body {
+    padding: 1.25rem;
+}
+
+/* Form Controls */
+.form-control {
+    font-size: 0.875rem;
+    border: 1px solid #d1d3e2;
+    border-radius: 0.35rem;
+    padding: 0.375rem 0.75rem;
+    height: calc(1.5em + 0.75rem + 2px);
+}
+
+.form-control:focus {
+    border-color: #bac8f3;
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
+}
+
+textarea.form-control {
+    height: auto;
+}
+
+/* Select2 Customization */
+        .select2-container--bootstrap4 .select2-selection {
+    border: 1px solid #d1d3e2;
+    border-radius: 0.35rem;
+    height: calc(1.5em + 0.75rem + 2px) !important;
+}
+
+        .select2-container--bootstrap4.select2-container--focus .select2-selection {
+    border-color: #bac8f3;
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
+}
+
+.select2-container--bootstrap4 .select2-selection--single .select2-selection__rendered {
+    line-height: calc(1.5em + 0.75rem) !important;
+    padding-left: 0.75rem !important;
+}
+
+.select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
+    height: calc(1.5em + 0.75rem) !important;
+}
+
+/* Input Groups */
+.input-group-text {
+    font-size: 0.875rem;
+    border: 1px solid #d1d3e2;
+    background-color: #f8f9fc;
+}
+
+/* Custom Switches */
+.custom-switch .custom-control-label::before {
+    border: none;
+    background-color: #eaecf4;
+}
+
+.custom-switch .custom-control-input:checked ~ .custom-control-label::before {
+    background-color: #4e73df;
+}
+
+/* Tables */
+.table {
+    margin-bottom: 0;
+}
+
+.table th {
+    font-weight: 600;
+    background-color: #f8f9fc;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* Buttons */
+.btn {
+    font-size: 0.875rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.35rem;
+}
+
+.btn-primary {
+    background-color: #4e73df;
+    border-color: #4e73df;
+}
+
+.btn-primary:hover {
+    background-color: #2e59d9;
+    border-color: #2653d4;
+}
+
+/* Customer Suggestions */
+#customer_suggestions {
+    border: 1px solid #d1d3e2;
+    border-radius: 0.35rem;
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+    max-height: 280px;
+            overflow-y: auto;
+    position: absolute;
+    background: white;
+    z-index: 1050;
+    width: 100%;
+}
+
+.suggestion-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #e3e6f0;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.suggestion-item:hover {
+    background-color: #f8f9fc;
+}
+
+.suggestion-item .customer-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #4e73df;
+    margin: 0;
+}
+
+.suggestion-item .customer-meta {
+    font-size: 0.8125rem;
+    color: #5a5c69;
+    margin: 0;
+}
+
+.suggestion-item .purchase-info {
+    font-size: 0.75rem;
+    color: #858796;
+    font-style: italic;
+    margin: 0;
+}
+
+/* Custom Scrollbar for Customer Suggestions */
+#customer_suggestions::-webkit-scrollbar {
+    width: 6px;
+}
+
+#customer_suggestions::-webkit-scrollbar-track {
+    background: #f8f9fc;
+    border-radius: 0.35rem;
+}
+
+#customer_suggestions::-webkit-scrollbar-thumb {
+    background: #d1d3e2;
+    border-radius: 0.35rem;
+}
+
+#customer_suggestions::-webkit-scrollbar-thumb:hover {
+    background: #858796;
+}
+
+/* Icons */
+.fa, .fas {
+    font-size: 0.875rem;
+}
+
+/* Validation */
+.was-validated .form-control:valid, .form-control.is-valid {
+    border-color: #1cc88a;
+}
+
+.was-validated .form-control:invalid, .form-control.is-invalid {
+    border-color: #e74a3b;
+}
+
+/* Required Fields */
+.text-danger {
+    color: #e74a3b !important;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 991.98px) {
+    .container-fluid {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+    }
+
+    .card {
+        margin-bottom: 1rem;
+    }
+}
     </style>
 @endpush
 
 @push('js')
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.32/dist/sweetalert2.all.min.js"></script>
+    <script>
+        // Make allPancakePages data available to JavaScript
+        const allPancakePagesData = @json($allPancakePages ?? []);
+        // For edit, the initial page ID is from the order or old input
+        const initialPancakePageId = '{{ old("pancake_page_id", $order->pancake_page_id ?? null) }}';
+    </script>
     <script>
     $(document).ready(function() {
-        $('.select2').select2({
+        // Initialize Select2
+        $('.select2').each(function() {
+            $(this).select2({
             theme: 'bootstrap4',
-            width: '100%'
+                width: '100%',
+                placeholder: $(this).attr('data-placeholder') || '-- Chọn --',
+                allowClear: $(this).prop('multiple') ? false : true
+            });
         });
 
-        // Initialize push to pancake button
-        $('#push_now_btn').on('click', function() {
-            const orderId = $(this).data('order-id');
-            const button = $(this);
+        let suggestionsInitialized = false;
+        let suggestionBox;
 
-            // Disable button and show loading state
-            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy đơn hàng...');
+        // Customer search with debounce
+        let searchTimeout;
+        $('#customer_search, #customer_name, #customer_phone').on('input', function() {
+            const query = $(this).val().trim();
+            const currentInput = $(this);
 
-            // Confirm push action
+            if (!suggestionsInitialized) {
+                suggestionBox = $('#customer_suggestions').detach().appendTo('body');
+                suggestionsInitialized = true;
+            } else {
+                suggestionBox = $('#customer_suggestions'); // Ensure we have the latest jQuery object if needed
+            }
+
+            clearTimeout(searchTimeout);
+
+            if (currentInput.is('#customer_name') || currentInput.is('#customer_phone')) {
+                if (query.length === 0) {
+                    $('#customer_search').val('');
+                    suggestionBox.slideUp(150);
+                    return;
+                }
+            }
+
+            if (query.length >= 1) {
+                // Position the suggestion box under the current input
+                const offset = currentInput.offset();
+                const inputHeight = currentInput.outerHeight();
+                const inputWidth = currentInput.outerWidth();
+
+                suggestionBox.css({
+                    top: offset.top + inputHeight + 'px',
+                    left: offset.left + 'px',
+                    width: inputWidth + 'px',
+                    marginTop: '0px' // Reset any previous margin-top
+                });
+
+                searchTimeout = setTimeout(function() {
+                    $.ajax({
+                        url: '/api/customers/search',
+                        method: 'GET',
+                        data: { query: query },
+                        dataType: 'json',
+                        success: function(response) {
+                            let html = '';
+                            if (response && response.success && Array.isArray(response.data)) {
+                                if (response.data.length > 0) {
+                                    response.data.forEach(customer => {
+                                        try {
+                                            const purchaseInfo = customer.purchase_count
+                                                ? `Đã mua: ${customer.purchase_count} lần`
+                                                : (customer.total_spent ? `Tổng chi: ${formatCurrency(customer.total_spent)}` : 'Khách mới');
+                                            // const avatar = customer.avatar || '/images/default-avatar.png'; // Avatar logic removed as column is removed
+                                            const customerJson = JSON.stringify(customer).replace(/'/g, "&apos;").replace(/\"/g, "&quot;");
+
+                                            html += `
+                                                <div class="suggestion-item" data-customer='${customerJson}'>
+                                                    <div class="customer-info">
+                                                        <div class="customer-name">${customer.name || 'N/A'}</div>
+                                                        <div class="customer-meta">${customer.phone || 'N/A'}</div>
+                                                        <div class="purchase-info">${purchaseInfo}</div>
+                                                    </div>
+                                                </div>`;
+                                        } catch (e) {
+                                            console.error("Error processing customer data for suggestion: ", customer, e);
+                                        }
+                                    });
+                                    suggestionBox.html(html);
+                                } else {
+                                    suggestionBox.html('<div class="p-2 text-center text-muted">Không tìm thấy khách hàng nào.</div>');
+                                }
+                            } else {
+                                console.warn("API call successful, but response indicates failure or malformed data: ", response);
+                                suggestionBox.html('<div class="p-2 text-center text-warning">Phản hồi từ máy chủ không hợp lệ.</div>');
+                            }
+                            suggestionBox.slideDown(150);
+                        },
+                        error: function(jqXHR, textStatus, errorThrown) {
+                            console.error("Customer search AJAX error: ", textStatus, errorThrown, jqXHR.responseText);
+                            suggestionBox.html('<div class="p-2 text-center text-danger">Lỗi kết nối hoặc tìm kiếm thất bại.</div>').slideDown(150);
+                        }
+                    });
+                }, 250);
+            } else {
+                suggestionBox.slideUp(150);
+            }
+        });
+
+        // Function to format currency
+        function formatCurrency(amount) {
+            return new Intl.NumberFormat('vi-VN', {
+                style: 'currency',
+                currency: 'VND',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+            }).format(amount);
+        }
+
+        // Function to parse currency string to number
+        function parseCurrency(str) {
+            return parseInt(str.replace(/[^\d]/g, '')) || 0;
+        }
+
+        // Function to calculate totals
+        function calculateTotals() {
+            let subtotal = 0;
+
+            // Calculate subtotal from all products
+            $('.item-row').each(function() {
+                const price = parseFloat($(this).find('.item-price').val()) || 0;
+                const quantity = parseInt($(this).find('.item-quantity').val()) || 0;
+                subtotal += price * quantity;
+            });
+
+            // Get other fees and discounts
+            const shippingFee = parseFloat($('input[name="shipping_fee"]').val()) || 0;
+            const discount = parseFloat($('input[name="discount_amount"]').val()) || 0;
+            const transferMoney = parseFloat($('input[name="transfer_money"]').val()) || 0;
+            const partnerFee = parseFloat($('input[name="partner_fee"]').val()) || 0;
+
+            // Calculate totals
+            const total = subtotal + shippingFee + partnerFee;
+            const afterDiscount = total - discount;
+            const remaining = afterDiscount - transferMoney;
+
+            // Update display
+            $('#total_amount').text(formatCurrency(total));
+            $('#discount_display').text(formatCurrency(discount));
+            $('#after_discount').text(formatCurrency(afterDiscount));
+            $('#paid_amount').text(formatCurrency(transferMoney));
+            $('#remaining_amount').text(formatCurrency(remaining));
+        }
+
+        // Initial calculation
+        calculateTotals();
+
+        // Initialize itemIndexCounter based on the number of item rows already rendered by Blade
+        // This ensures that new items added via JS have unique indices that don't conflict with existing items.
+        let itemIndexCounter = $('#items_container .item-row').length;
+
+        // Add new product row
+        $('#add_item_row').click(function() {
+            const newRow = `
+                <div class="item-row mb-3">
+                    <div class="row align-items-end">
+                    <div class="col-md-3">
+                            <label class="small font-weight-bold">Mã SP</label>
+                            <div class="input-group">
+                                <input type="text" name="items[${itemIndexCounter}][code]" class="form-control product-code" placeholder="Nhập mã SP (code)">
+                                <div class="input-group-append">
+                                    <button type="button" class="btn btn-outline-secondary search-product">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                    </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="small font-weight-bold">Tên sản phẩm</label>
+                            <input type="text" name="items[${itemIndexCounter}][name]" class="form-control product-name" placeholder="Tên sản phẩm">
+                    </div>
+                    <div class="col-md-2">
+                            <label class="small font-weight-bold">Đơn giá</label>
+                            <input type="number" step="any" name="items[${itemIndexCounter}][price]" class="form-control item-price" placeholder="Đơn giá" value="0" min="0">
+                    </div>
+                    <div class="col-md-2">
+                            <label class="small font-weight-bold">Số lượng</label>
+                            <input type="number" name="items[${itemIndexCounter}][quantity]" class="form-control item-quantity" placeholder="Số lượng" value="1" min="1">
+                    </div>
+                        <div class="col-md-1 d-flex align-items-center">
+                            <input type="hidden" name="items[${itemIndexCounter}][product_id]" value="">
+                            <input type="hidden" name="items[${itemIndexCounter}][variation_info]" value="">
+                            <button type="button" class="btn btn-link text-danger remove-row">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            $('#items_container').append(newRow);
+            itemIndexCounter++; // Increment for the next new row
+
+            // Ensure remove buttons are shown if there's more than one item row
+            if ($('.item-row').length > 1) {
+                $('.remove-row').show();
+            }
+        });
+
+        // Remove product row
+        $(document).on('click', '.remove-row', function() {
+            $(this).closest('.item-row').remove();
+            if ($('.item-row').length === 1) {
+                $('.remove-row').hide(); // Hide remove button if only one row remains
+            }
+            calculateTotals(); // Recalculate totals after removing row
+        });
+
+        // Listen for changes in price, quantity, and other amounts
+        $(document).on('input', '.item-price, .item-quantity', function() {
+            calculateTotals();
+        });
+
+        $(document).on('input', 'input[name="shipping_fee"], input[name="discount_amount"], input[name="transfer_money"], input[name="partner_fee"]', function() {
+            calculateTotals();
+        });
+
+        // Handle customer selection
+        $(document).on('click', '.suggestion-item', function() {
+            let customer;
+            try {
+                const customerDataString = $(this).attr('data-customer')
+                                             .replace(/&apos;/g, "'")
+                                             .replace(/&quot;/g, '"');
+                customer = JSON.parse(customerDataString);
+            } catch (e) {
+                console.error("Failed to parse customer data from attribute: ", e, $(this).attr('data-customer'));
+                alert("Có lỗi khi chọn khách hàng này.");
+                return;
+            }
+
+            if (customer && typeof customer === 'object') {
+                fillCustomerInfo(customer);
+                $('#customer_suggestions').slideUp(150);
+                $('#customer_search').val(customer.name || '');
+            } else {
+                console.error("Invalid customer data after parsing: ", customer);
+                alert("Dữ liệu khách hàng không hợp lệ.");
+            }
+        });
+
+        function fillCustomerInfo(customer) {
+            $('#customer_name').val(customer.name || '');
+            $('#customer_phone').val(customer.phone || '');
+            $('#customer_email').val(customer.email || '');
+            $('#customer_id').val(customer.id || '');
+            $('textarea[name="street_address"]').val(customer.street_address || '');
+
+            // Reset dependent dropdowns first
+            resetLocationSelects('province');
+
+            // Use customer.province, customer.district, customer.ward
+            const provinceCode = customer.province;
+            const districtCode = customer.district;
+            const wardCode = customer.ward;
+
+            if (provinceCode) {
+                $('#province_code').val(provinceCode).trigger('change.select2');
+                // The 'change' event on #province_code should trigger loadDistricts.
+                // We need to ensure that after districts are loaded, if districtCode is available, it's selected.
+                // And similarly for wards. This requires careful handling of callbacks or event listeners.
+
+                // Option 1: Chaining callbacks (current refined approach)
+                loadDistricts(provinceCode, function() {
+                    if (districtCode) {
+                        // Check if the option exists after loading
+                        if ($('#district_code option[value="' + districtCode + '"]').length > 0) {
+                            $('#district_code').val(districtCode).trigger('change.select2');
+                            // Now, the 'change' event on #district_code should trigger loadWards
+                            loadWards(districtCode, function() {
+                                if (wardCode) {
+                                     if ($('#ward_code option[value="' + wardCode + '"]').length > 0) {
+                                        $('#ward_code').val(wardCode).trigger('change.select2');
+                                     } else {
+                                         console.warn('Ward code ' + wardCode + ' (from customer data) not found in dropdown after loading.');
+                                     }
+                                }
+                            });
+            } else {
+                             console.warn('District code ' + districtCode + ' (from customer data) not found in dropdown after loading.');
+                             // If district is not found, we might not want to proceed to load wards based on an invalid district,
+                             // or we might want to clear the ward dropdown.
+                             resetLocationSelects('district'); // Clears ward too
+                        }
+                    }
+                });
+            } else {
+                // No province_code from customer, ensure all location selects are reset and disabled
+                $('#province_code').val(null).trigger('change.select2');
+                // resetLocationSelects('province'); // Already called at the beginning
+            }
+        }
+
+        // Hide suggestions when clicking outside
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('#customer_search, #customer_name, #customer_phone, #customer_suggestions').length) {
+                $('#customer_suggestions').slideUp(150);
+            }
+        });
+
+        function populateSelect(selector, data, placeholder) {
+            let options = `<option value="">${placeholder}</option>`;
+            if (data && typeof data === 'object') {
+                for (const [code, name] of Object.entries(data)) {
+                    options += `<option value="${code}">${name}</option>`;
+                }
+            }
+            $(selector).html(options).trigger('change.select2'); // Refresh Select2 after populating
+        }
+
+        // Sửa lại loadDistricts và loadWards để nhận callback
+        // Ensure these functions populate the dropdowns correctly and then call the callback.
+        function loadDistricts(province_code, callback) {
+            if (!province_code) {
+                resetLocationSelects('district'); // This will also reset and disable ward
+                if (typeof callback === 'function') callback();
+                return;
+            }
+
+            $.ajax({
+                url: '/api/districts',
+                type: 'GET',
+                data: { province_code: province_code },
+                success: function(data) {
+                    let options = '<option value="">-- Chọn Quận/Huyện --</option>';
+                    $.each(data, function(code, name) {
+                        options += '<option value="'+ code +'">'+ name +'</option>';
+                    });
+                    $('#district_code').html(options).prop('disabled', false).trigger('change.select2');
+                    if (typeof callback === 'function') callback();
+                },
+                error: function() {
+                    console.error("Failed to load districts for province: " + province_code);
+                    resetLocationSelects('district');
+                    if (typeof callback === 'function') callback();
+                }
+            });
+        }
+
+        function loadWards(district_code, callback) {
+            if (!district_code) {
+                resetLocationSelects('ward');
+                if (typeof callback === 'function') callback();
+                return;
+            }
+            $.ajax({
+                url: '/api/wards',
+                type: 'GET',
+                data: { district_code: district_code },
+                success: function(data) {
+                    let options = '<option value="">-- Chọn Phường/Xã --</option>';
+                    $.each(data, function(code, name) {
+                        options += '<option value="'+ code +'">'+ name +'</option>';
+                    });
+                    $('#ward_code').html(options).prop('disabled', false).trigger('change.select2');
+                    if (typeof callback === 'function') callback();
+                },
+                error: function() {
+                    console.error("Failed to load wards for district: " + district_code);
+                    resetLocationSelects('ward');
+                    if (typeof callback === 'function') callback();
+                }
+            });
+        }
+
+        function resetLocationSelects(fromLevel) {
+            if (fromLevel === 'province' || fromLevel === 'district') {
+                $('#district_code')
+                    .html('<option value="">-- Chọn Quận/Huyện --</option>')
+                    .prop('disabled', true)
+                    .trigger('change.select2');
+            }
+            // Always reset ward if district or province is reset
+            if (fromLevel === 'province' || fromLevel === 'district' || fromLevel === 'ward') {
+                $('#ward_code')
+                    .html('<option value="">-- Chọn Phường/Xã --</option>')
+                    .prop('disabled', true)
+                    .trigger('change.select2');
+            }
+        }
+
+        // Event handlers for manual selection of province/district
+        // These should correctly trigger the loading of the next level.
+        $('#province_code').on('change', function() {
+            const provinceCode = $(this).val();
+            if (provinceCode) {
+                 loadDistricts(provinceCode, function() {
+                    // Callback after districts are loaded for manual province change
+                    // If we were auto-filling, the fillCustomerInfo handles setting the district/ward.
+                    // For manual change, we just load districts and reset ward.
+                    resetLocationSelects('ward'); // Ensure ward is reset
+                 });
+            } else {
+                resetLocationSelects('province'); // Clear both district and ward
+            }
+        });
+
+        $('#district_code').on('change', function() {
+            const districtCode = $(this).val();
+            if (districtCode) {
+                loadWards(districtCode, function(){
+                    // Callback after wards are loaded for manual district change
+                    // If we were auto-filling, fillCustomerInfo handles setting the ward.
+                    // For manual selection, we just ensure it's enabled and Select2 is updated.
+                    $('#ward_code').prop('disabled', false).trigger('change.select2');
+                });
+            } else {
+                // If district is cleared, reset and disable ward
+                resetLocationSelects('ward');
+            }
+        });
+
+        // Initial call to setup placeholders for location if not pre-selected
+        if (!$('#province_code').val()) {
+            resetLocationSelects('province');
+        } else if (!$('#district_code').val()) {
+             resetLocationSelects('district');
+        } else if (!$('#ward_code').val()) {
+            resetLocationSelects('ward');
+        }
+
+        // Load Pancake Pages when Pancake Shop changes
+        $('#pancake_shop_id').on('change', function() {
+            const shopId = $(this).val();
+            const $pageSelect = $('#pancake_page_id');
+            $pageSelect.empty().append('<option value="">-- Chọn Page --</option>').prop('disabled', true);
+
+            if (shopId && allPancakePagesData[shopId]) {
+                const pagesForShop = allPancakePagesData[shopId];
+                if (pagesForShop.length > 0) {
+                    $.each(pagesForShop, function(index, page) {
+                        $pageSelect.append($('<option>', {
+                            value: page.id, // Assuming 'id' is the page's primary key
+                            text: page.name
+                        }));
+                    });
+                    $pageSelect.prop('disabled', false);
+                } else {
+                    $pageSelect.append('<option value="">Không tìm thấy Page cho Shop này</option>');
+                }
+            } else {
+                 $pageSelect.append('<option value="">Không tìm thấy Page hoặc Shop không hợp lệ</option>');
+            }
+
+            // Attempt to re-select the initial/old page ID if it exists for the current shop
+            if (initialPancakePageId && pagesForShop && pagesForShop.find(p => p.id == initialPancakePageId)) {
+                $pageSelect.val(initialPancakePageId);
+            } else if (initialPancakePageId && shopId && allPancakePagesData[shopId] && allPancakePagesData[shopId].find(p => p.id == initialPancakePageId)) {
+                 //This case handles if initialPancakePageId was set but the initial shop didn't match, then user selects correct shop
+                $pageSelect.val(initialPancakePageId);
+            }
+
+            $pageSelect.trigger('change.select2');
+        });
+
+        // Initial trigger if a shop is already selected on page load (for edit form)
+        if ($('#pancake_shop_id').val()) {
+            $('#pancake_shop_id').trigger('change');
+        }
+
+        // Toggle Shipping Fee display based on Free Shipping checkbox
+        function toggleShippingFeeField() {
+            const isFreeShippingChecked = $('#is_free_shipping').is(':checked');
+            const $shippingFeeGroup = $('#shipping_fee_group');
+            const $shippingFeeInput = $shippingFeeGroup.find('input[name="shipping_fee"]');
+
+            if (isFreeShippingChecked) {
+                $shippingFeeGroup.hide();
+                $shippingFeeInput.val(0).prop('disabled', true); // Set to 0 and disable
+            } else {
+                $shippingFeeGroup.show();
+                $shippingFeeInput.prop('disabled', false); // Re-enable
+                // Optionally, restore a previous value if needed, or leave as is
+            }
+        }
+
+        // Initial check on page load
+        toggleShippingFeeField();
+
+        // Event listener for checkbox change
+        $('#is_free_shipping').on('change', function() {
+            toggleShippingFeeField();
+            calculateTotals(); // Recalculate totals when shipping fee might change
+        });
+
+        // AJAX for pushing individual order to Pancake
+        $(document).on('click', '.btn-push-pancake', function(e) {
+            e.preventDefault();
+            var orderId = $(this).data('order-id');
+            var url = $(this).data('url');
+            var button = $(this);
+
             Swal.fire({
-                title: 'Xác nhận đẩy đơn hàng',
-                text: 'Bạn có chắc muốn đẩy đơn hàng này lên Pancake?',
-                icon: 'question',
+                title: 'Xác nhận đẩy đơn?',
+                text: "Bạn có chắc chắn muốn đẩy đơn hàng #" + orderId + " lên Pancake không?",
+                icon: 'warning',
                 showCancelButton: true,
-                confirmButtonText: 'Đẩy lên Pancake',
-                cancelButtonText: 'Hủy'
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Đồng ý, đẩy ngay!',
+                cancelButtonText: 'Hủy bỏ'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Send AJAX request to push the order
+                    button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy...');
+
                     $.ajax({
-                        url: `/orders/${orderId}/push-to-pancake`,
+                        url: url,
                         type: 'POST',
                         data: {
                             _token: $('meta[name="csrf-token"]').attr('content')
@@ -532,24 +1331,22 @@
                             if (response.success) {
                                 Swal.fire({
                                     title: 'Thành công!',
-                                    text: response.message,
+                                    text: response.message || 'Đã đẩy đơn hàng lên Pancake thành công.',
                                     icon: 'success'
-                                }).then(() => {
-                                    // Reload the page to see updated status
-                                    window.location.reload();
                                 });
+                                // Don't reload page on edit view, just update button state
+                                button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i>');
                             } else {
                                 Swal.fire({
                                     title: 'Lỗi!',
-                                    text: response.message,
+                                    text: response.message || 'Có lỗi xảy ra khi đẩy đơn hàng.',
                                     icon: 'error'
                                 });
-                                // Reset button state
-                                button.prop('disabled', false).html('<i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay');
+                                button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i>');
                             }
                         },
                         error: function(xhr) {
-                            let errorMsg = 'Đã xảy ra lỗi khi đẩy đơn hàng';
+                            let errorMsg = 'Có lỗi xảy ra khi đẩy đơn hàng.';
                             if (xhr.responseJSON && xhr.responseJSON.message) {
                                 errorMsg = xhr.responseJSON.message;
                             }
@@ -558,292 +1355,58 @@
                                 text: errorMsg,
                                 icon: 'error'
                             });
-                            // Reset button state
-                            button.prop('disabled', false).html('<i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay');
+                            button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i>');
                         }
                     });
-                } else {
-                    // Reset button if user cancels
-                    button.prop('disabled', false).html('<i class="fas fa-sync"></i> Đẩy đơn hàng đến Pancake ngay');
                 }
             });
         });
 
-        // Item management
-        let itemCount = {{ count($order->items) > 0 ? count($order->items) : 1 }};
+        // Handle update on Pancake button click
+        $('.update-on-pancake').click(function() {
+            const orderId = $(this).data('order-id');
+            const button = $(this);
 
-        // Auto-populate billing information if empty
-        $('#customer_name, #customer_phone, #customer_email').on('change', function() {
-            const fieldMap = {
-                'customer_name': 'bill_full_name',
-                'customer_phone': 'bill_phone_number',
-                'customer_email': 'bill_email'
-            };
+            // Disable button and show loading state
+            button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang cập nhật...');
 
-            const targetField = fieldMap[this.id];
-            if (targetField && $('#' + targetField).val() === '') {
-                $('#' + targetField).val($(this).val());
-            }
-        });
-
-        // Add item row
-        $('#add_item_row').click(function() {
-            let newRow = `
-                <div class="row item-row mb-2 align-items-center">
-                    <div class="col-md-2">
-                        <label class="small">Pancake Variation ID</label>
-                        <input type="text" name="items[${itemCount}][code]" class="form-control" placeholder="Pancake Variation ID">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="small">Mã sản phẩm</label>
-                        <input type="text" name="items[${itemCount}][product_code]" class="form-control" placeholder="Mã sản phẩm" readonly>
-                    </div>
-                    <div class="col-md-4">
-                        <label class="small">Tên sản phẩm</label>
-                        <input type="text" name="items[${itemCount}][name]" class="form-control" placeholder="Tên sản phẩm">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="small">Đơn giá</label>
-                        <input type="number" step="any" name="items[${itemCount}][price]" class="form-control item-price" placeholder="Đơn giá" value="0" min="0">
-                    </div>
-                    <div class="col-md-1">
-                        <label class="small">Số lượng</label>
-                        <input type="number" name="items[${itemCount}][quantity]" class="form-control item-quantity" placeholder="Số lượng" value="1" min="1">
-                    </div>
-                    <div class="col-md-1 align-self-end">
-                        <input type="hidden" name="items[${itemCount}][product_data]" value="${JSON.stringify({
-                            variation_id: '',
-                            code: '',
-                            name: '',
-                            price: 0,
-                            quantity: 1,
-                            added_by_cart_quantity: 0,
-                            discount_percentage: 0,
-                            measure_group_id: null,
-                            package_count: 0,
-                            return_quantity: 0,
-                            total_discount: 0
-                        })}">
-                        <button type="button" class="btn btn-danger btn-sm remove-row"><i class="fas fa-trash"></i></button>
-                    </div>
-                </div>
-            `;
-
-            $('#items_container').append(newRow);
-            itemCount++;
-            calculateTotal();
-
-            // Update product_data when fields change
-            const $newRow = $('#items_container').children().last();
-            $newRow.find('input[type="text"], input[type="number"]').on('change', function() {
-                updateProductData($newRow);
-            });
-        });
-
-        // Function to update product_data when fields change
-        function updateProductData($row) {
-            const code = $row.find('input[name$="[code]"]').val();
-            const name = $row.find('input[name$="[name]"]').val();
-            const price = parseFloat($row.find('input[name$="[price]"]').val()) || 0;
-            const quantity = parseInt($row.find('input[name$="[quantity]"]').val()) || 1;
-
-            const productData = {
-                variation_id: code,
-                code: code, // Set code same as variation_id
-                name: name,
-                price: price,
-                quantity: quantity,
-                added_by_cart_quantity: 0,
-                discount_percentage: 0,
-                measure_group_id: null,
-                package_count: 0,
-                return_quantity: 0,
-                total_discount: 0
-            };
-
-            $row.find('input[name$="[product_data]"]').val(JSON.stringify(productData));
-            // Update product_code field to show the code
-            $row.find('input[name$="[product_code]"]').val(code);
-        }
-
-        // Add change event handler to existing rows
-        $('.item-row').each(function() {
-            const $row = $(this);
-            $row.find('input[type="text"], input[type="number"]').on('change', function() {
-                updateProductData($row);
-            });
-        });
-
-        // Remove item row
-        $('#items_container').on('click', '.remove-row', function() {
-            $(this).closest('.item-row').remove();
-            calculateTotal(); // Recalculate total after removing row
-        });
-
-        // Calculate total when price or quantity changes
-        $('#items_container').on('change', '.item-price, .item-quantity', function() {
-            calculateTotal();
-        });
-
-        // Update shipping fee in totals when changed
-        $('#shipping_fee').on('change', function() {
-            calculateTotal();
-        });
-
-        // Free shipping checkbox handling
-        $('#is_free_shipping').on('change', function() {
-            if ($(this).is(':checked')) {
-                const currentShippingFee = $('#shipping_fee').val();
-                $('#shipping_fee').data('previous-value', currentShippingFee);
-                $('#shipping_fee').val(0);
-            } else {
-                const previousValue = $('#shipping_fee').data('previous-value') || 0;
-                $('#shipping_fee').val(previousValue);
-            }
-            calculateTotal();
-        });
-
-        // Initialize total calculation
-        calculateTotal();
-
-        // Function to calculate total
-        function calculateTotal() {
-            let total = 0;
-
-            // Sum all line items
-            $('.item-row').each(function() {
-                const price = parseFloat($(this).find('.item-price').val()) || 0;
-                const quantity = parseInt($(this).find('.item-quantity').val()) || 0;
-                total += price * quantity;
-            });
-
-            // Add shipping fee
-            const shippingFee = parseFloat($('#shipping_fee').val()) || 0;
-
-            // Calculate and display total with shipping
-            const grandTotal = total + shippingFee;
-            $('#total_value').val(grandTotal);
-            $('#total_value_display').text(formatCurrency(grandTotal));
-        }
-
-        // Format currency for display
-        function formatCurrency(amount) {
-            return new Intl.NumberFormat('vi-VN').format(amount);
-        }
-
-        // Location dependencies
-        $('#province_code').change(function() {
-            var province_code = $(this).val();
-            if(province_code) {
-                loadDistricts(province_code);
-            } else {
-                $('#district_code').html('<option value="">-- Chọn Quận/Huyện --</option>');
-                $('#district_code').prop('disabled', true);
-                $('#ward_code').html('<option value="">-- Chọn Phường/Xã --</option>');
-                $('#ward_code').prop('disabled', true);
-            }
-        });
-
-        $('#district_code').change(function() {
-            var district_code = $(this).val();
-            if(district_code) {
-                loadWards(district_code);
-            } else {
-                $('#ward_code').html('<option value="">-- Chọn Phường/Xã --</option>');
-                $('#ward_code').prop('disabled', true);
-            }
-        });
-
-        function loadDistricts(province_code) {
+            // Make AJAX call to update order on Pancake
             $.ajax({
-                url: '{{ route("ajax.districts") }}',
-                type: 'GET',
-                data: {province_code: province_code},
-                success: function(data) {
-                    $('#district_code').html('<option value="">-- Chọn Quận/Huyện --</option>');
-                    $.each(data, function(code, name) {
-                        $('#district_code').append('<option value="'+ code +'">'+ name +'</option>');
+                url: `/orders/${orderId}/update-on-pancake`,
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+                },
+                success: function(response) {
+                    if (response.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Thành công!',
+                            text: response.message
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Lỗi!',
+                            text: response.message
+                        });
+                    }
+                },
+                error: function(xhr) {
+                    const response = xhr.responseJSON;
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Lỗi!',
+                        text: response?.message || 'Đã có lỗi xảy ra khi cập nhật đơn hàng lên Pancake.'
                     });
-                    $('#district_code').prop('disabled', false);
-
-                    // If we have a previously selected district, select it again
-                    @if(old('district_code', $order->district_code))
-                    $('#district_code').val('{{ old('district_code', $order->district_code) }}');
-                    loadWards('{{ old('district_code', $order->district_code) }}');
-                    @endif
+                },
+                complete: function() {
+                    // Re-enable button and restore original text
+                    button.prop('disabled', false).html('<i class="fas fa-sync-alt"></i> Cập nhật lên Pancake');
                 }
             });
-        }
-
-        function loadWards(district_code) {
-            $.ajax({
-                url: '{{ route("ajax.wards") }}',
-                type: 'GET',
-                data: {district_code: district_code},
-                success: function(data) {
-                    $('#ward_code').html('<option value="">-- Chọn Phường/Xã --</option>');
-                    $.each(data, function(code, name) {
-                        $('#ward_code').append('<option value="'+ code +'">'+ name +'</option>');
-                    });
-                    $('#ward_code').prop('disabled', false);
-
-                    // If we have a previously selected ward, select it again
-                    @if(old('ward_code', $order->ward_code))
-                    $('#ward_code').val('{{ old('ward_code', $order->ward_code) }}');
-                    @endif
-                }
-            });
-        }
-
-        // Pancake shop and page linkage
-        $('#pancake_shop_id').change(function() {
-            var shop_id = $(this).val();
-            if(shop_id) {
-                loadPancakePages(shop_id);
-            } else {
-                $('#pancake_page_id').html('<option value="">-- Chọn Pancake Page --</option>');
-                $('#pancake_page_id').prop('disabled', true);
-            }
         });
 
-        function loadPancakePages(shop_id) {
-            $.ajax({
-                url: '{{ route("ajax.pancakePagesForShop") }}',
-                type: 'GET',
-                data: {shop_id: shop_id},
-                success: function(data) {
-                    $('#pancake_page_id').html('<option value="">-- Chọn Pancake Page --</option>');
-                    $.each(data, function(id, name) {
-                        $('#pancake_page_id').append('<option value="'+ id +'">'+ name +'</option>');
-                    });
-                    $('#pancake_page_id').prop('disabled', false);
-
-                    // If we have a previously selected page, select it again
-                    @if(old('pancake_page_id', $order->pancake_page_id))
-                    $('#pancake_page_id').val('{{ old('pancake_page_id', $order->pancake_page_id) }}');
-                    @endif
-                }
-            });
-        }
-
-        // Load districts if province is already selected
-        @if(old('province_code', $order->province_code))
-            loadDistricts('{{ old('province_code', $order->province_code) }}');
-        @endif
-
-        // Load pages if shop is already selected
-        @if(old('pancake_shop_id', $order->pancake_shop_id))
-            loadPancakePages('{{ old('pancake_shop_id', $order->pancake_shop_id) }}');
-        @endif
-
-        // Hiển thị thông tin Pancake ID khi chọn đơn vị vận chuyển
-        $('#shipping_provider_id').on('change', function() {
-            const selectedOption = $(this).find('option:selected');
-            const pancakeId = selectedOption.data('pancake-id');
-            if (pancakeId) {
-                console.log('Đã chọn đơn vị vận chuyển với Pancake ID:', pancakeId);
-            }
-        });
     });
     </script>
 @endpush

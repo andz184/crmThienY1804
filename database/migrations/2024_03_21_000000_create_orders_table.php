@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('shipping_ward')->nullable();
             $table->string('street_address')->nullable();
             $table->decimal('total_value', 15, 2)->default(0);
-            $table->string('status')->default('pending');
+            $table->string('status')->default('pending')->nullable();
             $table->text('notes')->nullable();
             $table->json('live_session_info')->nullable()->comment('JSON containing live session information');
             $table->timestamps();

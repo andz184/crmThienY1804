@@ -14,6 +14,14 @@
                     <div class="card-header">
                         <h3 class="card-title">Chi tiết đơn hàng #{{ $order->order_code }}</h3>
                         <div class="card-tools">
+                            @can('orders.push_to_pancake')
+                            <button type="button" class="btn btn-info mr-2 btn-push-pancake"
+                                    data-order-id="{{ $order->id }}"
+                                    data-url="{{ route('orders.pushToPancake', $order->id) }}"
+                                    title="Đẩy đơn hàng này lên Pancake">
+                                <i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake
+                            </button>
+                            @endcan
                             <a href="{{ route('orders.index') }}" class="btn btn-default">
                                 <i class="fas fa-arrow-left"></i> Quay lại
                             </a>
@@ -107,26 +115,26 @@
                                                     @php
                                                         $variationDetail = null;
                                                         $imageUrl = null;
-                                                        
+
                                                         // Extract variation details and image from product_info if available
                                                         if ($item->product_info) {
                                                             $productInfo = is_string($item->product_info) ? json_decode($item->product_info, true) : $item->product_info;
-                                                            
+
                                                             if (!empty($productInfo['processed_variation_info'])) {
                                                                 $variationInfo = $productInfo['processed_variation_info'];
                                                                 $variationDetail = $variationInfo['detail'] ?? null;
-                                                                
+
                                                                 if (!empty($variationInfo['images']) && is_array($variationInfo['images'])) {
                                                                     $imageUrl = $variationInfo['images'][0] ?? null;
                                                                 }
                                                             }
                                                         }
                                                     @endphp
-                                                    
+
                                                     @if($variationDetail)
                                                         <div><small class="text-muted">{{ $variationDetail }}</small></div>
                                                     @endif
-                                                    
+
                                                     @if($imageUrl)
                                                         <div class="mt-2">
                                                             <img src="{{ $imageUrl }}" alt="{{ $item->product_name }}" class="img-thumbnail" style="max-height: 80px;">
@@ -374,13 +382,71 @@
             </div>
         </div>
     </div>
+
+    {{-- Order Items Section --}}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h3 class="card-title m-0 font-weight-bold text-primary">
+                <i class="fas fa-boxes mr-2"></i>Sản phẩm trong đơn
+            </h3>
+        </div>
+        <div class="card-body p-0"> {{-- p-0 to remove padding if table is directly inside --}}
+            @if($order->items && $order->items->count() > 0)
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" width="100%" cellspacing="0">
+                        <thead class="thead-light">
+                            <tr>
+                                <th class="pl-3">Tên sản phẩm</th>
+                                <th>Mã SP (Code)</th>
+                                <th class="text-center">Số lượng</th>
+                                <th class="text-right">Đơn giá</th>
+                                <th class="text-right pr-3">Thành tiền</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($order->items as $item)
+                            <tr>
+                                <td class="pl-3">
+                                    {{ $item->name ?? ($item->product_name ?? 'N/A') }}
+                                    @if($item->pancake_product_id || $item->pancake_variation_id)
+                                        <br><small class="text-muted">Pancake ID: {{ $item->pancake_product_id }} / {{ $item->pancake_variation_id }}</small>
+                                    @endif
+                                </td>
+                                <td>{{ $item->code ?? ($item->product_code ?? 'N/A') }}</td>
+                                <td class="text-center">{{ $item->quantity }}</td>
+                                <td class="text-right">{{ number_format($item->price, 0, ',', '.') }} đ</td>
+                                <td class="text-right pr-3">{{ number_format($item->price * $item->quantity, 0, ',', '.') }} đ</td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                        <tfoot class="bg-light font-weight-bold">
+                            <tr>
+                                <td colspan="4" class="text-right">Tổng giá trị sản phẩm:</td>
+                                <td class="text-right pr-3">{{ number_format($order->items->sum(function($item){ return $item->price * $item->quantity; }), 0, ',', '.') }} đ</td>
+                            </tr>
+                            {{-- You can add more totals like shipping, discount, grand total here if needed --}}
+                        </tfoot>
+                    </table>
+                </div>
+            @else
+                <div class="p-3">
+                    <p class="mb-0 text-muted">Không có sản phẩm nào trong đơn hàng này.</p>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    {{-- Other sections like Call History etc. --}}
+    @if ($order->calls && $order->calls->count() > 0)
+    @endif
 @stop
 
 @push('css')
-    {{-- Add custom CSS here --}}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 @endpush
 
 @push('js')
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script>
         $(document).ready(function() {
             let callPopupWindow = null; // Store reference to the call window
@@ -792,6 +858,68 @@
                 $('#newData').text(JSON.stringify(newData, null, 2));
 
                 $('#changesModal').modal('show');
+            });
+
+            // AJAX for pushing individual order to Pancake
+            $(document).on('click', '.btn-push-pancake', function(e) {
+                e.preventDefault();
+                var orderId = $(this).data('order-id');
+                var url = $(this).data('url');
+                var button = $(this);
+
+                Swal.fire({
+                    title: 'Xác nhận đẩy đơn?',
+                    text: "Bạn có chắc chắn muốn đẩy đơn hàng #" + orderId + " lên Pancake không?",
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#d33',
+                    confirmButtonText: 'Đồng ý, đẩy ngay!',
+                    cancelButtonText: 'Hủy bỏ'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        button.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đẩy...');
+
+                        $.ajax({
+                            url: url,
+                            type: 'POST',
+                            data: {
+                                _token: $('meta[name="csrf-token"]').attr('content')
+                            },
+                            success: function(response) {
+                                if (response.success) {
+                                    Swal.fire({
+                                        title: 'Thành công!',
+                                        text: response.message,
+                                        icon: 'success'
+                                    }).then(() => {
+                                        // Reload page to show updated status
+                                        window.location.reload();
+                                    });
+                                } else {
+                                    Swal.fire({
+                                        title: 'Lỗi!',
+                                        text: response.message || 'Có lỗi xảy ra khi đẩy đơn hàng.',
+                                        icon: 'error'
+                                    });
+                                    button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake');
+                                }
+                            },
+                            error: function(xhr) {
+                                var errorMessage = 'Có lỗi xảy ra khi đẩy đơn hàng.';
+                                if (xhr.responseJSON && xhr.responseJSON.message) {
+                                    errorMessage = xhr.responseJSON.message;
+                                }
+                                Swal.fire({
+                                    title: 'Lỗi!',
+                                    text: errorMessage,
+                                    icon: 'error'
+                                });
+                                button.prop('disabled', false).html('<i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake');
+                            }
+                        });
+                    }
+                });
             });
 
         });

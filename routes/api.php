@@ -6,8 +6,6 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\Api\PancakeWebhookController;
-use App\Http\Controllers\Api\CustomerController;
-use App\Http\Controllers\Api\LocationController;
 
 // Authentication Routes
 Route::group([
@@ -20,10 +18,14 @@ Route::group([
     Route::get('me', [AuthController::class, 'me']);
 });
 
+
+Route::get('/customers/search', [App\Http\Controllers\CustomerController::class, 'search']);
+
 // Protected routes
 Route::middleware(['auth:api'])->group(function () {
     // Customer routes
     Route::get('/customers', [App\Http\Controllers\CustomerController::class, 'index']);
+    // Route::get('/customers/search', [App\Http\Controllers\CustomerController::class, 'search']);
 
     // Order routes
     Route::post('/orders', [OrderController::class, 'store']);
@@ -85,9 +87,16 @@ Route::middleware('auth:sanctum')->group(function () {
     // ... existing routes ...
 });
 
-// Customer search
-Route::get('/customers/search', [CustomerController::class, 'search']);
+Route::get('/districts', function (Request $request) {
+    $province_code = $request->input('province_code');
+    $districts = \App\Models\District::where('province_code', $province_code)
+        ->pluck('name', 'code');
+    return response()->json($districts);
+});
 
-// Location data
-Route::get('/districts', [LocationController::class, 'getDistricts']);
-Route::get('/wards', [LocationController::class, 'getWards']);
+Route::get('/wards', function (Request $request) {
+    $district_code = $request->input('district_code');
+    $wards = \App\Models\Ward::where('district_code', $district_code)
+        ->pluck('name', 'code');
+    return response()->json($wards);
+});
