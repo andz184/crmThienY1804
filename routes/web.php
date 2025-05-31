@@ -119,10 +119,39 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 // Admin Routes with permission middleware
-Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::class . ':users.view|roles.view|teams.view|teams.assign|products.view|categories.view|customers.view'])
+Route::middleware(['auth'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
+        // Products
+        Route::get('products', [App\Http\Controllers\ProductController::class, 'index'])
+            ->name('products.index')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.view');
+
+        Route::get('products/create', [App\Http\Controllers\ProductController::class, 'create'])
+            ->name('products.create')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create');
+
+        Route::post('products', [App\Http\Controllers\ProductController::class, 'store'])
+            ->name('products.store')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create');
+
+        Route::get('products/{product}/edit', [App\Http\Controllers\ProductController::class, 'edit'])
+            ->name('products.edit')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
+
+        Route::put('products/{product}', [App\Http\Controllers\ProductController::class, 'update'])
+            ->name('products.update')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
+
+        Route::delete('products/{product}', [App\Http\Controllers\ProductController::class, 'destroy'])
+            ->name('products.destroy')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.delete');
+
+        Route::post('products/sync', [App\Http\Controllers\ProductController::class, 'syncFromPancake'])
+            ->name('products.sync')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.sync');
+
         // Roles
         Route::resource('roles', RoleController::class)->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':roles.view');
 
@@ -136,28 +165,6 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
         Route::get('users/trashed', [UserController::class, 'trashedIndex'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':users.view_trashed')->name('users.trashed');
         Route::patch('users/{user}/restore', [UserController::class, 'restore'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':users.restore')->name('users.restore');
         Route::delete('users/{user}/force-delete', [UserController::class, 'forceDelete'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':users.force_delete')->name('users.forceDelete');
-
-        // Products - Commented out
-        /*
-        Route::get('products', [ProductController::class, 'index'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.view')->name('products.index');
-        Route::get('products/create', [ProductController::class, 'create'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create')->name('products.create');
-        Route::post('products', [ProductController::class, 'store'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create')->name('products.store');
-        Route::get('products/{product}', [ProductController::class, 'show'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.view')->name('products.show');
-        Route::get('products/{product}/edit', [ProductController::class, 'edit'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit')->name('products.edit');
-        Route::put('products/{product}', [ProductController::class, 'update'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit')->name('products.update');
-        Route::delete('products/{product}', [ProductController::class, 'destroy'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.delete')->name('products.destroy');
-        */
-
-        // Categories - Commented out
-        /*
-        Route::get('categories', [CategoryController::class, 'index'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.view')->name('categories.index');
-        Route::get('categories/create', [CategoryController::class, 'create'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.create')->name('categories.create');
-        Route::post('categories', [CategoryController::class, 'store'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.create')->name('categories.store');
-        Route::get('categories/{category}', [CategoryController::class, 'show'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.view')->name('categories.show');
-        Route::get('categories/{category}/edit', [CategoryController::class, 'edit'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.edit')->name('categories.edit');
-        Route::put('categories/{category}', [CategoryController::class, 'update'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.edit')->name('categories.update');
-        Route::delete('categories/{category}', [CategoryController::class, 'destroy'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.delete')->name('categories.destroy');
-        */
 
         // Team structure route
         Route::get('team-structure', [TeamController::class, 'structure'])
@@ -230,7 +237,7 @@ Route::middleware(['auth', \Spatie\Permission\Middleware\PermissionMiddleware::c
         // New route for syncing product sources
         Route::post('/admin/pancake-sync/sync-product-sources', [PancakeSyncController::class, 'syncProductSources'])
             ->name('admin.pancake-sync.sync-product-sources')
-            ->middleware('permission:product-sources.sync');
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':product-sources.sync');
     });
 
 // Auth routes
@@ -268,17 +275,25 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/pancake/orders/sync-process-next', [\App\Http\Controllers\PancakeSyncController::class, 'processNextPage'])->name('pancake.orders.sync-process-next');
 
     // Product sync routes
-    Route::post('/pancake/products/sync', [App\Http\Controllers\Admin\ProductSyncController::class, 'syncFromPancake'])
+    Route::get('/pancake/products', [App\Http\Controllers\ProductController::class, 'getProductsFromPancake'])
+        ->name('pancake.products.list')
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.sync');
+
+    Route::post('/pancake/products/sync', [App\Http\Controllers\ProductController::class, 'syncFromPancake'])
         ->name('pancake.products.sync')
-        ->middleware('permission:products.sync');
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.sync');
 
-    Route::post('/pancake/products/{product}/push', [App\Http\Controllers\Admin\ProductSyncController::class, 'pushToPancake'])
-        ->name('pancake.products.push')
-        ->middleware('permission:products.sync');
+    Route::post('/pancake/products', [App\Http\Controllers\ProductController::class, 'createProductInPancake'])
+        ->name('pancake.products.create')
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create');
 
-    Route::put('/pancake/products/variants/{variant}/inventory', [App\Http\Controllers\Admin\ProductSyncController::class, 'updateInventory'])
+    Route::put('/pancake/products/{product}', [App\Http\Controllers\ProductController::class, 'updateProductInPancake'])
+        ->name('pancake.products.update')
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
+
+    Route::put('/pancake/products/{product}/inventory', [App\Http\Controllers\ProductController::class, 'updateInventoryInPancake'])
         ->name('pancake.products.inventory.update')
-        ->middleware('permission:products.sync');
+        ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
 });
 
 Route::get('/pancake-config', [PancakeConfigController::class, 'index'])->name('pancake.config');
@@ -421,34 +436,56 @@ Route::get('/debug/create-test-order', function() {
     return 'Test order created with ID: ' . $order->id;
 });
 
-// Categories
-Route::middleware(['auth'])->group(function () {
-    Route::get('admin/categories', [App\Http\Controllers\CategoryController::class, 'index'])
-        ->name('admin.categories.index')
-        ->middleware('permission:categories.view');
+// Category routes
+Route::get('admin/categories', [App\Http\Controllers\CategoryController::class, 'index'])
+    ->name('admin.categories.index')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.view');
 
-    Route::get('admin/categories/create', [App\Http\Controllers\CategoryController::class, 'create'])
-        ->name('admin.categories.create')
-        ->middleware('permission:categories.create');
+Route::get('admin/categories/create', [App\Http\Controllers\CategoryController::class, 'create'])
+    ->name('admin.categories.create')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.create');
 
-    Route::post('admin/categories', [App\Http\Controllers\CategoryController::class, 'store'])
-        ->name('admin.categories.store')
-        ->middleware('permission:categories.create');
+Route::post('admin/categories', [App\Http\Controllers\CategoryController::class, 'store'])
+    ->name('admin.categories.store')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.create');
 
-    Route::get('admin/categories/{category}/edit', [App\Http\Controllers\CategoryController::class, 'edit'])
-        ->name('admin.categories.edit')
-        ->middleware('permission:categories.edit');
+Route::get('admin/categories/{category}', [App\Http\Controllers\CategoryController::class, 'show'])
+    ->name('admin.categories.show')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.view');
 
-    Route::put('admin/categories/{category}', [App\Http\Controllers\CategoryController::class, 'update'])
-        ->name('admin.categories.update')
-        ->middleware('permission:categories.edit');
+Route::get('admin/categories/{category}/edit', [App\Http\Controllers\CategoryController::class, 'edit'])
+    ->name('admin.categories.edit')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.edit');
 
-    Route::delete('admin/categories/{category}', [App\Http\Controllers\CategoryController::class, 'destroy'])
-        ->name('admin.categories.destroy')
-        ->middleware('permission:categories.delete');
+Route::put('admin/categories/{category}', [App\Http\Controllers\CategoryController::class, 'update'])
+    ->name('admin.categories.update')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.edit');
 
-    // Pancake Category Sync Routes
-    Route::post('admin/categories/sync', [App\Http\Controllers\Admin\PancakeCategoryController::class, 'syncCategories'])
-        ->name('admin.categories.sync')
-        ->middleware('permission:categories.sync');
+Route::delete('admin/categories/{category}', [App\Http\Controllers\CategoryController::class, 'destroy'])
+    ->name('admin.categories.destroy')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.delete');
+
+// Pancake Category Routes
+Route::get('admin/pancake/categories', [App\Http\Controllers\CategoryController::class, 'getCategoriesFromPancake'])
+    ->name('admin.pancake.categories.list')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.sync');
+
+Route::post('admin/pancake/categories', [App\Http\Controllers\CategoryController::class, 'createCategoryInPancake'])
+    ->name('admin.pancake.categories.create')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.create');
+
+Route::put('admin/pancake/categories/{category}', [App\Http\Controllers\CategoryController::class, 'updateCategoryInPancake'])
+    ->name('admin.pancake.categories.update')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.edit');
+
+Route::post('admin/pancake/categories/sync', [App\Http\Controllers\CategoryController::class, 'syncFromPancake'])
+    ->name('admin.pancake.categories.sync')
+    ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.sync');
+
+Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->group(function () {
+    Route::get('/dashboard', function () {
+        return view('admin.dashboard');
+    })->name('dashboard');
+
+    // ... existing routes ...
 });

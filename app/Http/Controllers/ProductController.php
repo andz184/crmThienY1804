@@ -5,21 +5,31 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\ProductVariation;
+use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB; // For transactions
 use App\Helpers\LogHelper;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 
 class ProductController extends Controller
 {
+    protected $baseUri;
+    protected $apiKey;
+    protected $shopId;
+
     public function __construct()
     {
-        // Add permissions as needed, e.g.:
-        // $this->middleware('permission:products.view')->only(['index', 'show']);
-        // $this->middleware('permission:products.create')->only(['create', 'store']);
-        // $this->middleware('permission:products.edit')->only(['edit', 'update', 'variations', 'storeVariation', 'updateVariation', 'destroyVariation']);
-        // $this->middleware('permission:products.delete')->only(['destroy']);
+        $this->baseUri = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1/'), '/');
+        $this->apiKey = config('pancake.api_key');
+        $this->shopId = config('pancake.shop_id');
+
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.view')->only(['index', 'show']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create')->only(['create', 'store']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit')->only(['edit', 'update', 'variations', 'storeVariation', 'updateVariation', 'destroyVariation']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.delete')->only(['destroy']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.sync')->only(['syncFromPancake', 'pushToPancake', 'updateInventory']);
     }
 
     /**
@@ -27,7 +37,8 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
-        // $this->authorize('products.view');
+        $this->authorize('products.view');
+
         $query = Product::with('category', 'variations');
 
         if ($request->filled('search')) {
@@ -47,7 +58,7 @@ class ProductController extends Controller
         $products = $query->orderBy('name')->paginate(15);
         $categories = Category::orderBy('name')->pluck('name', 'id');
 
-        return view('products.index', compact('products', 'categories'));
+        return view('admin.products.index', compact('products', 'categories'));
     }
 
     /**
@@ -55,9 +66,10 @@ class ProductController extends Controller
      */
     public function create()
     {
-        // $this->authorize('products.create');
+        $this->authorize('products.create');
+
         $categories = Category::orderBy('name')->pluck('name', 'id');
-        return view('products.create', compact('categories'));
+        return view('admin.products.create', compact('categories'));
     }
 
     /**
@@ -65,7 +77,8 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        // $this->authorize('products.create');
+        $this->authorize('products.create');
+
         $validatedProduct = $request->validate([
             'name' => 'required|string|max:255|unique:products,name',
             'slug' => 'nullable|string|max:255|unique:products,slug',
@@ -97,11 +110,11 @@ class ProductController extends Controller
 
             LogHelper::log('product_create', $product, null, $product->load('variations')->toArray());
             DB::commit();
-            return redirect()->route('products.index')->with('success', 'Product created successfully.');
+            return redirect()->route('admin.products.index')->with('success', 'Sản phẩm đã được tạo thành công.');
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error("Error creating product: " . $e->getMessage(), ['exception' => $e]);
-            return redirect()->back()->withInput()->with('error', 'Error creating product. Please try again.');
+            return redirect()->back()->withInput()->with('error', 'Có lỗi xảy ra khi tạo sản phẩm. Vui lòng thử lại.');
         }
     }
 
@@ -110,9 +123,10 @@ class ProductController extends Controller
      */
     public function show(Product $product)
     {
-        // $this->authorize('products.view');
+        $this->authorize('products.view');
+
         $product->load('category', 'variations');
-        return view('products.show', compact('product'));
+        return view('admin.products.show', compact('product'));
     }
 
     /**
@@ -120,10 +134,11 @@ class ProductController extends Controller
      */
     public function edit(Product $product)
     {
-        // $this->authorize('products.edit');
+        $this->authorize('products.edit');
+
         $categories = Category::orderBy('name')->pluck('name', 'id');
         $product->load('variations');
-        return view('products.edit', compact('product', 'categories'));
+        return view('admin.products.edit', compact('product', 'categories'));
     }
 
     /**
@@ -131,7 +146,8 @@ class ProductController extends Controller
      */
     public function update(Request $request, Product $product)
     {
-        // $this->authorize('products.edit');
+        $this->authorize('products.edit');
+
         $validatedProduct = $request->validate([
             'name' => 'required|string|max:255|unique:products,name,' . $product->id,
             'slug' => 'nullable|string|max:255|unique:products,slug,' . $product->id,
@@ -148,32 +164,16 @@ class ProductController extends Controller
 
         DB::beginTransaction();
         try {
-            $oldData = $product->load('variations')->toArray(); // Get old data with variations for logging
+            $oldData = $product->load('variations')->toArray();
             $product->update($validatedProduct);
-
-            // Basic example: Sync variations - delete existing and add new ones
-            // A more sophisticated approach would update existing, delete removed, add new.
-            // This simple sync is for demonstration.
-            // $product->variations()->delete(); // Be careful with this in production, might be too destructive
-            // if ($request->has('variations')) {
-            //     foreach ($request->input('variations') as $variationData) {
-            //         if (!empty($variationData['sku']) && !empty($variationData['name']) && isset($variationData['price']) && isset($variationData['stock_quantity'])) {
-            //             $variationData['product_id'] = $product->id;
-            //             $variationData['is_active'] = isset($variationData['is_active']);
-            //             ProductVariation::create($variationData);
-            //         }
-            //     }
-            // }
-            // For a more robust variation update, you would typically handle it via separate AJAX calls or a more detailed form section on the product edit page.
-            // See dedicated variation management methods below for a better approach.
 
             LogHelper::log('product_update', $product, $oldData, $product->fresh()->load('variations')->toArray());
             DB::commit();
-            return redirect()->route('products.edit', $product)->with('success', 'Product updated successfully.');
+            return redirect()->route('admin.products.edit', $product)->with('success', 'Sản phẩm đã được cập nhật thành công.');
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error("Error updating product {$product->id}: " . $e->getMessage(), ['exception' => $e]);
-            return redirect()->back()->withInput()->with('error', 'Error updating product. Please try again.');
+            return redirect()->back()->withInput()->with('error', 'Có lỗi xảy ra khi cập nhật sản phẩm. Vui lòng thử lại.');
         }
     }
 
@@ -182,29 +182,27 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
-        // $this->authorize('products.delete');
+        $this->authorize('products.delete');
+
         DB::beginTransaction();
         try {
-            // Orders might be linked to variations of this product.
-            // Decide on deletion policy: disallow, soft delete, or nullify links.
-            // For now, we check if any variation has associated orders.
             $hasOrders = $product->variations()->whereHas('orders')->exists();
             if ($hasOrders) {
                 DB::rollBack();
-                return redirect()->route('products.index')->with('error', 'Cannot delete product. It has orders associated with its variations.');
+                return redirect()->route('admin.products.index')->with('error', 'Không thể xóa sản phẩm. Sản phẩm đã có đơn hàng.');
             }
 
             $oldData = $product->load('variations')->toArray();
-            $product->variations()->delete(); // Delete variations first
-            $product->delete(); // Then delete product
+            $product->variations()->delete();
+            $product->delete();
 
-            LogHelper::log('product_delete', $product, $oldData, null); // Product itself is deleted, $product might not be ideal for first arg
+            LogHelper::log('product_delete', $product, $oldData, null);
             DB::commit();
-            return redirect()->route('products.index')->with('success', 'Product and its variations deleted successfully.');
+            return redirect()->route('admin.products.index')->with('success', 'Sản phẩm đã được xóa thành công.');
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error("Error deleting product {$product->id}: " . $e->getMessage(), ['exception' => $e]);
-            return redirect()->route('products.index')->with('error', 'Error deleting product. Check logs.');
+            return redirect()->route('admin.products.index')->with('error', 'Có lỗi xảy ra khi xóa sản phẩm.');
         }
     }
 
@@ -217,7 +215,6 @@ class ProductController extends Controller
      */
     public function variations(Product $product)
     {
-        // $this->authorize('products.edit'); // Or a more specific variations.manage permission
         $product->load('variations');
         return view('products.variations.index', compact('product')); // Assuming a variations sub-view
     }
@@ -227,7 +224,6 @@ class ProductController extends Controller
      */
     public function editVariation(Product $product, ProductVariation $variation)
     {
-        // $this->authorize('products.edit');
         if ($variation->product_id !== $product->id) {
             abort(403, 'Variation does not belong to this product.');
         }
@@ -240,7 +236,6 @@ class ProductController extends Controller
      */
     public function storeVariation(Request $request, Product $product)
     {
-        // $this->authorize('products.edit');
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'sku' => 'required|string|max:255|unique:product_variations,sku',
@@ -267,7 +262,6 @@ class ProductController extends Controller
      */
     public function updateVariation(Request $request, Product $product, ProductVariation $variation)
     {
-        // $this->authorize('products.edit');
         if ($variation->product_id !== $product->id) {
             abort(403, 'Variation does not belong to this product.');
         }
@@ -295,7 +289,6 @@ class ProductController extends Controller
      */
     public function destroyVariation(Request $request, Product $product, ProductVariation $variation)
     {
-        // $this->authorize('products.edit');
         if ($variation->product_id !== $product->id) {
             abort(403, 'Variation does not belong to this product.');
         }
@@ -316,5 +309,480 @@ class ProductController extends Controller
             return response()->json(['success' => true, 'message' => 'Variation deleted.']);
         }
         return redirect()->route('products.edit', $product)->with('success', 'Variation deleted successfully.');
+    }
+
+    /**
+     * Get products from Pancake API
+     */
+    public function getProductsFromPancake(Request $request)
+    {
+        $this->authorize('products.sync');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/products", [
+                'api_key' => $this->apiKey,
+                'page_size' => $request->input('page_size', 100),
+                'page_number' => $request->input('page', 1),
+                'search' => $request->input('search'),
+                'category_id' => $request->input('category_id'),
+                'is_active' => $request->input('is_active', true)
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to fetch products from Pancake', [
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to fetch products from Pancake API'
+                ], $response->status());
+            }
+
+            return response()->json($response->json());
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching products from Pancake: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching products: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a new product in Pancake
+     */
+    public function createProductInPancake(Request $request)
+    {
+        $this->authorize('products.create');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            // Validate request
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'sku' => 'required|string|max:50|unique:products',
+                'description' => 'nullable|string',
+                'category_id' => 'required|exists:categories,id',
+                'variations' => 'required|array|min:1',
+                'variations.*.sku' => 'required|string|max:50|distinct',
+                'variations.*.name' => 'required|string|max:255',
+                'variations.*.retail_price' => 'required|numeric|min:0',
+                'variations.*.cost' => 'required|numeric|min:0',
+                'variations.*.stock' => 'required|integer|min:0'
+            ]);
+
+            // Prepare product data
+            $productData = [
+                'name' => $request->name,
+                'sku' => $request->sku,
+                'description' => $request->description,
+                'category_ids' => [$request->category_id],
+                'variations' => $request->variations
+            ];
+
+            // Send to Pancake API
+            $response = Http::post("{$this->baseUri}/shops/{$this->shopId}/products", [
+                'api_key' => $this->apiKey,
+                'product' => $productData
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to create product in Pancake', [
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to create product in Pancake API'
+                ], $response->status());
+            }
+
+            // Create product in local database
+            DB::beginTransaction();
+            try {
+                $pancakeProduct = $response->json()['data'];
+
+                $product = Product::create([
+                    'name' => $request->name,
+                    'sku' => $request->sku,
+                    'description' => $request->description,
+                    'category_id' => $request->category_id,
+                    'pancake_id' => $pancakeProduct['id'],
+                    'is_active' => true,
+                    'metadata' => [
+                        'pancake_data' => $pancakeProduct,
+                        'last_sync' => now()
+                    ]
+                ]);
+
+                // Create variations
+                foreach ($request->variations as $variationData) {
+                    $product->variations()->create([
+                        'name' => $variationData['name'],
+                        'sku' => $variationData['sku'],
+                        'price' => $variationData['retail_price'],
+                        'cost' => $variationData['cost'],
+                        'stock' => $variationData['stock'],
+                        'pancake_variant_id' => $variationData['id'] ?? null
+                    ]);
+                }
+
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Product created successfully',
+                    'data' => $product
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error creating product locally: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error creating product in local database: ' . $e->getMessage()
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error creating product: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error creating product: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update product in Pancake
+     */
+    public function updateProductInPancake(Request $request, Product $product)
+    {
+        $this->authorize('products.edit');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            // Validate request
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'sku' => 'required|string|max:50|unique:products,sku,' . $product->id,
+                'description' => 'nullable|string',
+                'category_id' => 'required|exists:categories,id',
+                'variations' => 'required|array|min:1',
+                'variations.*.sku' => 'required|string|max:50|distinct',
+                'variations.*.name' => 'required|string|max:255',
+                'variations.*.retail_price' => 'required|numeric|min:0',
+                'variations.*.cost' => 'required|numeric|min:0',
+                'variations.*.stock' => 'required|integer|min:0'
+            ]);
+
+            // Prepare product data
+            $productData = [
+                'name' => $request->name,
+                'sku' => $request->sku,
+                'description' => $request->description,
+                'category_ids' => [$request->category_id],
+                'variations' => $request->variations
+            ];
+
+            // Send to Pancake API
+            $response = Http::put("{$this->baseUri}/shops/{$this->shopId}/products/{$product->pancake_id}", [
+                'api_key' => $this->apiKey,
+                'product' => $productData
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to update product in Pancake', [
+                    'product_id' => $product->id,
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to update product in Pancake API'
+                ], $response->status());
+            }
+
+            // Update product in local database
+            DB::beginTransaction();
+            try {
+                $pancakeProduct = $response->json()['data'];
+
+                $product->update([
+                    'name' => $request->name,
+                    'sku' => $request->sku,
+                    'description' => $request->description,
+                    'category_id' => $request->category_id,
+                    'metadata' => [
+                        'pancake_data' => $pancakeProduct,
+                        'last_sync' => now()
+                    ]
+                ]);
+
+                // Update variations
+                foreach ($request->variations as $variationData) {
+                    $product->variations()->updateOrCreate(
+                        ['pancake_variant_id' => $variationData['id']],
+                        [
+                            'name' => $variationData['name'],
+                            'sku' => $variationData['sku'],
+                            'price' => $variationData['retail_price'],
+                            'cost' => $variationData['cost'],
+                            'stock' => $variationData['stock']
+                        ]
+                    );
+                }
+
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Product updated successfully',
+                    'data' => $product
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error updating product locally: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error updating product in local database: ' . $e->getMessage()
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error updating product: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating product: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update product inventory in Pancake
+     */
+    public function updateInventoryInPancake(Request $request, Product $product)
+    {
+        $this->authorize('products.edit');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            // Validate request
+            $request->validate([
+                'variations' => 'required|array',
+                'variations.*.id' => 'required|exists:product_variations,id',
+                'variations.*.stock' => 'required|integer|min:0',
+                'warehouse_id' => 'required|exists:warehouses,id'
+            ]);
+
+            $warehouse = Warehouse::findOrFail($request->warehouse_id);
+
+            $inventoryUpdates = [];
+            foreach ($request->variations as $variation) {
+                $inventoryUpdates[] = [
+                    'variation_id' => $variation['id'],
+                    'warehouse_id' => $warehouse->pancake_id,
+                    'stock' => $variation['stock']
+                ];
+            }
+
+            // Send to Pancake API
+            $response = Http::put("{$this->baseUri}/shops/{$this->shopId}/inventory", [
+                'api_key' => $this->apiKey,
+                'inventory' => $inventoryUpdates
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to update inventory in Pancake', [
+                    'product_id' => $product->id,
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to update inventory in Pancake API'
+                ], $response->status());
+            }
+
+            // Update local inventory
+            DB::beginTransaction();
+            try {
+                foreach ($request->variations as $variation) {
+                    $product->variations()
+                        ->where('id', $variation['id'])
+                        ->update(['stock' => $variation['stock']]);
+                }
+
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Inventory updated successfully'
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error updating inventory locally: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error updating inventory in local database: ' . $e->getMessage()
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error updating inventory: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating inventory: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync products from Pancake
+     */
+    public function syncFromPancake()
+    {
+        $this->authorize('products.sync');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            $stats = [
+                'created' => 0,
+                'updated' => 0,
+                'errors' => 0
+            ];
+
+            $page = 1;
+            $hasMore = true;
+
+            while ($hasMore) {
+                $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/products", [
+                    'api_key' => $this->apiKey,
+                    'page_size' => 100,
+                    'page_number' => $page
+                ]);
+
+                if (!$response->successful()) {
+                    Log::error('Failed to fetch products from Pancake', [
+                        'page' => $page,
+                        'status' => $response->status(),
+                        'response' => $response->body()
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to fetch products from Pancake API'
+                    ], $response->status());
+                }
+
+                $data = $response->json();
+
+                DB::beginTransaction();
+                try {
+                    foreach ($data['data'] as $productData) {
+                        $product = Product::updateOrCreate(
+                            ['pancake_id' => $productData['id']],
+                            [
+                                'name' => $productData['name'],
+                                'sku' => $productData['sku'] ?? null,
+                                'description' => $productData['description'] ?? null,
+                                'is_active' => !($productData['is_removed'] ?? false),
+                                'metadata' => [
+                                    'pancake_data' => $productData,
+                                    'last_sync' => now()
+                                ]
+                            ]
+                        );
+
+                        if ($product->wasRecentlyCreated) {
+                            $stats['created']++;
+                        } else {
+                            $stats['updated']++;
+                        }
+
+                        // Process variations
+                        if (!empty($productData['variations'])) {
+                            foreach ($productData['variations'] as $variationData) {
+                                $product->variations()->updateOrCreate(
+                                    ['pancake_variant_id' => $variationData['id']],
+                                    [
+                                        'name' => $variationData['name'] ?? $productData['name'],
+                                        'sku' => $variationData['sku'] ?? null,
+                                        'price' => $variationData['retail_price'] ?? 0,
+                                        'cost' => $variationData['cost'] ?? 0,
+                                        'stock' => $variationData['stock'] ?? 0,
+                                        'metadata' => [
+                                            'pancake_data' => $variationData,
+                                            'last_sync' => now()
+                                        ]
+                                    ]
+                                );
+                            }
+                        }
+                    }
+
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('Error processing products', [
+                        'page' => $page,
+                        'error' => $e->getMessage()
+                    ]);
+                    $stats['errors']++;
+                }
+
+                $hasMore = !empty($data['next_page']);
+                $page++;
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => sprintf(
+                    'Products sync completed. Created: %d, Updated: %d, Errors: %d',
+                    $stats['created'],
+                    $stats['updated'],
+                    $stats['errors']
+                ),
+                'stats' => $stats
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error syncing products: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error syncing products: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

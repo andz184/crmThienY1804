@@ -13,13 +13,21 @@ use Illuminate\Support\Facades\Http;
 
 class CategoryController extends Controller
 {
+    protected $baseUri;
+    protected $apiKey;
+    protected $shopId;
+
     public function __construct()
     {
-        $this->middleware('permission:categories.view')->only(['index', 'show']);
-        $this->middleware('permission:categories.create')->only(['create', 'store']);
-        $this->middleware('permission:categories.edit')->only(['edit', 'update']);
-        $this->middleware('permission:categories.delete')->only(['destroy']);
-        $this->middleware('permission:categories.sync')->only(['sync', 'syncFromPancake']);
+        $this->baseUri = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1/'), '/');
+        $this->apiKey = config('pancake.api_key');
+        $this->shopId = config('pancake.shop_id');
+
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.view')->only(['index', 'show']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.create')->only(['create', 'store']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.edit')->only(['edit', 'update']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.delete')->only(['destroy']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':categories.sync')->only(['sync', 'syncFromPancake']);
     }
 
     /**
@@ -170,17 +178,281 @@ class CategoryController extends Controller
         }
     }
 
-    public function sync()
+    /**
+     * Get categories from Pancake API
+     */
+    public function getCategoriesFromPancake(Request $request)
     {
-        try {
-            $response = Http::withHeaders([
-                'api_key' => config('pancake.api_key')
-            ])->get(config('pancake.base_uri') . '/shops/' . config('pancake.shop_id') . '/categories');
+        $this->authorize('categories.sync');
 
-            if (!$response->successful()) {
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Không thể kết nối với Pancake API'
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/categories", [
+                'api_key' => $this->apiKey
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to fetch categories from Pancake', [
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to fetch categories from Pancake API'
+                ], $response->status());
+            }
+
+            return response()->json($response->json());
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching categories from Pancake: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching categories: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a new category in Pancake
+     */
+    public function createCategoryInPancake(Request $request)
+    {
+        $this->authorize('categories.create');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            // Validate request
+            $request->validate([
+                'name' => 'required|string|max:255|unique:categories,name',
+                'description' => 'nullable|string',
+                'parent_id' => 'nullable|exists:categories,id'
+            ]);
+
+            // Get parent's Pancake ID if exists
+            $parentPancakeId = null;
+            if ($request->parent_id) {
+                $parentCategory = Category::findOrFail($request->parent_id);
+                $parentPancakeId = $parentCategory->pancake_id;
+            }
+
+            // Prepare category data
+            $categoryData = [
+                'name' => $request->name,
+                'description' => $request->description,
+                'parent_id' => $parentPancakeId
+            ];
+
+            // Send to Pancake API
+            $response = Http::post("{$this->baseUri}/shops/{$this->shopId}/categories", [
+                'api_key' => $this->apiKey,
+                'category' => $categoryData
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to create category in Pancake', [
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to create category in Pancake API'
+                ], $response->status());
+            }
+
+            // Create category in local database
+            DB::beginTransaction();
+            try {
+                $pancakeCategory = $response->json()['data'];
+
+                $category = Category::create([
+                    'name' => $request->name,
+                    'slug' => Str::slug($request->name),
+                    'description' => $request->description,
+                    'parent_id' => $request->parent_id,
+                    'pancake_id' => $pancakeCategory['id'],
+                    'is_active' => true
+                ]);
+
+                // Create Pancake category record
+                PancakeCategory::create([
+                    'pancake_id' => $pancakeCategory['id'],
+                    'name' => $pancakeCategory['name'],
+                    'pancake_parent_id' => $pancakeCategory['parent_id'],
+                    'level' => $pancakeCategory['level'] ?? 0,
+                    'status' => $pancakeCategory['status'] ?? 'active',
+                    'description' => $pancakeCategory['description'],
+                    'image_url' => $pancakeCategory['image_url'] ?? null,
+                    'api_response' => $pancakeCategory
+                ]);
+
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Category created successfully',
+                    'data' => $category
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error creating category locally: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error creating category in local database: ' . $e->getMessage()
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error creating category: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error creating category: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update category in Pancake
+     */
+    public function updateCategoryInPancake(Request $request, Category $category)
+    {
+        $this->authorize('categories.edit');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            // Validate request
+            $request->validate([
+                'name' => 'required|string|max:255|unique:categories,name,' . $category->id,
+                'description' => 'nullable|string',
+                'parent_id' => 'nullable|exists:categories,id'
+            ]);
+
+            // Get parent's Pancake ID if exists
+            $parentPancakeId = null;
+            if ($request->parent_id) {
+                $parentCategory = Category::findOrFail($request->parent_id);
+                $parentPancakeId = $parentCategory->pancake_id;
+            }
+
+            // Prepare category data
+            $categoryData = [
+                'name' => $request->name,
+                'description' => $request->description,
+                'parent_id' => $parentPancakeId
+            ];
+
+            // Send to Pancake API
+            $response = Http::put("{$this->baseUri}/shops/{$this->shopId}/categories/{$category->pancake_id}", [
+                'api_key' => $this->apiKey,
+                'category' => $categoryData
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to update category in Pancake', [
+                    'category_id' => $category->id,
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to update category in Pancake API'
+                ], $response->status());
+            }
+
+            // Update category in local database
+            DB::beginTransaction();
+            try {
+                $pancakeCategory = $response->json()['data'];
+
+                $category->update([
+                    'name' => $request->name,
+                    'slug' => Str::slug($request->name),
+                    'description' => $request->description,
+                    'parent_id' => $request->parent_id
+                ]);
+
+                // Update Pancake category record
+                PancakeCategory::where('pancake_id', $category->pancake_id)
+                    ->update([
+                        'name' => $pancakeCategory['name'],
+                        'pancake_parent_id' => $pancakeCategory['parent_id'],
+                        'level' => $pancakeCategory['level'] ?? 0,
+                        'status' => $pancakeCategory['status'] ?? 'active',
+                        'description' => $pancakeCategory['description'],
+                        'image_url' => $pancakeCategory['image_url'] ?? null,
+                        'api_response' => $pancakeCategory
+                    ]);
+
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Category updated successfully',
+                    'data' => $category
+                ]);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Error updating category locally: ' . $e->getMessage());
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Error updating category in local database: ' . $e->getMessage()
+                ], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error updating category: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating category: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync categories from Pancake
+     */
+    public function syncFromPancake()
+    {
+        $this->authorize('categories.sync');
+
+        try {
+            if (empty($this->apiKey) || empty($this->shopId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pancake API key or Shop ID is not configured.'
+                ], 400);
+            }
+
+            $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/categories", [
+                'api_key' => $this->apiKey
+            ]);
+
+            if (!$response->successful()) {
+                Log::error('Failed to fetch categories from Pancake', [
+                    'status' => $response->status(),
+                    'response' => $response->body()
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to fetch categories from Pancake API'
                 ], $response->status());
             }
 
@@ -202,30 +474,35 @@ class CategoryController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => sprintf(
-                        'Đồng bộ thành công. Tạo mới: %d, Cập nhật: %d, Lỗi: %d',
+                        'Categories sync completed. Created: %d, Updated: %d, Errors: %d',
                         $stats['created'],
                         $stats['updated'],
                         $stats['errors']
                     ),
                     'stats' => $stats
                 ]);
+
             } catch (\Exception $e) {
                 DB::rollBack();
                 Log::error('Error syncing categories: ' . $e->getMessage());
                 return response()->json([
                     'success' => false,
-                    'message' => 'Có lỗi xảy ra khi đồng bộ danh mục'
+                    'message' => 'Error syncing categories: ' . $e->getMessage()
                 ], 500);
             }
+
         } catch (\Exception $e) {
             Log::error('Error in category sync: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
+                'message' => 'Error in category sync: ' . $e->getMessage()
             ], 500);
         }
     }
 
+    /**
+     * Sync a single category and its children
+     */
     private function syncCategory($categoryData, $parentId = null, &$stats)
     {
         try {
@@ -247,6 +524,7 @@ class CategoryController extends Controller
                 ['pancake_id' => $categoryData['id']],
                 [
                     'name' => $categoryData['name'],
+                    'slug' => Str::slug($categoryData['name']),
                     'description' => $categoryData['description'] ?? null,
                     'parent_id' => $parentId,
                     'is_active' => ($categoryData['status'] ?? 'active') === 'active'
@@ -265,6 +543,7 @@ class CategoryController extends Controller
                     $this->syncCategory($childCategory, $category->id, $stats);
                 }
             }
+
         } catch (\Exception $e) {
             Log::error('Error syncing category: ' . $e->getMessage(), [
                 'category_data' => $categoryData

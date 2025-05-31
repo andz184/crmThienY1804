@@ -311,11 +311,11 @@ return [
         ],
 
         // Sidebar items:
-        [
-            'text'        => 'Trang chủ',
-            'url'         => 'dashboard',
-            'icon'        => 'fas fa-fw fa-tachometer-alt',
-        ],
+        // [
+        //     'text'        => 'Trang chủ',
+        //     'url'         => 'dashboard',
+        //     'icon'        => 'fas fa-fw fa-tachometer-alt',
+        // ],
         [
             'text'    => 'Sản phẩm',
             'icon'    => 'fas fa-box',
