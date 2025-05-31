@@ -32,9 +32,10 @@
                                    id="sku"
                                    name="sku"
                                    value="{{ old('sku', $product->sku ?? '') }}"
+                                   placeholder="Nhập mã sản phẩm"
                                    required>
                             @error('sku')
-                                <div class="invalid-feedback">{{ $message }}</div>
+                                <span class="invalid-feedback">{{ $message }}</span>
                             @enderror
                         </div>
 
@@ -45,9 +46,10 @@
                                    id="name"
                                    name="name"
                                    value="{{ old('name', $product->name ?? '') }}"
+                                   placeholder="Nhập tên sản phẩm"
                                    required>
                             @error('name')
-                                <div class="invalid-feedback">{{ $message }}</div>
+                                <span class="invalid-feedback">{{ $message }}</span>
                             @enderror
                         </div>
 
@@ -62,22 +64,30 @@
 
                         <div class="form-group">
                             <label for="description">Mô tả</label>
-                            <textarea class="form-control"
+                            <textarea class="form-control @error('description') is-invalid @enderror"
                                      id="description"
                                      name="description"
-                                     rows="3">{{ old('description', $product->description ?? '') }}</textarea>
+                                     rows="3"
+                                     placeholder="Nhập mô tả sản phẩm">{{ old('description', $product->description ?? '') }}</textarea>
+                            @error('description')
+                                <span class="invalid-feedback">{{ $message }}</span>
+                            @enderror
                         </div>
 
                         <div class="form-group">
                             <label for="notes">Ghi chú nội bộ</label>
-                            <textarea class="form-control"
+                            <textarea class="form-control @error('notes') is-invalid @enderror"
                                      id="notes"
                                      name="notes"
-                                     rows="3">{{ old('notes', $product->notes ?? '') }}</textarea>
+                                     rows="3"
+                                     placeholder="Nhập ghi chú nội bộ">{{ old('notes', $product->notes ?? '') }}</textarea>
+                            @error('notes')
+                                <span class="invalid-feedback">{{ $message }}</span>
+                            @enderror
                         </div>
 
                         <div class="form-group">
-                            <div class="custom-control custom-checkbox">
+                            <div class="custom-control custom-switch">
                                 <input type="checkbox"
                                        class="custom-control-input"
                                        id="track_inventory"
@@ -91,7 +101,7 @@
                         </div>
 
                         <div class="form-group">
-                            <div class="custom-control custom-checkbox">
+                            <div class="custom-control custom-switch">
                                 <input type="checkbox"
                                        class="custom-control-input"
                                        id="print_name_on_order"
@@ -105,7 +115,7 @@
                         </div>
 
                         <div class="form-group">
-                            <div class="custom-control custom-checkbox">
+                            <div class="custom-control custom-switch">
                                 <input type="checkbox"
                                        class="custom-control-input"
                                        id="hide_in_pos"
@@ -122,9 +132,10 @@
                     <div class="col-md-4">
                         <div class="form-group">
                             <label for="category_id">Danh mục <span class="text-danger">*</span></label>
-                            <select class="form-control select2"
+                            <select class="form-control select2 @error('category_id') is-invalid @enderror"
                                     id="category_id"
                                     name="category_id"
+                                    data-placeholder="Chọn danh mục sản phẩm"
                                     required>
                                 <option value="">Chọn danh mục sản phẩm</option>
                                 @foreach($categories as $id => $name)
@@ -134,28 +145,17 @@
                                     </option>
                                 @endforeach
                             </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="tags">Thẻ</label>
-                            <select class="form-control select2"
-                                    id="tags"
-                                    name="tags[]"
-                                    multiple>
-                                @foreach($tags as $id => $name)
-                                    <option value="{{ $id }}"
-                                            {{ in_array($id, old('tags', $product->tags->pluck('id')->toArray() ?? [])) ? 'selected' : '' }}>
-                                        {{ $name }}
-                                    </option>
-                                @endforeach
-                            </select>
+                            @error('category_id')
+                                <span class="invalid-feedback">{{ $message }}</span>
+                            @enderror
                         </div>
 
                         <div class="form-group">
                             <label for="warehouse_id">Kho thao tác</label>
-                            <select class="form-control select2"
+                            <select class="form-control select2 @error('warehouse_id') is-invalid @enderror"
                                     id="warehouse_id"
-                                    name="warehouse_id">
+                                    name="warehouse_id"
+                                    data-placeholder="Chọn kho thao tác">
                                 <option value="">Tất cả kho</option>
                                 @foreach($warehouses as $id => $name)
                                     <option value="{{ $id }}"
@@ -164,31 +164,9 @@
                                     </option>
                                 @endforeach
                             </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="supplier_id">Nhà cung cấp</label>
-                            <select class="form-control select2"
-                                    id="supplier_id"
-                                    name="supplier_id">
-                                <option value="">Chọn nhà cung cấp sản phẩm</option>
-                                @foreach($suppliers as $id => $name)
-                                    <option value="{{ $id }}"
-                                            {{ old('supplier_id', $product->supplier_id ?? '') == $id ? 'selected' : '' }}>
-                                        {{ $name }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="supplier_link">Link nhập hàng</label>
-                            <input type="url"
-                                   class="form-control"
-                                   id="supplier_link"
-                                   name="supplier_link"
-                                   placeholder="Enter để thêm link sản phẩm"
-                                   value="{{ old('supplier_link', $product->supplier_link ?? '') }}">
+                            @error('warehouse_id')
+                                <span class="invalid-feedback">{{ $message }}</span>
+                            @enderror
                         </div>
                     </div>
                 </div>
@@ -426,11 +404,13 @@
                     </div>
                 </div>
             </div>
-            <div class="card-footer text-right">
-                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
+            <div class="card-footer">
                 <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> {{ isset($product) ? 'Cập nhật' : 'Lưu' }}
+                    <i class="fas fa-save mr-1"></i> {{ isset($product) ? 'Cập nhật' : 'Lưu' }}
                 </button>
+                <a href="{{ route('admin.products.index') }}" class="btn btn-secondary">
+                    <i class="fas fa-times mr-1"></i> Hủy
+                </a>
             </div>
         </div>
     </form>
@@ -584,6 +564,31 @@
 .input-group input:last-child {
     border-top-right-radius: 0.25rem;
     border-bottom-right-radius: 0.25rem;
+}
+.select2-container--bootstrap4 .select2-selection--single {
+    height: calc(2.25rem + 2px) !important;
+}
+.select2-container--bootstrap4 .select2-selection--single .select2-selection__placeholder {
+    color: #6c757d;
+    line-height: 2.25rem;
+}
+.select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow {
+    position: absolute;
+    top: 50%;
+    right: 3px;
+    width: 20px;
+}
+.select2-container--bootstrap4 .select2-selection--single .select2-selection__arrow b {
+    top: 60%;
+    border-color: #6c757d transparent transparent transparent;
+    border-style: solid;
+    border-width: 5px 4px 0 4px;
+    width: 0;
+    height: 0;
+    left: 50%;
+    margin-left: -4px;
+    margin-top: -2px;
+    position: absolute;
 }
 </style>
 @stop

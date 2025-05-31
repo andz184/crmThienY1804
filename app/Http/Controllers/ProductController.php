@@ -69,7 +69,8 @@ class ProductController extends Controller
         $this->authorize('products.create');
 
         $categories = Category::orderBy('name')->pluck('name', 'id');
-        return view('admin.products.create', compact('categories'));
+        $warehouses = Warehouse::where('status', true)->orderBy('name')->pluck('name', 'id');
+        return view('admin.products.create', compact('categories', 'warehouses'));
     }
 
     /**
@@ -137,8 +138,9 @@ class ProductController extends Controller
         $this->authorize('products.edit');
 
         $categories = Category::orderBy('name')->pluck('name', 'id');
+        $warehouses = Warehouse::where('status', true)->orderBy('name')->pluck('name', 'id');
         $product->load('variations');
-        return view('admin.products.edit', compact('product', 'categories'));
+        return view('admin.products.edit', compact('product', 'categories', 'warehouses'));
     }
 
     /**
