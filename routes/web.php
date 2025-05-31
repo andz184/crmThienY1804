@@ -266,6 +266,19 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/pancake/orders/sync-all', [\App\Http\Controllers\PancakeSyncController::class, 'syncAllOrders'])->name('pancake.orders.sync-all');
     Route::get('/pancake/orders/sync-all-progress', [\App\Http\Controllers\PancakeSyncController::class, 'getAllOrdersSyncProgress'])->name('pancake.orders.sync-all-progress');
     Route::post('/pancake/orders/sync-process-next', [\App\Http\Controllers\PancakeSyncController::class, 'processNextPage'])->name('pancake.orders.sync-process-next');
+
+    // Product sync routes
+    Route::post('/pancake/products/sync', [App\Http\Controllers\Admin\ProductSyncController::class, 'syncFromPancake'])
+        ->name('pancake.products.sync')
+        ->middleware('permission:products.sync');
+
+    Route::post('/pancake/products/{product}/push', [App\Http\Controllers\Admin\ProductSyncController::class, 'pushToPancake'])
+        ->name('pancake.products.push')
+        ->middleware('permission:products.sync');
+
+    Route::put('/pancake/products/variants/{variant}/inventory', [App\Http\Controllers\Admin\ProductSyncController::class, 'updateInventory'])
+        ->name('pancake.products.inventory.update')
+        ->middleware('permission:products.sync');
 });
 
 Route::get('/pancake-config', [PancakeConfigController::class, 'index'])->name('pancake.config');
@@ -273,7 +286,9 @@ Route::post('/pancake-config', [PancakeConfigController::class, 'update'])->name
 Route::post('/pancake-config/test', [PancakeConfigController::class, 'testConnection'])->name('pancake.config.test');
 
 // Pancake Webhook Configuration
-Route::get('/admin/pancake/webhooks', [App\Http\Controllers\Admin\PancakeWebhookConfigController::class, 'index'])->name('admin.pancake.webhooks');
+Route::get('/admin/pancake/webhooks', [App\Http\Controllers\Admin\PancakeController::class, 'webhooks'])
+    ->middleware(['auth', 'can:settings.manage'])
+    ->name('admin.pancake.webhooks');
 
 // Reports Routes
 Route::middleware(['auth'])->group(function () {
@@ -404,4 +419,36 @@ Route::get('/debug/create-test-order', function() {
     $order->save();
 
     return 'Test order created with ID: ' . $order->id;
+});
+
+// Categories
+Route::middleware(['auth'])->group(function () {
+    Route::get('admin/categories', [App\Http\Controllers\CategoryController::class, 'index'])
+        ->name('admin.categories.index')
+        ->middleware('permission:categories.view');
+
+    Route::get('admin/categories/create', [App\Http\Controllers\CategoryController::class, 'create'])
+        ->name('admin.categories.create')
+        ->middleware('permission:categories.create');
+
+    Route::post('admin/categories', [App\Http\Controllers\CategoryController::class, 'store'])
+        ->name('admin.categories.store')
+        ->middleware('permission:categories.create');
+
+    Route::get('admin/categories/{category}/edit', [App\Http\Controllers\CategoryController::class, 'edit'])
+        ->name('admin.categories.edit')
+        ->middleware('permission:categories.edit');
+
+    Route::put('admin/categories/{category}', [App\Http\Controllers\CategoryController::class, 'update'])
+        ->name('admin.categories.update')
+        ->middleware('permission:categories.edit');
+
+    Route::delete('admin/categories/{category}', [App\Http\Controllers\CategoryController::class, 'destroy'])
+        ->name('admin.categories.destroy')
+        ->middleware('permission:categories.delete');
+
+    // Pancake Category Sync Routes
+    Route::post('admin/categories/sync', [App\Http\Controllers\Admin\PancakeCategoryController::class, 'syncCategories'])
+        ->name('admin.categories.sync')
+        ->middleware('permission:categories.sync');
 });

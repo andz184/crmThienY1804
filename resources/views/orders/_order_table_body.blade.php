@@ -25,7 +25,7 @@
         </td>
         <td>
             @if(auth()->user()->hasRole('staff'))
-                {{ substr($order->customer_phone, 0, 3) . str_repeat('*', strlen($order->customer_phone) - 3) }}
+            {{ Str::limit($order->internal_status, max(0, 50)) }}
             @else
                 <div>{{ $order->customer_phone }}</div>
                 @if($order->bill_phone_number && $order->bill_phone_number != $order->customer_phone)

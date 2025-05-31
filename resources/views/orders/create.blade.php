@@ -226,8 +226,38 @@
                         <h3 class="card-title m-0 font-weight-bold text-info">
                             <i class="fas fa-sticky-note mr-2"></i>Ghi chú
                         </h3>
-                                    </div>
+                    </div>
                     <div class="card-body">
+                        {{-- Livestream Order Selection --}}
+                        <div class="form-group">
+                            <div class="custom-control custom-switch">
+                                <input type="checkbox" class="custom-control-input" id="is_livestream" name="is_livestream" value="1">
+                                <label class="custom-control-label" for="is_livestream">Đơn hàng livestream</label>
+                            </div>
+                        </div>
+
+                        <div id="livestream_details" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="small font-weight-bold">Ca live</label>
+                                        <select class="form-control" id="live_session" name="live_session">
+                                            <option value="">-- Chọn ca live --</option>
+                                            <option value="LIVE1">LIVE1</option>
+                                            <option value="LIVE2">LIVE2</option>
+                                            <option value="LIVE3">LIVE3</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="small font-weight-bold">Ngày live</label>
+                                        <input type="date" class="form-control" id="live_date" name="live_date">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <ul class="nav nav-tabs" role="tablist">
                             <li class="nav-item">
                                 <a class="nav-link active" data-toggle="tab" href="#internal_note" role="tab">Nội bộ</a>
@@ -238,14 +268,14 @@
                         </ul>
                         <div class="tab-content pt-3">
                             <div class="tab-pane active" id="internal_note" role="tabpanel">
-                                <textarea name="notes" class="form-control" rows="3" placeholder="Ghi chú nội bộ">{{ old('notes') }}</textarea>
-                                </div>
+                                <textarea name="notes" id="notes" class="form-control" rows="3" placeholder="Ghi chú nội bộ">{{ old('notes') }}</textarea>
+                            </div>
                             <div class="tab-pane" id="external_note" role="tabpanel">
                                 <textarea name="additional_notes" class="form-control" rows="3" placeholder="Ghi chú cho đối tác">{{ old('additional_notes') }}</textarea>
                             </div>
-                                </div>
-                            </div>
                         </div>
+                    </div>
+                </div>
             </div>
 
             {{-- Right Column (Customer and Shipping Info) --}}
@@ -1151,6 +1181,52 @@ textarea.form-control {
         // Trigger change on page load if shop is pre-selected (e.g. from old input)
         if ($('#pancake_shop_id').val()) {
             $('#pancake_shop_id').trigger('change');
+        }
+
+        // Xử lý hiển thị/ẩn chi tiết livestream
+        $('#is_livestream').change(function() {
+            if($(this).is(':checked')) {
+                $('#livestream_details').slideDown();
+            } else {
+                $('#livestream_details').slideUp();
+                $('#live_session').val('');
+                $('#live_date').val('');
+                updateNotes('');
+            }
+        });
+
+        // Xử lý khi thay đổi ca live hoặc ngày live
+        $('#live_session, #live_date').change(function() {
+            const liveSession = $('#live_session').val();
+            const liveDate = $('#live_date').val();
+
+            if(liveSession && liveDate) {
+                // Chuyển đổi định dạng ngày từ YYYY-MM-DD sang DD/MM
+                const date = new Date(liveDate);
+                const formattedDate = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+                // Tạo chuỗi livestream
+                const livestreamString = `${liveSession} ${formattedDate}`;
+                updateNotes(livestreamString);
+            }
+        });
+
+        function updateNotes(livestreamString) {
+            let currentNotes = $('#notes').val();
+
+            // Xóa thông tin livestream cũ nếu có
+            currentNotes = currentNotes.replace(/LIVE[1-3]\s+\d{2}\/\d{2}(\n|$)/, '');
+
+            // Thêm thông tin livestream mới
+            if(livestreamString) {
+                if(currentNotes) {
+                    currentNotes = livestreamString + '\n' + currentNotes;
+                } else {
+                    currentNotes = livestreamString;
+                }
+            }
+
+            $('#notes').val(currentNotes);
         }
 
     });

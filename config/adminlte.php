@@ -312,14 +312,42 @@ return [
 
         // Sidebar items:
         [
-            'text' => 'blog',
-            'url'  => 'admin/blog',
-            'can'  => 'manage-blog',
-        ],
-        [
             'text'        => 'Trang chủ',
             'url'         => 'dashboard',
             'icon'        => 'fas fa-fw fa-tachometer-alt',
+        ],
+        [
+            'text'    => 'Sản phẩm',
+            'icon'    => 'fas fa-box',
+            'can'     => ['products.view', 'categories.view'],
+            'submenu' => [
+                [
+                    'text' => 'Danh sách sản phẩm',
+                    'route'  => 'admin.products.index',
+                    'icon' => 'fas fa-list',
+                    'can'  => 'products.view',
+                    'active' => ['admin/products*'],
+                ],
+                [
+                    'text' => 'Thêm sản phẩm mới',
+                    'route'  => 'admin.products.create',
+                    'icon' => 'fas fa-plus',
+                    'can'  => 'products.create',
+                ],
+                [
+                    'text' => 'Danh mục sản phẩm',
+                    'route'  => 'admin.categories.index',
+                    'icon' => 'fas fa-tags',
+                    'can'  => 'categories.view',
+                    'active' => ['admin/categories*'],
+                ],
+                [
+                    'text' => 'Thêm danh mục mới',
+                    'route'  => 'admin.categories.create',
+                    'icon' => 'fas fa-plus',
+                    'can'  => 'categories.create',
+                ],
+            ],
         ],
         [
             'text' => 'Tất cả Đơn hàng',

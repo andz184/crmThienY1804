@@ -8,8 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes; // Optional: if you want soft dele
 
 class Category extends Model
 {
-    use HasFactory;
-    // use SoftDeletes; // Uncomment if using soft deletes
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'name',
@@ -17,6 +16,11 @@ class Category extends Model
         'description',
         'parent_id', // For sub-categories
         'is_active',
+        'pancake_id'
+    ];
+
+    protected $casts = [
+        'is_active' => 'boolean'
     ];
 
     /**
@@ -41,5 +45,13 @@ class Category extends Model
     public function products()
     {
         return $this->hasMany(Product::class);
+    }
+
+    /**
+     * Get the corresponding Pancake category.
+     */
+    public function pancakeCategory()
+    {
+        return $this->belongsTo(PancakeCategory::class, 'pancake_id', 'pancake_id');
     }
 }

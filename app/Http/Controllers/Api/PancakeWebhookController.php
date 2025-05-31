@@ -21,21 +21,34 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use App\Models\Product;
 use Illuminate\Support\Facades\Schema;
+use App\Models\ProductVariant;
+use App\Models\PancakeWebhookLog;
 
 class PancakeWebhookController extends Controller
 {
     /**
-     * Handle all incoming webhooks from Pancake (orders, customers)
+     * Handle all incoming webhooks from Pancake (orders, customers, inventory, warehouse)
      *
      * @param Request $request
      * @return \Illuminate\Http\Response
      */
     public function handleWebhook(Request $request)
     {
+        // Create webhook log entry
+        $webhookLog = new PancakeWebhookLog([
+            'event_type' => $request->input('type') . '.' . $request->input('event'),
+            'source_ip' => $request->ip(),
+            'request_data' => $request->all(),
+            'status' => 'processing'
+        ]);
+        $webhookLog->save();
+
         // Log the incoming webhook
         Log::info('Received Pancake webhook', [
             'data_size' => strlen($request->getContent()),
-            'ip' => $request->ip()
+            'ip' => $request->ip(),
+            'data_type' => $request->input('type'),
+            'event' => $request->input('event')
         ]);
 
         try {
@@ -44,6 +57,7 @@ class PancakeWebhookController extends Controller
 
             // Process based on the type of data received
             $results = [];
+            $processedData = [];
 
             // Check for order data
             $orderData = $request->input('data.order');
@@ -54,11 +68,23 @@ class PancakeWebhookController extends Controller
                 if ($existingOrder) {
                     // Update existing order
                     $order = $this->updateOrder($existingOrder, $orderData);
-                    $results['order'] = 'Order updated successfully';
+                    $results['order'] = 'Đơn hàng đã được cập nhật';
+                    $processedData['order'] = [
+                        'id' => $order->id,
+                        'pancake_order_id' => $order->pancake_order_id,
+                        'status' => 'updated'
+                    ];
+                    $webhookLog->order_id = $order->pancake_order_id;
                 } else {
                     // Create new order
                     $order = $this->createOrder($orderData);
-                    $results['order'] = 'Order created successfully';
+                    $results['order'] = 'Đơn hàng đã được tạo';
+                    $processedData['order'] = [
+                        'id' => $order->id,
+                        'pancake_order_id' => $order->pancake_order_id,
+                        'status' => 'created'
+                    ];
+                    $webhookLog->order_id = $order->pancake_order_id;
                 }
 
                 // Process live session revenue if notes contain live session info
@@ -71,8 +97,36 @@ class PancakeWebhookController extends Controller
             $customerData = $request->input('data.customer');
             if (!empty($customerData)) {
                 // Find or create customer
-                $this->findOrCreateCustomer($customerData);
+                $customer = $this->findOrCreateCustomer($customerData);
                 $results['customer'] = 'Customer processed successfully';
+                $processedData['customer'] = [
+                    'id' => $customer->id,
+                    'pancake_id' => $customer->pancake_id,
+                    'status' => 'processed'
+                ];
+                $webhookLog->customer_id = $customer->pancake_id;
+            }
+
+            // Check for inventory/stock updates
+            $inventoryData = $request->input('data.inventory');
+            if (!empty($inventoryData)) {
+                $this->processInventoryUpdate($inventoryData);
+                $results['inventory'] = 'Inventory updated successfully';
+                $processedData['inventory'] = [
+                    'items_count' => count($inventoryData),
+                    'status' => 'processed'
+                ];
+            }
+
+            // Check for warehouse updates
+            $warehouseData = $request->input('data.warehouse');
+            if (!empty($warehouseData)) {
+                $this->processWarehouseUpdate($warehouseData);
+                $results['warehouse'] = 'Warehouse updated successfully';
+                $processedData['warehouse'] = [
+                    'id' => $warehouseData['id'] ?? null,
+                    'status' => 'processed'
+                ];
             }
 
             // If we didn't process anything, log a warning
@@ -80,11 +134,22 @@ class PancakeWebhookController extends Controller
                 Log::warning('Received webhook with no recognizable data', [
                     'data_keys' => array_keys($request->all())
                 ]);
+
+                $webhookLog->status = 'error';
+                $webhookLog->error_message = 'No recognizable data found in webhook';
+                $webhookLog->processed_data = ['error' => 'No recognizable data'];
+                $webhookLog->save();
+
                 return response()->json([
                     'success' => false,
                     'message' => 'No recognizable data found in webhook'
                 ], 400);
             }
+
+            // Update webhook log with processed data
+            $webhookLog->status = 'success';
+            $webhookLog->processed_data = $processedData;
+            $webhookLog->save();
 
             // Commit transaction
             DB::commit();
@@ -102,6 +167,12 @@ class PancakeWebhookController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            // Update webhook log with error
+            $webhookLog->status = 'error';
+            $webhookLog->error_message = $e->getMessage();
+            $webhookLog->processed_data = ['error' => $e->getMessage()];
+            $webhookLog->save();
 
             return response()->json([
                 'success' => false,
@@ -194,173 +265,205 @@ class PancakeWebhookController extends Controller
      */
     private function createOrder(array $orderData)
     {
-        // Find or create customer
-        $customer = $this->findOrCreateCustomer($orderData['customer'] ?? $orderData);
+        try {
+            DB::beginTransaction();
 
-        // Map Pancake order status to internal status
-        $status = $this->mapPancakeStatus($orderData['status'] ?? $orderData['status_name'] ?? 'moi');
-
-        // Find shop and page
-        $shopId = null;
-        $pageId = null;
-
-        if (!empty($orderData['shop_id'])) {
-            $shop = PancakeShop::firstOrCreate([
-                'pancake_id' => $orderData['shop_id']
-            ], [
-                'name' => $orderData['shop_name'] ?? 'Pancake Shop',
+            // 1. Map thông tin khách hàng
+            $customer = $this->findOrCreateCustomer([
+                'name' => $orderData['bill_full_name'] ?? $orderData['customer']['name'] ?? null,
+                'phone' => $orderData['bill_phone_number'] ?? $orderData['customer']['phone'] ?? null,
+                'email' => $orderData['customer']['email'] ?? null,
+                'shipping_address' => $orderData['shipping_address'] ?? null,
+                'id' => $orderData['customer']['id'] ?? null,
+                'code' => $orderData['customer']['code'] ?? null
             ]);
-            $shopId = $shop->id;
-        }
 
-        if (!empty($orderData['page_id'])) {
-            $page = PancakePage::where('pancake_id', $orderData['page_id'])
-                    ->orWhere('pancake_page_id', $orderData['page_id'])
-                    ->first();
-
-            if (!$page) {
-                $page = new PancakePage();
-                $page->pancake_id = $orderData['page_id'];
-                $page->pancake_page_id = $orderData['page_id'];
-                $page->name = $orderData['page_name'] ?? 'Pancake Page';
-                $page->pancake_shop_id = $shopId;
-                $page->pancake_shop_table_id = $shopId ? PancakeShop::where('pancake_id', $shopId)->value('id') : null;
-                $page->save();
-            }
-
-            $pageId = $page->id;
-        }
-
-        // Assign to default user if available
-        $userId = null;
-        $defaultUser = User::whereHas('roles', function($q) {
-            $q->where('name', 'staff');
-        })->first();
-
-        if ($defaultUser) {
-            $userId = $defaultUser->id;
-        }
-
-        // Get default warehouse
-        $warehouse = Warehouse::first();
-
-        // Create order
+            // 2. Tạo đơn hàng mới
         $order = new Order();
 
-        // Basic order information
-        $order->pancake_order_id = $orderData['id'] ?? null;
+            // Map thông tin cơ bản
+            $order->pancake_order_id = $orderData['id'];
         $order->order_code = $orderData['code'] ?? ('PCK-' . Str::random(8));
-        $order->source = $orderData['source'] ?? $orderData['order_sources_name'] ?? null;
-        $order->campaign_id = $orderData['campaign_id'] ?? null;
-        $order->campaign_name = $orderData['campaign_name'] ?? null;
+            $order->source = $orderData['order_sources'] ?? -1;
 
-        // Customer information
+            // Map thông tin kho và trang
+            $order->warehouse_id = $this->findOrCreateWarehouse($orderData['warehouse_id']);
+            $order->pancake_page_id = $orderData['page_id'] ?? null;
+
+            // Map thông tin khách hàng
         $order->customer_id = $customer->id;
-        $order->customer_name = $orderData['customer']['name'] ?? $orderData['bill_full_name'] ?? $customer->name;
-        $order->customer_phone = $orderData['customer']['phone'] ?? $orderData['bill_phone_number'] ?? $customer->phone;
-        $order->customer_email = $orderData['customer']['email'] ?? $orderData['bill_email'] ?? $customer->email;
+            $order->customer_name = $customer->name;
+            $order->customer_phone = $customer->phone;
+            $order->customer_email = $customer->email;
 
-        // Status and tracking
-        $order->status = $status;
-        $order->pancake_status = is_numeric($orderData['status']) ? $orderData['status'] : ($orderData['status_name'] ?? null);
-        $order->internal_status = 'Created from Pancake webhook';
-        $order->tracking_code = $orderData['tracking_code'] ?? null;
-        $order->tracking_url = $orderData['tracking_url'] ?? null;
-
-        // Financial information
-        $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
-        $order->cod_fee = $orderData['cod_fee'] ?? 0;
-        $order->insurance_fee = $orderData['insurance_fee'] ?? 0;
-        $order->total_value = $orderData['total'] ?? $orderData['total_discount'] ?? 0;
-        $order->discount_amount = $orderData['discount_amount'] ?? 0;
-        $order->payment_method = $orderData['payment_method'] ?? 'cod';
-        $order->payment_status = $orderData['payment_status'] ?? 'pending';
-
-        // Shipping information
+            // Map thông tin vận chuyển
         if (!empty($orderData['shipping_address'])) {
             $shipping = $orderData['shipping_address'];
-            $order->province_code = $shipping['province_code'] ?? $shipping['province_id'] ?? null;
-            $order->district_code = $shipping['district_code'] ?? $shipping['district_id'] ?? null;
-            $order->ward_code = $shipping['ward_code'] ?? $shipping['commune_id'] ?? null;
+                $order->shipping_province = $shipping['province_id'] ?? null;
+                $order->shipping_district = $shipping['district_id'] ?? null;
+                $order->shipping_ward = $shipping['commune_id'] ?? null;
             $order->street_address = $shipping['address'] ?? null;
             $order->full_address = $shipping['full_address'] ?? null;
-            $order->shipping_provider = $shipping['provider'] ?? null;
-            $order->shipping_service = $shipping['service'] ?? null;
-            $order->shipping_note = $shipping['note'] ?? null;
-        }
-
-        // Notes and additional information
-        $order->notes = $orderData['notes'] ?? null;
-        $order->internal_notes = $orderData['internal_notes'] ?? null;
-        $order->additional_notes = $orderData['additional_notes'] ?? null;
-
-        // Pancake specific data
-        $order->pancake_shop_id = $shopId;
-        $order->pancake_page_id = $pageId;
-        $order->warehouse_id = $warehouse->id ?? null;
-        $order->post_id = $orderData['post_id'] ?? null;
-
-        // User information
-        $order->user_id = $userId;
-        $order->created_by = $userId;
-        $order->updated_by = $userId;
-
-        // Product info JSON for reporting
-        $order->product_info = !empty($orderData['items']) ? json_encode($orderData['items']) : null;
-
-        // Save timestamps
-        if (!empty($orderData['inserted_at'])) {
-            try {
-                $order->pancake_inserted_at = \Carbon\Carbon::parse($orderData['inserted_at']);
-            } catch (\Exception $e) {
-                Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
             }
-        }
 
+            // Map thông tin đơn vị vận chuyển
+            if (!empty($orderData['partner'])) {
+                $order->shipping_provider_id = $orderData['partner']['partner_id'] ?? null;
+            }
+
+            // Map thông tin tài chính
+            $order->shipping_fee = (float)($orderData['shipping_fee'] ?? 0);
+            $order->transfer_money = (float)($orderData['transfer_money'] ?? 0);
+            $order->total_value = $this->calculateOrderTotal($orderData);
+
+            // Map ghi chú
+            $order->notes = $orderData['note'] ?? null;
+            $order->additional_notes = $orderData['additional_notes'] ?? null;
+
+            // Map trạng thái
+            $order->status = $this->mapPancakeStatus($orderData['status'] ?? 'new');
+
+            // Prepare products_data in the same format as OrderController
+            $pancakeItemsPayload = [];
+            if (!empty($orderData['items'])) {
+                foreach ($orderData['items'] as $item) {
+                    $pancakeItemsPayload[] = [
+                        'id' => null,
+                        'product_id' => $item['product_id'] ?? null,
+                        'variation_id' => $item['variation_id'] ?? ($item['code'] ?? null),
+                        'quantity' => (int)($item['quantity'] ?? 1),
+                        'added_to_cart_quantity' => (int)($item['quantity'] ?? 1),
+                        'components' => null,
+                        'composite_item_id' => null,
+                        'discount_each_product' => 0,
+                        'exchange_count' => 0,
+                        'is_bonus_product' => false,
+                        'is_composite' => null,
+                        'is_discount_percent' => false,
+                        'is_wholesale' => false,
+                        'measure_group_id' => null,
+                        'note' => null,
+                        'one_time_product' => false,
+                        'return_quantity' => 0,
+                        'returned_count' => 0,
+                        'returning_quantity' => 0,
+                        'total_discount' => 0,
+                        'variation_info' => [
+                            'barcode' => $item['variation_info']['barcode'] ?? ($item['code'] ?? null),
+                            'brand_id' => null,
+                            'category_ids' => [],
+                            'detail' => null,
+                            'display_id' => $item['variation_info']['display_id'] ?? ($item['code'] ?? null),
+                            'exact_price' => 0,
+                            'fields' => null,
+                            'last_imported_price' => 0,
+                            'measure_info' => null,
+                            'name' => $item['variation_info']['name'] ?? ($item['name'] ?? 'N/A'),
+                            'product_display_id' => $item['variation_info']['product_display_id'] ?? ($item['code'] ?? null),
+                            'retail_price' => (float)($item['variation_info']['retail_price'] ?? ($item['price'] ?? 0)),
+                            'weight' => (int)($item['variation_info']['weight'] ?? ($item['weight'] ?? 0)),
+                        ]
+                    ];
+                }
+            }
+
+            // Save products_data as JSON
+            $order->products_data = json_encode($pancakeItemsPayload);
         $order->save();
 
-        // Create order items
+            // 3. Xử lý các sản phẩm trong đơn
         if (!empty($orderData['items'])) {
             foreach ($orderData['items'] as $itemData) {
                 $orderItem = new OrderItem();
                 $orderItem->order_id = $order->id;
-                $this->setOrderItemFields($orderItem, $itemData);
+                    $orderItem->code = $itemData['variation_id'] ?? null;
+                    $orderItem->quantity = $itemData['quantity'] ?? 1;
+
+                    // Map thông tin sản phẩm
+                    if (!empty($itemData['variation_info'])) {
+                        $orderItem->price = $itemData['variation_info']['retail_price'] ?? 0;
+                        // Tính tổng tiền cho item
+                        $orderItem->total = $orderItem->price * $orderItem->quantity;
+                    }
+
+                    // Lưu thông tin chi tiết vào additional_data
+                    $orderItem->additional_data = json_encode($itemData);
+
                 $orderItem->save();
 
+                    // Log thông tin
                 Log::info('Created order item', [
                     'order_id' => $order->id,
-                    'product_name' => $orderItem->product_name,
+                        'code' => $orderItem->code,
                     'quantity' => $orderItem->quantity,
-                    'price' => $orderItem->price
-                ]);
+                        'price' => $orderItem->price,
+                        'total' => $orderItem->total
+                    ]);
+                }
             }
 
-            // Update total value based on items if needed
-            $newTotal = $order->items->sum(function($item) {
-                return ($item->price ?? 0) * ($item->quantity ?? 1);
-            });
+            DB::commit();
+            return $order;
 
-            // Add shipping fee
-            $newTotal += ($order->shipping_fee ?? 0);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error creating order from Pancake data', [
+                'error' => $e->getMessage(),
+                'data' => $orderData
+            ]);
+            throw $e;
+        }
+    }
 
-            // Update order total if different
-            if ($newTotal > 0 && $newTotal != $order->total_value) {
-                $order->total_value = $newTotal;
-                $order->save();
+    /**
+     * Calculate order total from items and fees
+     *
+     * @param array $orderData
+     * @return float
+     */
+    private function calculateOrderTotal(array $orderData): float
+    {
+        $total = 0;
 
-                Log::info('Updated order total value based on items', [
-                    'order_id' => $order->id,
-                    'new_total' => $newTotal
-                ]);
+        // Tính tổng giá trị sản phẩm
+        if (!empty($orderData['items'])) {
+            foreach ($orderData['items'] as $item) {
+                $price = $item['variation_info']['retail_price'] ?? 0;
+                $quantity = $item['quantity'] ?? 1;
+                $total += $price * $quantity;
             }
         }
 
-        // Process live session revenue if notes contain session info
-        if (!empty($orderData['notes'])) {
-            $this->processLiveSessionRevenue($order, $orderData['notes']);
+        // Cộng phí vận chuyển
+        $total += (float)($orderData['shipping_fee'] ?? 0);
+
+        return $total;
+    }
+
+    /**
+     * Find or create warehouse by Pancake ID
+     *
+     * @param string|null $warehouseId
+     * @return int|null
+     */
+    private function findOrCreateWarehouse(?string $warehouseId): ?int
+    {
+        if (!$warehouseId) {
+            return null;
         }
 
-        return $order;
+        $warehouse = Warehouse::where('pancake_id', $warehouseId)->first();
+
+        if (!$warehouse) {
+            $warehouse = Warehouse::create([
+                'pancake_id' => $warehouseId,
+                'code' => 'WH-' . $warehouseId,
+                'name' => 'Warehouse ' . $warehouseId,
+                'status' => true
+            ]);
+        }
+
+        return $warehouse->id;
     }
 
     /**
@@ -423,9 +526,49 @@ class PancakeWebhookController extends Controller
         $order->internal_notes = $orderData['internal_notes'] ?? $order->internal_notes;
         $order->additional_notes = $orderData['additional_notes'] ?? $order->additional_notes;
 
-        // Update product info JSON
+        // Update products_data with the same format as OrderController
         if (!empty($orderData['items'])) {
-            $order->product_info = json_encode($orderData['items']);
+            $pancakeItemsPayload = [];
+            foreach ($orderData['items'] as $item) {
+                $pancakeItemsPayload[] = [
+                    'id' => null,
+                    'product_id' => $item['product_id'] ?? null,
+                    'variation_id' => $item['variation_id'] ?? ($item['code'] ?? null),
+                    'quantity' => (int)($item['quantity'] ?? 1),
+                    'added_to_cart_quantity' => (int)($item['quantity'] ?? 1),
+                    'components' => null,
+                    'composite_item_id' => null,
+                    'discount_each_product' => 0,
+                    'exchange_count' => 0,
+                    'is_bonus_product' => false,
+                    'is_composite' => null,
+                    'is_discount_percent' => false,
+                    'is_wholesale' => false,
+                    'measure_group_id' => null,
+                    'note' => null,
+                    'one_time_product' => false,
+                    'return_quantity' => 0,
+                    'returned_count' => 0,
+                    'returning_quantity' => 0,
+                    'total_discount' => 0,
+                    'variation_info' => [
+                        'barcode' => $item['variation_info']['barcode'] ?? ($item['code'] ?? null),
+                        'brand_id' => null,
+                        'category_ids' => [],
+                        'detail' => null,
+                        'display_id' => $item['variation_info']['display_id'] ?? ($item['code'] ?? null),
+                        'exact_price' => 0,
+                        'fields' => null,
+                        'last_imported_price' => 0,
+                        'measure_info' => null,
+                        'name' => $item['variation_info']['name'] ?? ($item['name'] ?? 'N/A'),
+                        'product_display_id' => $item['variation_info']['product_display_id'] ?? ($item['code'] ?? null),
+                        'retail_price' => (float)($item['variation_info']['retail_price'] ?? ($item['price'] ?? 0)),
+                        'weight' => (int)($item['variation_info']['weight'] ?? ($item['weight'] ?? 0)),
+                    ]
+                ];
+            }
+            $order->products_data = json_encode($pancakeItemsPayload);
         }
 
         // Update status
@@ -531,6 +674,14 @@ class PancakeWebhookController extends Controller
             $customer = Customer::where('email', $email)->first();
         }
 
+        // Chuẩn bị dữ liệu social
+        $socialData = [
+            'social_type' => $customerData['social_type'] ?? null,
+            'social_id' => $customerData['social_id'] ?? null,
+            'fb_id' => $customerData['fb_id'] ?? null,
+            'social_info' => !empty($customerData['social_info']) ? json_encode($customerData['social_info']) : null
+        ];
+
         if (!$customer) {
             // Create new customer
             $customer = new Customer();
@@ -538,18 +689,48 @@ class PancakeWebhookController extends Controller
             $customer->phone = $phone;
             $customer->email = $email;
             $customer->pancake_id = $customerData['id'] ?? null;
-            $customer->pancake_code = $customerData['code'] ?? null;
-            $customer->address = $customerData['address'] ?? null;
-            $customer->social_type = $customerData['social_type'] ?? null;
-            $customer->social_id = $customerData['social_id'] ?? null;
+            $customer->pancake_customer_id = $customerData['code'] ?? null;
+
+            // Map địa chỉ
+            if (!empty($customerData['shipping_address'])) {
+                $shipping = $customerData['shipping_address'];
+                $customer->province = $shipping['province_id'] ?? null;
+                $customer->district = $shipping['district_id'] ?? null;
+                $customer->ward = $shipping['commune_id'] ?? null;
+                $customer->street_address = $shipping['address'] ?? null;
+                $customer->full_address = $shipping['full_address'] ?? null;
+            }
+
+            // Map thông tin social
+            foreach ($socialData as $key => $value) {
+                if (Schema::hasColumn('customers', $key)) {
+                    $customer->$key = $value;
+                }
+            }
+
             $customer->save();
         } else {
             // Update existing customer with any new data
             $customer->pancake_id = $customerData['id'] ?? $customer->pancake_id;
-            $customer->pancake_code = $customerData['code'] ?? $customer->pancake_code;
-            $customer->address = $customerData['address'] ?? $customer->address;
-            $customer->social_type = $customerData['social_type'] ?? $customer->social_type;
-            $customer->social_id = $customerData['social_id'] ?? $customer->social_id;
+            $customer->pancake_customer_id = $customerData['code'] ?? $customer->pancake_customer_id;
+
+            // Cập nhật địa chỉ nếu có
+            if (!empty($customerData['shipping_address'])) {
+                $shipping = $customerData['shipping_address'];
+                $customer->province = $shipping['province_id'] ?? $customer->province;
+                $customer->district = $shipping['district_id'] ?? $customer->district;
+                $customer->ward = $shipping['commune_id'] ?? $customer->ward;
+                $customer->street_address = $shipping['address'] ?? $customer->street_address;
+                $customer->full_address = $shipping['full_address'] ?? $customer->full_address;
+            }
+
+            // Cập nhật thông tin social
+            foreach ($socialData as $key => $value) {
+                if (Schema::hasColumn('customers', $key) && !empty($value)) {
+                    $customer->$key = $value;
+                }
+            }
+
             $customer->save();
         }
 
@@ -733,5 +914,98 @@ class PancakeWebhookController extends Controller
         }
 
         return $orderItem;
+    }
+
+    /**
+     * Process inventory/stock updates from Pancake
+     *
+     * @param array $inventoryData
+     * @return void
+     */
+    private function processInventoryUpdate(array $inventoryData)
+    {
+        foreach ($inventoryData as $item) {
+            try {
+                // Find the product variant
+                $variant = ProductVariant::where('pancake_variant_id', $item['variation_id'])
+                    ->orWhere('pancake_product_id', $item['product_id'])
+                    ->first();
+
+                if (!$variant) {
+                    // Create new variant if it doesn't exist
+                    $variant = new ProductVariant();
+                    $variant->pancake_variant_id = $item['variation_id'];
+                    $variant->pancake_product_id = $item['product_id'];
+                    $variant->name = $item['name'] ?? 'Unknown Product';
+                }
+
+                // Update stock and other relevant fields
+                $variant->stock = $item['stock'] ?? 0;
+                $variant->price = $item['price'] ?? $item['retail_price'] ?? 0;
+                $variant->sku = $item['sku'] ?? $item['barcode'] ?? null;
+
+                // Store additional data
+                $variant->metadata = array_merge($variant->metadata ?? [], [
+                    'last_sync' => now(),
+                    'pancake_data' => $item
+                ]);
+
+                $variant->save();
+
+                Log::info('Updated product variant inventory', [
+                    'variant_id' => $variant->id,
+                    'pancake_variant_id' => $variant->pancake_variant_id,
+                    'new_stock' => $variant->stock
+                ]);
+
+            } catch (\Exception $e) {
+                Log::error('Error processing inventory update for item', [
+                    'item' => $item,
+                    'error' => $e->getMessage()
+                ]);
+                throw $e;
+            }
+        }
+    }
+
+    /**
+     * Process warehouse updates from Pancake
+     *
+     * @param array $warehouseData
+     * @return void
+     */
+    private function processWarehouseUpdate(array $warehouseData)
+    {
+        try {
+            // Find or create warehouse
+            $warehouse = Warehouse::where('pancake_id', $warehouseData['id'])
+                ->orWhere('code', $warehouseData['code'])
+                ->first();
+
+            if (!$warehouse) {
+                $warehouse = new Warehouse();
+                $warehouse->pancake_id = $warehouseData['id'];
+            }
+
+            // Update warehouse information
+            $warehouse->name = $warehouseData['name'];
+            $warehouse->code = $warehouseData['code'] ?? $warehouseData['id'];
+            $warehouse->description = $warehouseData['description'] ?? null;
+            $warehouse->status = $warehouseData['status'] ?? true;
+
+            $warehouse->save();
+
+            Log::info('Updated warehouse from Pancake', [
+                'warehouse_id' => $warehouse->id,
+                'pancake_id' => $warehouse->pancake_id
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error processing warehouse update', [
+                'data' => $warehouseData,
+                'error' => $e->getMessage()
+            ]);
+            throw $e;
+        }
     }
 }

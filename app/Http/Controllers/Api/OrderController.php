@@ -103,6 +103,7 @@ class OrderController extends Controller
             $validator = Validator::make($request->all(), [
                 'bill_phone_number' => 'required|string|max:20',
                 'bill_full_name' => 'required|string|max:255',
+                'push_to_pancake' => 'nullable|boolean',
             ]);
 
             if ($validator->fails()) {
@@ -170,6 +171,27 @@ class OrderController extends Controller
                         'additional_data' => [
                             'variation_info' => $item['variation_info'] ?? null
                         ]
+                    ]);
+                }
+            }
+
+            // If push_to_pancake is enabled, push to Pancake
+            if ($request->input('push_to_pancake')) {
+                try {
+                    $pancakeSyncController = app(\App\Http\Controllers\PancakeSyncController::class);
+                    $pushResult = $pancakeSyncController->pushOrderToPancake($order);
+
+                    if (!$pushResult['success']) {
+                        Log::warning('Failed to push order to Pancake', [
+                            'order_id' => $order->id,
+                            'error' => $pushResult['message'] ?? 'Unknown error'
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Error pushing new order to Pancake: ' . $e->getMessage(), [
+                        'order_id' => $order->id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
                     ]);
                 }
             }

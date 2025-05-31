@@ -44,9 +44,9 @@ class RolesAndPermissionsSeeder extends Seeder
             // Order Permissions
             'orders.view', 'orders.create', 'orders.edit', 'orders.delete', 'orders.push_to_pancake',
             // Product Permissions
-            'products.view', 'products.create', 'products.edit', 'products.delete',
+            'products.view', 'products.create', 'products.edit', 'products.delete', 'products.sync',
             // Category Permissions
-            'categories.view', 'categories.create', 'categories.edit', 'categories.delete',
+            'categories.view', 'categories.create', 'categories.edit', 'categories.delete', 'categories.sync',
             // Customer Permissions
             'customers.view', 'customers.create', 'customers.edit', 'customers.delete', 'customers.view_trashed', 'customers.restore', 'customers.force_delete', 'customers.orders', 'customers.latest', 'customers.sync',
             // Order Filter Permissions

@@ -111,27 +111,153 @@
                     </div>
                 </div>
 
-                <!-- Test Webhook Section -->
+                <!-- Webhook Logs Section -->
                 <div class="row mt-3">
                     <div class="col-12">
                         <div class="card card-warning">
                             <div class="card-header">
                                 <h3 class="card-title">
-                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <i class="fas fa-history"></i>
                                     Webhook đã nhận
                                 </h3>
+                                <!-- Filter Form -->
+                                <div class="card-tools">
+                                    <form method="GET" class="form-inline">
+                                        <select name="status" class="form-control form-control-sm mr-2">
+                                            <option value="">Tất cả trạng thái</option>
+                                            <option value="success" {{ request('status') == 'success' ? 'selected' : '' }}>Thành công</option>
+                                            <option value="error" {{ request('status') == 'error' ? 'selected' : '' }}>Lỗi</option>
+                                            <option value="processing" {{ request('status') == 'processing' ? 'selected' : '' }}>Đang xử lý</option>
+                                        </select>
+                                        <input type="text" name="search" class="form-control form-control-sm mr-2" placeholder="Tìm kiếm..." value="{{ request('search') }}">
+                                        <button type="submit" class="btn btn-sm btn-default">
+                                            <i class="fas fa-search"></i>
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                             <div class="card-body">
-                                <p>Webhook đã nhận được gần đây nhất:</p>
-                                <div id="webhook-log">
-                                    <div class="alert alert-secondary">
-                                        Chưa nhận được webhook nào.
-                                    </div>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-striped">
+                                        <thead>
+                                            <tr>
+                                                <th>Thời gian</th>
+                                                <th>Loại</th>
+                                                <th>Trạng thái</th>
+                                                <th>Đơn hàng</th>
+                                                <th>Khách hàng</th>
+                                                <th>Chi tiết</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @forelse($webhookLogs as $log)
+                                                <tr>
+                                                    <td>{{ $log->created_at->format('d/m/Y H:i:s') }}</td>
+                                                    <td>{{ $log->event_type }}</td>
+                                                    <td>
+                                                        <span class="badge badge-{{ $log->status === 'success' ? 'success' : ($log->status === 'error' ? 'danger' : 'warning') }}">
+                                                            {{ $log->status === 'success' ? 'Thành công' : ($log->status === 'error' ? 'Lỗi' : 'Đang xử lý') }}
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        @if($log->order_id)
+                                                            <a href="{{ route('orders.show', $log->order_id) }}">{{ $log->order_id }}</a>
+                                                        @else
+                                                            -
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        @if($log->customer_id)
+                                                            <a href="{{ route('customers.show', $log->customer_id) }}">{{ $log->customer_id }}</a>
+                                                        @else
+                                                            -
+                                                        @endif
+                                                    </td>
+                                                    <td>
+                                                        <button type="button" class="btn btn-sm btn-info view-details"
+                                                                data-toggle="modal"
+                                                                data-target="#logDetailsModal"
+                                                                data-log="{{ json_encode($log) }}">
+                                                            <i class="fas fa-eye"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            @empty
+                                                <tr>
+                                                    <td colspan="6" class="text-center">Chưa có webhook nào được ghi nhận.</td>
+                                                </tr>
+                                            @endforelse
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Pagination -->
+                                <div class="mt-3">
+                                    {{ $webhookLogs->links() }}
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Details Modal -->
+<div class="modal fade" id="logDetailsModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Chi tiết Webhook</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Thông tin cơ bản</h6>
+                        <dl class="row">
+                            <dt class="col-sm-4">Thời gian:</dt>
+                            <dd class="col-sm-8" id="modal-created-at"></dd>
+
+                            <dt class="col-sm-4">Loại:</dt>
+                            <dd class="col-sm-8" id="modal-event-type"></dd>
+
+                            <dt class="col-sm-4">Trạng thái:</dt>
+                            <dd class="col-sm-8" id="modal-status"></dd>
+
+                            <dt class="col-sm-4">IP nguồn:</dt>
+                            <dd class="col-sm-8" id="modal-source-ip"></dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Kết quả xử lý</h6>
+                        <dl class="row">
+                            <dt class="col-sm-4">Đơn hàng:</dt>
+                            <dd class="col-sm-8" id="modal-order-id"></dd>
+
+                            <dt class="col-sm-4">Khách hàng:</dt>
+                            <dd class="col-sm-8" id="modal-customer-id"></dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Dữ liệu nhận được</h6>
+                        <pre id="modal-request-data" class="bg-light p-3" style="max-height: 300px; overflow-y: auto;"></pre>
+
+                        <h6>Dữ liệu đã xử lý</h6>
+                        <pre id="modal-processed-data" class="bg-light p-3" style="max-height: 300px; overflow-y: auto;"></pre>
+
+                        <div id="modal-error-message" class="alert alert-danger d-none"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
             </div>
         </div>
     </div>
@@ -144,6 +270,14 @@
         background-color: #28a745;
         border-color: #28a745;
         color: white;
+    }
+    pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+    .modal-body {
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
     }
 </style>
 @stop
@@ -166,6 +300,32 @@ $(document).ready(function() {
         }, 2000);
 
         e.clearSelection();
+    });
+
+    // Handle log details modal
+    $('.view-details').click(function() {
+        var log = $(this).data('log');
+
+        // Basic info
+        $('#modal-created-at').text(moment(log.created_at).format('DD/MM/YYYY HH:mm:ss'));
+        $('#modal-event-type').text(log.event_type);
+        $('#modal-status').html(`<span class="badge badge-${log.status === 'success' ? 'success' : (log.status === 'error' ? 'danger' : 'warning')}">${log.status}</span>`);
+        $('#modal-source-ip').text(log.source_ip);
+
+        // IDs
+        $('#modal-order-id').html(log.order_id ? `<a href="/orders/${log.order_id}">${log.order_id}</a>` : '-');
+        $('#modal-customer-id').html(log.customer_id ? `<a href="/customers/${log.customer_id}">${log.customer_id}</a>` : '-');
+
+        // Data
+        $('#modal-request-data').text(JSON.stringify(log.request_data, null, 2));
+        $('#modal-processed-data').text(JSON.stringify(log.processed_data, null, 2));
+
+        // Error message if any
+        if (log.error_message) {
+            $('#modal-error-message').text(log.error_message).removeClass('d-none');
+        } else {
+            $('#modal-error-message').addClass('d-none');
+        }
     });
 });
 </script>

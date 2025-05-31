@@ -18,8 +18,9 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->foreignId('parent_id')->nullable()->constrained('categories')->onDelete('set null'); // For sub-categories
             $table->boolean('is_active')->default(true);
+            $table->string('pancake_id')->nullable()->unique();
             $table->timestamps();
-            // $table->softDeletes(); // Uncomment if using soft deletes in the model
+            $table->softDeletes();
         });
     }
 

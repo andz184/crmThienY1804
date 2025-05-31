@@ -320,8 +320,56 @@
                         <h3 class="card-title m-0 font-weight-bold text-info">
                             <i class="fas fa-sticky-note mr-2"></i>Ghi chú
                         </h3>
-                                    </div>
+                    </div>
                     <div class="card-body">
+                        {{-- Livestream Order Selection --}}
+                        <div class="form-group">
+                            <div class="custom-control custom-switch">
+                                <input type="checkbox" class="custom-control-input" id="is_livestream" name="is_livestream" value="1" {{ preg_match('/LIVE[1-3]\s+\d{2}\/\d{2}/', $order->notes ?? '') ? 'checked' : '' }}>
+                                <label class="custom-control-label" for="is_livestream">Đơn hàng livestream</label>
+                            </div>
+                        </div>
+
+                        <div id="livestream_details" style="display: {{ preg_match('/LIVE[1-3]\s+\d{2}\/\d{2}/', $order->notes ?? '') ? 'block' : 'none' }};">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="small font-weight-bold">Ca live</label>
+                                        <select class="form-control" id="live_session" name="live_session">
+                                            <option value="">-- Chọn ca live --</option>
+                                            @php
+                                                $liveSession = '';
+                                                $liveDate = '';
+                                                if(preg_match('/LIVE[1-3]\s+\d{2}\/\d{2}/', $order->notes ?? '', $matches)) {
+                                                    $parts = explode(' ', $matches[0]);
+                                                    $liveSession = $parts[0];
+                                                    $liveDate = $parts[1];
+                                                }
+                                            @endphp
+                                            <option value="LIVE1" {{ $liveSession == 'LIVE1' ? 'selected' : '' }}>LIVE1</option>
+                                            <option value="LIVE2" {{ $liveSession == 'LIVE2' ? 'selected' : '' }}>LIVE2</option>
+                                            <option value="LIVE3" {{ $liveSession == 'LIVE3' ? 'selected' : '' }}>LIVE3</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-group">
+                                        <label class="small font-weight-bold">Ngày live</label>
+                                        @php
+                                            $formattedDate = '';
+                                            if($liveDate) {
+                                                $dateParts = explode('/', $liveDate);
+                                                if(count($dateParts) == 2) {
+                                                    $formattedDate = date('Y') . '-' . str_pad($dateParts[1], 2, '0', STR_PAD_LEFT) . '-' . str_pad($dateParts[0], 2, '0', STR_PAD_LEFT);
+                                                }
+                                            }
+                                        @endphp
+                                        <input type="date" class="form-control" id="live_date" name="live_date" value="{{ $formattedDate }}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <ul class="nav nav-tabs" role="tablist">
                             <li class="nav-item">
                                 <a class="nav-link active" data-toggle="tab" href="#internal_note" role="tab">Nội bộ</a>
@@ -332,27 +380,14 @@
                         </ul>
                         <div class="tab-content pt-3">
                             <div class="tab-pane active" id="internal_note" role="tabpanel">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label class="small font-weight-bold">Ghi chú nội bộ</label>
-                                            <textarea name="notes" class="form-control" rows="2">{{ old('notes', $order->notes ?? '') }}</textarea>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <div class="form-group">
-                                            <label class="small font-weight-bold">Trạng thái Đơn hàng (CRM)</label>
-                                            <input type="text" class="form-control" value="{{ $statuses[$order->status] ?? ucfirst(str_replace('_', ' ', $order->status ?? 'N/A')) }}" readonly>
-                                        </div>
-                                    </div>
-                                </div>
+                                <textarea name="notes" id="notes" class="form-control" rows="3" placeholder="Ghi chú nội bộ">{{ old('notes', $order->notes) }}</textarea>
                             </div>
                             <div class="tab-pane" id="external_note" role="tabpanel">
-                                <textarea name="additional_notes" class="form-control" rows="3" placeholder="Ghi chú cho đối tác">{{ old('additional_notes', $order->additional_notes ?? '') }}</textarea>
-                            </div>
-                                </div>
+                                <textarea name="additional_notes" class="form-control" rows="3" placeholder="Ghi chú cho đối tác">{{ old('additional_notes', $order->additional_notes) }}</textarea>
                             </div>
                         </div>
+                    </div>
+                </div>
             </div>
 
             {{-- Right Column (Customer and Shipping Info) --}}
@@ -549,29 +584,36 @@
             <div class="col-12">
                 <div class="card shadow-sm">
                         <div class="card-body">
-                        <div class="custom-control custom-switch float-left">
-                            <input type="checkbox" name="push_to_pancake" id="push_to_pancake" class="custom-control-input" value="1" {{ old('push_to_pancake', $order->pushed_to_pancake_at ? true : false) ? 'checked' : '' }}>
-                            <label for="push_to_pancake" class="custom-control-label">Đẩy đơn hàng đến Pancake sau khi cập nhật</label>
-                            </div>
-                        <div class="float-right">
-                            <a href="{{ route('orders.index') }}" class="btn btn-secondary">
-                                <i class="fas fa-arrow-left mr-1"></i>Quay lại
-                            </a>
-                            @can('orders.push_to_pancake')
-                            <button type="button" class="btn btn-info mr-2 btn-push-pancake"
-                                    data-order-id="{{ $order->id }}"
-                                    data-url="{{ route('orders.pushToPancake', $order->id) }}"
-                                    title="Đẩy đơn hàng này lên Pancake">
-                                <i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake
-                            </button>
-                            @endcan
-                            <button type="submit" class="btn btn-primary ml-2">
-                                <i class="fas fa-save mr-1"></i>Cập nhật đơn hàng
-                            </button>
-                            </div>
+                            @if(!$order->pancake_order_id)
+                                <div class="custom-control custom-switch float-left">
+                                    <input type="checkbox" name="push_to_pancake" id="push_to_pancake" class="custom-control-input" value="1" {{ old('push_to_pancake', $order->pushed_to_pancake_at ? true : false) ? 'checked' : '' }}>
+                                    <label for="push_to_pancake" class="custom-control-label">Đẩy đơn hàng đến Pancake sau khi cập nhật</label>
+                                </div>
+                            @endif
+                            <div class="float-right">
+                                <a href="{{ route('orders.index') }}" class="btn btn-secondary">
+                                    <i class="fas fa-arrow-left mr-1"></i>Quay lại
+                                </a>
+                                @if(!$order->pancake_order_id)
+                                    @can('orders.push_to_pancake')
+                                        <button type="button" class="btn btn-info mr-2 btn-push-pancake"
+                                                data-order-id="{{ $order->id }}"
+                                                data-url="{{ route('orders.pushToPancake', $order->id) }}"
+                                                title="Đẩy đơn hàng này lên Pancake">
+                                            <i class="fas fa-rocket fa-fw"></i> Đẩy lên Pancake
+                                        </button>
+                                    @endcan
+                                @endif
+                                <button type="submit" class="btn btn-primary ml-2">
+                                    <i class="fas fa-save mr-1"></i>Cập nhật đơn hàng
+                                    @if($order->pancake_order_id)
+                                        <small class="text-white">(Tự động cập nhật lên Pancake)</small>
+                                    @endif
+                                </button>
                             </div>
                         </div>
                     </div>
+                </div>
             </div>
         </form>
 </div>
@@ -1430,6 +1472,52 @@ textarea.form-control {
             });
         });
         @endif
+
+        // Xử lý hiển thị/ẩn chi tiết livestream
+        $('#is_livestream').change(function() {
+            if($(this).is(':checked')) {
+                $('#livestream_details').slideDown();
+            } else {
+                $('#livestream_details').slideUp();
+                $('#live_session').val('');
+                $('#live_date').val('');
+                updateNotes('');
+            }
+        });
+
+        // Xử lý khi thay đổi ca live hoặc ngày live
+        $('#live_session, #live_date').change(function() {
+            const liveSession = $('#live_session').val();
+            const liveDate = $('#live_date').val();
+
+            if(liveSession && liveDate) {
+                // Chuyển đổi định dạng ngày từ YYYY-MM-DD sang DD/MM
+                const date = new Date(liveDate);
+                const formattedDate = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+                // Tạo chuỗi livestream
+                const livestreamString = `${liveSession} ${formattedDate}`;
+                updateNotes(livestreamString);
+            }
+        });
+
+        function updateNotes(livestreamString) {
+            let currentNotes = $('#notes').val();
+
+            // Xóa thông tin livestream cũ nếu có
+            currentNotes = currentNotes.replace(/LIVE[1-3]\s+\d{2}\/\d{2}(\n|$)/, '');
+
+            // Thêm thông tin livestream mới
+            if(livestreamString) {
+                if(currentNotes) {
+                    currentNotes = livestreamString + '\n' + currentNotes;
+                } else {
+                    currentNotes = livestreamString;
+                }
+            }
+
+            $('#notes').val(currentNotes);
+        }
     });
     </script>
 @endpush
