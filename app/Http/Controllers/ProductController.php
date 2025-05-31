@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use App\Models\Category;
-use App\Models\ProductVariation;
+use App\Models\ProductVariant;
 use App\Models\Warehouse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -27,7 +27,7 @@ class ProductController extends Controller
 
         // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.view')->only(['index', 'show']);
         // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create')->only(['create', 'store']);
-        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit')->only(['edit', 'update', 'variations', 'storeVariation', 'updateVariation', 'destroyVariation']);
+        // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit')->only(['edit', 'update', 'variants', 'storeVariant', 'updateVariant', 'destroyVariant']);
         // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.delete')->only(['destroy']);
         // $this->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.sync')->only(['syncFromPancake', 'pushToPancake', 'updateInventory']);
     }
@@ -39,14 +39,14 @@ class ProductController extends Controller
     {
         $this->authorize('products.view');
 
-        $query = Product::with('category', 'variations');
+        $query = Product::with('category', 'variants');
 
         if ($request->filled('search')) {
             $searchTerm = $request->search;
             $query->where(function($q) use ($searchTerm) {
                 $q->where('name', 'like', '%' . $searchTerm . '%')
                   ->orWhere('slug', 'like', '%' . $searchTerm . '%')
-                  ->orWhereHas('variations', function($vq) use ($searchTerm) {
+                  ->orWhereHas('variants', function($vq) use ($searchTerm) {
                       $vq->where('sku', 'like', '%' . $searchTerm . '%');
                   });
             });
@@ -98,18 +98,18 @@ class ProductController extends Controller
         try {
             $product = Product::create($validatedProduct);
 
-            // Handle initial variations if provided (example structure)
-            if ($request->has('variations')) {
-                foreach ($request->input('variations') as $variationData) {
+            // Handle initial variants if provided (example structure)
+            if ($request->has('variants')) {
+                foreach ($request->input('variants') as $variationData) {
                     if (!empty($variationData['sku']) && !empty($variationData['name']) && isset($variationData['price']) && isset($variationData['stock_quantity'])) {
                         $variationData['product_id'] = $product->id;
                         $variationData['is_active'] = isset($variationData['is_active']);
-                        ProductVariation::create($variationData);
+                        ProductVariant::create($variationData);
                     }
                 }
             }
 
-            LogHelper::log('product_create', $product, null, $product->load('variations')->toArray());
+            LogHelper::log('product_create', $product, null, $product->load('variants')->toArray());
             DB::commit();
             return redirect()->route('admin.products.index')->with('success', 'Sản phẩm đã được tạo thành công.');
         } catch (\Exception $e) {
@@ -126,7 +126,7 @@ class ProductController extends Controller
     {
         $this->authorize('products.view');
 
-        $product->load('category', 'variations');
+        $product->load('category', 'variants');
         return view('admin.products.show', compact('product'));
     }
 
@@ -139,7 +139,7 @@ class ProductController extends Controller
 
         $categories = Category::orderBy('name')->pluck('name', 'id');
         $warehouses = Warehouse::where('status', true)->orderBy('name')->pluck('name', 'id');
-        $product->load('variations');
+        $product->load('variants');
         return view('admin.products.edit', compact('product', 'categories', 'warehouses'));
     }
 
@@ -166,10 +166,10 @@ class ProductController extends Controller
 
         DB::beginTransaction();
         try {
-            $oldData = $product->load('variations')->toArray();
+            $oldData = $product->load('variants')->toArray();
             $product->update($validatedProduct);
 
-            LogHelper::log('product_update', $product, $oldData, $product->fresh()->load('variations')->toArray());
+            LogHelper::log('product_update', $product, $oldData, $product->fresh()->load('variants')->toArray());
             DB::commit();
             return redirect()->route('admin.products.edit', $product)->with('success', 'Sản phẩm đã được cập nhật thành công.');
         } catch (\Exception $e) {
@@ -184,133 +184,145 @@ class ProductController extends Controller
      */
     public function destroy(Product $product)
     {
-        $this->authorize('products.delete');
-
-        DB::beginTransaction();
+        // $this->authorize('products.delete');
+        // Consider checking if product has orders before deletion
         try {
-            $hasOrders = $product->variations()->whereHas('orders')->exists();
+            DB::beginTransaction();
+
+            // Check if product has any orders
+            $hasOrders = $product->variants()->whereHas('orders')->exists();
             if ($hasOrders) {
-                DB::rollBack();
-                return redirect()->route('admin.products.index')->with('error', 'Không thể xóa sản phẩm. Sản phẩm đã có đơn hàng.');
+                return redirect()->route('products.index')
+                    ->with('error', 'Cannot delete product. It has associated orders.');
             }
 
-            $oldData = $product->load('variations')->toArray();
-            $product->variations()->delete();
+            // Delete variants first
+            $product->variants()->delete();
+
+            // Then delete the product
             $product->delete();
 
-            LogHelper::log('product_delete', $product, $oldData, null);
             DB::commit();
-            return redirect()->route('admin.products.index')->with('success', 'Sản phẩm đã được xóa thành công.');
+            return redirect()->route('products.index')
+                ->with('success', 'Product deleted successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("Error deleting product {$product->id}: " . $e->getMessage(), ['exception' => $e]);
-            return redirect()->route('admin.products.index')->with('error', 'Có lỗi xảy ra khi xóa sản phẩm.');
+            Log::error('Error deleting product: ' . $e->getMessage());
+            return redirect()->route('products.index')
+                ->with('error', 'Error deleting product. Check logs.');
         }
     }
 
-    // --- Product Variation Management --- //
+    // --- Product Variant Management --- //
     // These methods would typically be called via AJAX from the product edit page.
 
     /**
-     * Display a form to add a variation to a product (can be part of product edit page or a modal).
-     * Or list variations for a product.
+     * Display a form to add a variant to a product (can be part of product edit page or a modal).
+     * Or list variants for a product.
      */
-    public function variations(Product $product)
+    public function variants(Product $product)
     {
-        $product->load('variations');
-        return view('products.variations.index', compact('product')); // Assuming a variations sub-view
+        $product->load('variants');
+        return view('products.variants.index', compact('product')); // Assuming a variants sub-view
     }
 
     /**
-     * Show the form for editing the specified variation.
+     * Show the form for editing a variant.
      */
-    public function editVariation(Product $product, ProductVariation $variation)
+    public function editVariant(Product $product, ProductVariant $variant)
     {
-        if ($variation->product_id !== $product->id) {
-            abort(403, 'Variation does not belong to this product.');
-        }
-        // This view would typically be a modal or a dedicated small form
-        return view('products.variations.edit', compact('product', 'variation'));
+        // $this->authorize('products.edit');
+        return view('products.variants.edit', compact('product', 'variant'));
     }
 
     /**
-     * Store a newly created variation for a product.
+     * Store a new variant.
      */
-    public function storeVariation(Request $request, Product $product)
+    public function storeVariant(Request $request, Product $product)
     {
+        // $this->authorize('products.edit');
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'sku' => 'required|string|max:255|unique:product_variations,sku',
+            'sku' => 'required|string|max:50|unique:product_variants,sku',
             'price' => 'required|numeric|min:0',
-            'stock_quantity' => 'required|integer|min:0',
-            'is_active' => 'boolean',
-            // Add validation for any custom attributes if using a JSON field
+            'cost' => 'required|numeric|min:0',
+            'stock' => 'required|integer|min:0'
         ]);
 
-        $validated['product_id'] = $product->id;
-        $validated['is_active'] = $request->has('is_active');
-
-        $variation = ProductVariation::create($validated);
-        // Log this action if needed
-
-        if ($request->ajax()) {
-            return response()->json(['success' => true, 'message' => 'Variation added.', 'variation' => $variation]);
+        DB::beginTransaction();
+        try {
+            $variant = ProductVariant::create($validated);
+            DB::commit();
+            return redirect()->route('products.show', $product)
+                ->with('success', 'Variant created successfully.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error creating variant: ' . $e->getMessage());
+            return back()
+                ->withInput()
+                ->with('error', 'Error creating variant. Please try again.');
         }
-        return redirect()->route('products.edit', $product)->with('success', 'Variation added successfully.');
     }
 
     /**
-     * Update the specified variation.
+     * Update the specified variant.
      */
-    public function updateVariation(Request $request, Product $product, ProductVariation $variation)
+    public function updateVariant(Request $request, Product $product, ProductVariant $variant)
     {
-        if ($variation->product_id !== $product->id) {
-            abort(403, 'Variation does not belong to this product.');
-        }
-
+        // $this->authorize('products.edit');
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'sku' => 'required|string|max:255|unique:product_variations,sku,' . $variation->id,
+            'sku' => 'required|string|max:50|unique:product_variants,sku,' . $variant->id,
             'price' => 'required|numeric|min:0',
-            'stock_quantity' => 'required|integer|min:0',
-            'is_active' => 'boolean',
+            'cost' => 'required|numeric|min:0',
+            'stock' => 'required|integer|min:0'
         ]);
-        $validated['is_active'] = $request->has('is_active');
 
-        $variation->update($validated);
-        // Log this action if needed
-
-        if ($request->ajax()) {
-            return response()->json(['success' => true, 'message' => 'Variation updated.', 'variation' => $variation]);
+        DB::beginTransaction();
+        try {
+            $variant->update($validated);
+            DB::commit();
+            return redirect()->route('products.show', $product)
+                ->with('success', 'Variant updated successfully.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error updating variant: ' . $e->getMessage());
+            return back()
+                ->withInput()
+                ->with('error', 'Error updating variant. Please try again.');
         }
-        return redirect()->route('products.edit', $product)->with('success', 'Variation updated successfully.');
     }
 
     /**
-     * Remove the specified variation from storage.
+     * Remove the specified variant.
      */
-    public function destroyVariation(Request $request, Product $product, ProductVariation $variation)
+    public function destroyVariant(Request $request, Product $product, ProductVariant $variant)
     {
-        if ($variation->product_id !== $product->id) {
-            abort(403, 'Variation does not belong to this product.');
+        // $this->authorize('products.edit');
+        if ($variant->orders()->exists()) {
+            return back()->with('error', 'Cannot delete variant. It has associated orders.');
         }
 
-        // Check if variation has orders
-        if ($variation->orders()->exists()) {
-            $message = 'Cannot delete variation. It is associated with existing orders.';
-            if ($request->ajax()) {
-                return response()->json(['success' => false, 'message' => $message], 422);
-            }
-            return redirect()->route('products.edit', $product)->with('error', $message);
+        DB::beginTransaction();
+        try {
+            $variant->delete();
+            DB::commit();
+            return redirect()->route('products.show', $product)
+                ->with('success', 'Variant deleted successfully.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error deleting variant: ' . $e->getMessage());
+            return back()->with('error', 'Error deleting variant. Please try again.');
         }
+    }
 
-        $variation->delete();
-        // Log this action if needed
-
-        if ($request->ajax()) {
-            return response()->json(['success' => true, 'message' => 'Variation deleted.']);
-        }
-        return redirect()->route('products.edit', $product)->with('success', 'Variation deleted successfully.');
+    /**
+     * Show the form for creating a new variant.
+     */
+    public function createVariant(Product $product)
+    {
+        // $this->authorize('products.edit');
+        return view('products.variants.create', compact('product'));
     }
 
     /**
@@ -380,12 +392,12 @@ class ProductController extends Controller
                 'sku' => 'required|string|max:50|unique:products',
                 'description' => 'nullable|string',
                 'category_id' => 'required|exists:categories,id',
-                'variations' => 'required|array|min:1',
-                'variations.*.sku' => 'required|string|max:50|distinct',
-                'variations.*.name' => 'required|string|max:255',
-                'variations.*.retail_price' => 'required|numeric|min:0',
-                'variations.*.cost' => 'required|numeric|min:0',
-                'variations.*.stock' => 'required|integer|min:0'
+                'variants' => 'required|array|min:1',
+                'variants.*.sku' => 'required|string|max:50|distinct',
+                'variants.*.name' => 'required|string|max:255',
+                'variants.*.retail_price' => 'required|numeric|min:0',
+                'variants.*.cost' => 'required|numeric|min:0',
+                'variants.*.stock' => 'required|integer|min:0'
             ]);
 
             // Prepare product data
@@ -394,7 +406,7 @@ class ProductController extends Controller
                 'sku' => $request->sku,
                 'description' => $request->description,
                 'category_ids' => [$request->category_id],
-                'variations' => $request->variations
+                'variants' => $request->variants
             ];
 
             // Send to Pancake API
@@ -432,9 +444,9 @@ class ProductController extends Controller
                     ]
                 ]);
 
-                // Create variations
-                foreach ($request->variations as $variationData) {
-                    $product->variations()->create([
+                // Create variants
+                foreach ($request->variants as $variationData) {
+                    $product->variants()->create([
                         'name' => $variationData['name'],
                         'sku' => $variationData['sku'],
                         'price' => $variationData['retail_price'],
@@ -490,12 +502,12 @@ class ProductController extends Controller
                 'sku' => 'required|string|max:50|unique:products,sku,' . $product->id,
                 'description' => 'nullable|string',
                 'category_id' => 'required|exists:categories,id',
-                'variations' => 'required|array|min:1',
-                'variations.*.sku' => 'required|string|max:50|distinct',
-                'variations.*.name' => 'required|string|max:255',
-                'variations.*.retail_price' => 'required|numeric|min:0',
-                'variations.*.cost' => 'required|numeric|min:0',
-                'variations.*.stock' => 'required|integer|min:0'
+                'variants' => 'required|array|min:1',
+                'variants.*.sku' => 'required|string|max:50|distinct',
+                'variants.*.name' => 'required|string|max:255',
+                'variants.*.retail_price' => 'required|numeric|min:0',
+                'variants.*.cost' => 'required|numeric|min:0',
+                'variants.*.stock' => 'required|integer|min:0'
             ]);
 
             // Prepare product data
@@ -504,7 +516,7 @@ class ProductController extends Controller
                 'sku' => $request->sku,
                 'description' => $request->description,
                 'category_ids' => [$request->category_id],
-                'variations' => $request->variations
+                'variants' => $request->variants
             ];
 
             // Send to Pancake API
@@ -541,9 +553,9 @@ class ProductController extends Controller
                     ]
                 ]);
 
-                // Update variations
-                foreach ($request->variations as $variationData) {
-                    $product->variations()->updateOrCreate(
+                // Update variants
+                foreach ($request->variants as $variationData) {
+                    $product->variants()->updateOrCreate(
                         ['pancake_variant_id' => $variationData['id']],
                         [
                             'name' => $variationData['name'],
@@ -581,12 +593,10 @@ class ProductController extends Controller
     }
 
     /**
-     * Update product inventory in Pancake
+     * Update inventory in Pancake
      */
     public function updateInventoryInPancake(Request $request, Product $product)
     {
-        $this->authorize('products.edit');
-
         try {
             if (empty($this->apiKey) || empty($this->shopId)) {
                 return response()->json([
@@ -597,16 +607,16 @@ class ProductController extends Controller
 
             // Validate request
             $request->validate([
-                'variations' => 'required|array',
-                'variations.*.id' => 'required|exists:product_variations,id',
-                'variations.*.stock' => 'required|integer|min:0',
+                'variants' => 'required|array',
+                'variants.*.id' => 'required|exists:product_variants,id',
+                'variants.*.stock' => 'required|integer|min:0',
                 'warehouse_id' => 'required|exists:warehouses,id'
             ]);
 
             $warehouse = Warehouse::findOrFail($request->warehouse_id);
 
             $inventoryUpdates = [];
-            foreach ($request->variations as $variation) {
+            foreach ($request->variants as $variation) {
                 $inventoryUpdates[] = [
                     'variation_id' => $variation['id'],
                     'warehouse_id' => $warehouse->pancake_id,
@@ -635,8 +645,8 @@ class ProductController extends Controller
             // Update local inventory
             DB::beginTransaction();
             try {
-                foreach ($request->variations as $variation) {
-                    $product->variations()
+                foreach ($request->variants as $variation) {
+                    $product->variants()
                         ->where('id', $variation['id'])
                         ->update(['stock' => $variation['stock']]);
                 }
@@ -671,8 +681,8 @@ class ProductController extends Controller
     public function syncFromPancake()
     {
         $this->authorize('products.sync');
-
-        try {
+        set_time_limit(14400);
+        // try {
             if (empty($this->apiKey) || empty($this->shopId)) {
                 return response()->json([
                     'success' => false,
@@ -681,75 +691,169 @@ class ProductController extends Controller
             }
 
             $stats = [
-                'created' => 0,
-                'updated' => 0,
-                'errors' => 0
+                'products_created' => 0,
+                'products_updated' => 0,
+                'variants_created' => 0,
+                'variants_updated' => 0,
+                'errors' => 0,
+                'pages_processed' => 0
             ];
 
             $page = 1;
-            $hasMore = true;
+            $totalPages = null;
+            $processedPancakeIds = []; // Track processed product IDs
 
-            while ($hasMore) {
-                $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/products", [
+            while (true) {
+                $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/products/variations", [
                     'api_key' => $this->apiKey,
                     'page_size' => 100,
                     'page_number' => $page
                 ]);
 
                 if (!$response->successful()) {
-                    Log::error('Failed to fetch products from Pancake', [
+                    Log::error('Failed to fetch products/variants from Pancake', [
                         'page' => $page,
                         'status' => $response->status(),
                         'response' => $response->body()
                     ]);
+                    $stats['errors']++;
                     return response()->json([
                         'success' => false,
-                        'message' => 'Failed to fetch products from Pancake API'
+                        'message' => 'Failed to fetch products/variants from Pancake API on page ' . $page
                     ], $response->status());
                 }
 
                 $data = $response->json();
+                $stats['pages_processed']++;
+
+                if (!isset($data['data']) || !isset($data['total_pages']) || !is_array($data['data'])) {
+                    Log::error('Pancake API response missing data/total_pages or data is not an array.', [
+                        'page' => $page,
+                        'response_keys' => isset($data) ? array_keys($data) : 'null',
+                        'data_type' => isset($data['data']) ? gettype($data['data']) : 'not_set'
+                    ]);
+                    $stats['errors']++;
+                    break;
+                }
+
+                if ($totalPages === null) {
+                    $totalPages = (int)$data['total_pages'];
+                    if ($totalPages == 0 && empty($data['data'])) {
+                        break;
+                    }
+                }
 
                 DB::beginTransaction();
                 try {
-                    foreach ($data['data'] as $productData) {
-                        $product = Product::updateOrCreate(
-                            ['pancake_id' => $productData['id']],
-                            [
-                                'name' => $productData['name'],
-                                'sku' => $productData['sku'] ?? null,
-                                'description' => $productData['description'] ?? null,
-                                'is_active' => !($productData['is_removed'] ?? false),
-                                'metadata' => [
-                                    'pancake_data' => $productData,
-                                    'last_sync' => now()
-                                ]
-                            ]
-                        );
+                    // First, collect all pancake IDs from this page
+                    $pancakeIds = collect($data['data'])->pluck('id')->unique()->toArray();
+                    $processedPancakeIds = array_merge($processedPancakeIds, $pancakeIds);
 
-                        if ($product->wasRecentlyCreated) {
-                            $stats['created']++;
-                        } else {
-                            $stats['updated']++;
+                    // Process existing products first
+                    foreach ($data['data'] as $variationPancakeData) {
+                        if (!is_array($variationPancakeData) || !isset($variationPancakeData['product_id']) || !isset($variationPancakeData['id'])) {
+                            Log::warning('Skipping invalid variation data from Pancake', ['variation_data' => $variationPancakeData]);
+                            $stats['errors']++;
+                            continue;
                         }
 
-                        // Process variations
-                        if (!empty($productData['variations'])) {
-                            foreach ($productData['variations'] as $variationData) {
-                                $product->variations()->updateOrCreate(
-                                    ['pancake_variant_id' => $variationData['id']],
-                                    [
-                                        'name' => $variationData['name'] ?? $productData['name'],
-                                        'sku' => $variationData['sku'] ?? null,
-                                        'price' => $variationData['retail_price'] ?? 0,
-                                        'cost' => $variationData['cost'] ?? 0,
-                                        'stock' => $variationData['stock'] ?? 0,
-                                        'metadata' => [
-                                            'pancake_data' => $variationData,
-                                            'last_sync' => now()
-                                        ]
+                        $productPancakeId = $variationPancakeData['id'];
+                        $productPancakeDetails = $variationPancakeData['product'] ?? null;
+
+                        // Find existing product
+                        $product = Product::where('pancake_id', $productPancakeId)->first();
+
+                        if ($product) {
+                            // Update existing product
+                            $productAttributes = [
+                                'name' => $productPancakeDetails['name'] ?? $variationPancakeData['name'] ?? 'Unknown Product',
+                                'sku' => $productPancakeDetails['sku'] ?? null,
+                                'description' => $productPancakeDetails['description'] ?? null,
+                                'is_active' => !($productPancakeDetails['is_removed'] ?? ($variationPancakeData['is_removed'] ?? false)),
+                            ];
+
+                            $product->fill($productAttributes);
+                            $product->metadata = array_merge(
+                                $product->metadata ?? [],
+                                ($productPancakeDetails ? ['pancake_product_data' => $productPancakeDetails] : []),
+                                ['last_sync_product_level' => now()]
+                            );
+                            $product->save();
+                            $stats['products_updated']++;
+
+                            // Update or create variants for existing product
+                            try {
+                                $existingVariant = $product->variants()
+                                    ->where('pancake_variant_id', $variationPancakeData['id'])
+                                    ->first();
+
+                                $variationAttributes = [
+                                    'name' => $variationPancakeData['name'] ?? $product->name,
+                                    'sku' => $variationPancakeData['sku'] ?? $variationPancakeData['barcode'] ?? null,
+                                    'price' => $variationPancakeData['retail_price'] ?? 0,
+                                    'cost' => $variationPancakeData['last_imported_price'] ?? ($variationPancakeData['cost_price'] ?? 0),
+                                    'stock' => $variationPancakeData['remain_quantity'] ?? ($variationPancakeData['stock'] ?? 0),
+                                    'is_active' => !($variationPancakeData['is_hidden'] ?? ($variationPancakeData['is_removed'] ?? false)),
+                                    'pancake_product_id' => $productPancakeId
+                                ];
+
+                                if ($existingVariant) {
+                                    $existingVariant->fill($variationAttributes);
+                                    $existingVariant->metadata = array_merge(
+                                        $existingVariant->metadata ?? [],
+                                        ['pancake_variation_data' => $variationPancakeData],
+                                        ['last_sync_variation_level' => now()]
+                                    );
+                                    $existingVariant->save();
+                                    $stats['variants_updated']++;
+                                }
+                            } catch (\Exception $e) {
+                                Log::error('Error processing variant for existing product: ' . $e->getMessage(), [
+                                    'product_id' => $product->id,
+                                    'pancake_variant_id' => $variationPancakeData['id']
+                                ]);
+                                $stats['errors']++;
+                                continue;
+                            }
+                        } else {
+                            // Create new product
+                            try {
+                                $product = new Product();
+                                $product->pancake_id = $productPancakeId;
+                                $product->name = $productPancakeDetails['name'] ?? $variationPancakeData['name'] ?? 'Unknown Product';
+                                $product->sku = $productPancakeDetails['sku'] ?? null;
+                                $product->description = $productPancakeDetails['description'] ?? null;
+                                $product->is_active = !($productPancakeDetails['is_removed'] ?? ($variationPancakeData['is_removed'] ?? false));
+                                $product->metadata = [
+                                    'pancake_product_data' => $productPancakeDetails,
+                                    'last_sync_product_level' => now()
+                                ];
+                                $product->save();
+                                $stats['products_created']++;
+
+                                // Create variant for new product
+                                $newVariant = $product->variants()->create([
+                                    'pancake_variant_id' => $variationPancakeData['id'],
+                                    'name' => $variationPancakeData['name'] ?? $product->name,
+                                    'sku' => $variationPancakeData['sku'] ?? $variationPancakeData['barcode'] ?? null,
+                                    'price' => $variationPancakeData['retail_price'] ?? 0,
+                                    'cost' => $variationPancakeData['last_imported_price'] ?? ($variationPancakeData['cost_price'] ?? 0),
+                                    'stock' => $variationPancakeData['remain_quantity'] ?? ($variationPancakeData['stock'] ?? 0),
+                                    'is_active' => !($variationPancakeData['is_hidden'] ?? ($variationPancakeData['is_removed'] ?? false)),
+                                    'pancake_product_id' => $productPancakeId,
+                                    'metadata' => [
+                                        'pancake_variation_data' => $variationPancakeData,
+                                        'last_sync_variation_level' => now()
                                     ]
-                                );
+                                ]);
+                                $stats['variants_created']++;
+                            } catch (\Exception $e) {
+                                Log::error('Error creating new product and variant: ' . $e->getMessage(), [
+                                    'pancake_id' => $productPancakeId,
+                                    'pancake_variant_id' => $variationPancakeData['id']
+                                ]);
+                                $stats['errors']++;
+                                continue;
                             }
                         }
                     }
@@ -757,33 +861,122 @@ class ProductController extends Controller
                     DB::commit();
                 } catch (\Exception $e) {
                     DB::rollBack();
-                    Log::error('Error processing products', [
+                    $errorMessage = 'Lỗi xử lý dữ liệu sản phẩm/biến thể từ Pancake tại trang ' . $page . ': ' . $e->getMessage();
+                    Log::error($errorMessage, [
                         'page' => $page,
-                        'error' => $e->getMessage()
+                        'pancake_shop_id' => $this->shopId,
+                        'exception_type' => get_class($e),
+                        'exception_trace' => $e->getTraceAsString()
                     ]);
-                    $stats['errors']++;
+                    return response()->json([
+                        'success' => false,
+                        'message' => $errorMessage,
+                        'page_processed_before_error' => $page,
+                        'error_details' => $e->getMessage()
+                    ], 500);
                 }
 
-                $hasMore = !empty($data['next_page']);
+                if ($page >= $totalPages) {
+                    break;
+                }
                 $page++;
+            }
+
+            // Deactivate products that were not in the sync
+            try {
+                $deactivatedCount = Product::whereNotIn('pancake_id', $processedPancakeIds)
+                    ->where('is_active', true)
+                    ->update(['is_active' => false]);
+
+                if ($deactivatedCount > 0) {
+                    Log::info("Deactivated {$deactivatedCount} products that were not in the sync");
+                }
+            } catch (\Exception $e) {
+                Log::error('Error deactivating old products: ' . $e->getMessage());
             }
 
             return response()->json([
                 'success' => true,
                 'message' => sprintf(
-                    'Products sync completed. Created: %d, Updated: %d, Errors: %d',
-                    $stats['created'],
-                    $stats['updated'],
+                    'Products and variants sync completed. Pages processed: %d. Products: %d created, %d updated. Variants: %d created, %d updated. Errors: %d.',
+                    $stats['pages_processed'],
+                    $stats['products_created'],
+                    $stats['products_updated'],
+                    $stats['variants_created'],
+                    $stats['variants_updated'],
                     $stats['errors']
                 ),
                 'stats' => $stats
             ]);
 
+        // } catch (\Exception $e) {
+        //     Log::error('Error syncing products: ' . $e->getMessage());
+        //     return response()->json([
+        //         'success' => false,
+        //         'message' => 'Error syncing products: ' . $e->getMessage()
+        //     ], 500);
+        // }
+    }
+
+    /**
+     * Search products
+     */
+    public function search(Request $request)
+    {
+        try {
+            $query = $request->input('query');
+
+            if (empty($query)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Search query is required',
+                    'data' => []
+                ]);
+            }
+
+            $products = Product::with(['variants'])
+                ->where(function($q) use ($query) {
+                    $q->where('name', 'like', '%' . $query . '%')
+                      ->orWhere('sku', 'like', '%' . $query . '%')
+                      ->orWhereHas('variants', function($vq) use ($query) {
+                          $vq->where('sku', 'like', '%' . $query . '%')
+                            ->orWhere('name', 'like', '%' . $query . '%');
+                      });
+                })
+                ->where('is_active', true)
+                ->limit(10)
+                ->get()
+                ->map(function($product) {
+                    $variant = $product->variants->first();
+                    return [
+                        'id' => $product->id,
+                        'pancake_id' => $product->pancake_id,
+                        'name' => $product->name,
+                        'sku' => $product->sku,
+                        'image_url' => $product->metadata['image_url'] ?? null,
+                        'price' => $variant ? $variant->price : 0,
+                        'variation_info' => $variant ? [
+                            'id' => $variant->id,
+                            'sku' => $variant->sku,
+                            'name' => $variant->name,
+                            'price' => $variant->price,
+                            'stock' => $variant->stock
+                        ] : null
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'message' => count($products) > 0 ? 'Products found' : 'No products found',
+                'data' => $products
+            ]);
+
         } catch (\Exception $e) {
-            Log::error('Error syncing products: ' . $e->getMessage());
+            Log::error('Error searching products: ' . $e->getMessage());
             return response()->json([
                 'success' => false,
-                'message' => 'Error syncing products: ' . $e->getMessage()
+                'message' => 'Error searching products',
+                'data' => []
             ], 500);
         }
     }

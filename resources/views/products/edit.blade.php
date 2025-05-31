@@ -19,35 +19,35 @@
     <div class="card">
         <div class="card-header">
             <div class="d-flex justify-content-between align-items-center">
-                <span>Product Variations ({{ $product->variations->count() }})</span>
-                {{-- Button to trigger modal for adding new variation --}}
-                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addVariationModal">
-                    Add New Variation
+                <span>Product Variants ({{ $product->variants?->count() ?? 0 }})</span>
+                {{-- Button to trigger modal for adding new variant --}}
+                <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addVariantModal">
+                    Add New Variant
                 </button>
             </div>
         </div>
-        <div class="card-body" id="product-variations-list">
-            @include('products.variations._variations_list', ['variations' => $product->variations, 'product' => $product])
+        <div class="card-body" id="product-variants-list">
+            @include('products.variants._variants_list', ['variants' => $product->variants, 'product' => $product])
         </div>
     </div>
 </div>
 
-{{-- Modal for Adding Variation --}}
-<div class="modal fade" id="addVariationModal" tabindex="-1" aria-labelledby="addVariationModalLabel" aria-hidden="true">
+{{-- Modal for Adding Variant --}}
+<div class="modal fade" id="addVariantModal" tabindex="-1" aria-labelledby="addVariantModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="addVariationModalLabel">Add New Variation to {{ $product->name }}</h5>
+                <h5 class="modal-title" id="addVariantModalLabel">Add New Variant to {{ $product->name }}</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form id="addVariationForm" action="{{ route('admin.products.variations.store', $product) }}" method="POST">
+                <form id="addVariantForm" action="{{ route('admin.products.variants.store', $product) }}" method="POST">
                     @csrf
                     {{-- We will create this partial next --}}
-                    @include('products.variations._form_modal', ['variation' => new \App\Models\ProductVariation(), 'product' => $product])
+                    @include('products.variants._form_modal', ['variant' => new \App\Models\ProductVariant(), 'product' => $product])
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                        <button type="submit" class="btn btn-primary">Save Variation</button>
+                        <button type="submit" class="btn btn-primary">Save Variant</button>
                     </div>
                 </form>
             </div>
@@ -55,8 +55,8 @@
     </div>
 </div>
 
-{{-- Placeholder for Edit Variation Modal (to be loaded via JS) --}}
-<div class="modal fade" id="editVariationModal" tabindex="-1" aria-labelledby="editVariationModalLabel" aria-hidden="true">
+{{-- Placeholder for Edit Variant Modal (to be loaded via JS) --}}
+<div class="modal fade" id="editVariantModal" tabindex="-1" aria-labelledby="editVariantModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             {{-- Content will be loaded here by JavaScript --}}
@@ -69,10 +69,10 @@
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        // Handle Add Variation Form Submission via AJAX
-        const addVariationForm = document.getElementById('addVariationForm');
-        if (addVariationForm) {
-            addVariationForm.addEventListener('submit', function (e) {
+        // Handle Add Variant Form Submission via AJAX
+        const addVariantForm = document.getElementById('addVariantForm');
+        if (addVariantForm) {
+            addVariantForm.addEventListener('submit', function (e) {
                 e.preventDefault();
                 const formData = new FormData(this);
                 fetch(this.action, {
@@ -86,18 +86,18 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Refresh variations list (simple reload of partial or more complex DOM update)
-                        fetch("{{ route('admin.products.variations.index', $product) }}")
+                        // Refresh variants list (simple reload of partial or more complex DOM update)
+                        fetch("{{ route('admin.products.variants.index', $product) }}")
                            .then(response => response.text())
                            .then(html => {
-                                document.getElementById('product-variations-list').innerHTML = html;
-                                bootstrap.Modal.getInstance(document.getElementById('addVariationModal')).hide();
+                                document.getElementById('product-variants-list').innerHTML = html;
+                                bootstrap.Modal.getInstance(document.getElementById('addVariantModal')).hide();
                                 // Show success message (you'll need a toast/alert mechanism)
                                 alert(data.message);
                             });
                     } else {
                         // Handle errors (display them in the modal)
-                        alert(data.message || 'Error adding variation. Please check input.');
+                        alert(data.message || 'Error adding variant. Please check input.');
                         // You might want to parse and display validation errors more gracefully here
                         console.error(data.errors);
                     }
@@ -109,28 +109,28 @@
             });
         }
 
-        // Handle Edit Variation Modal Triggering & Form Submission (similar AJAX pattern)
-        const productVariationsList = document.getElementById('product-variations-list');
-        if (productVariationsList) {
-            productVariationsList.addEventListener('click', function(e) {
-                if (e.target.matches('.edit-variation-btn') || e.target.closest('.edit-variation-btn')) {
+        // Handle Edit Variant Modal Triggering & Form Submission (similar AJAX pattern)
+        const productVariantsList = document.getElementById('product-variants-list');
+        if (productVariantsList) {
+            productVariantsList.addEventListener('click', function(e) {
+                if (e.target.matches('.edit-variant-btn') || e.target.closest('.edit-variant-btn')) {
                     e.preventDefault();
-                    const button = e.target.matches('.edit-variation-btn') ? e.target : e.target.closest('.edit-variation-btn');
+                    const button = e.target.matches('.edit-variant-btn') ? e.target : e.target.closest('.edit-variant-btn');
                     const editUrl = button.dataset.editUrl.replace('products', 'admin.products');
                     const updateUrl = button.dataset.updateUrl.replace('products', 'admin.products');
 
-                    fetch(editUrl) // URL to get the edit form (products.variations.edit route)
+                    fetch(editUrl) // URL to get the edit form (products.variants.edit route)
                         .then(response => response.text())
                         .then(html => {
-                            const editModal = document.getElementById('editVariationModal');
+                            const editModal = document.getElementById('editVariantModal');
                             editModal.querySelector('.modal-content').innerHTML = html;
                             const modalInstance = new bootstrap.Modal(editModal);
                             modalInstance.show();
 
                             // Attach submit handler to the dynamically loaded form
-                            const editVariationForm = editModal.querySelector('#editVariationFormDynamic'); // Ensure your loaded form has this ID
-                            if(editVariationForm) {
-                                editVariationForm.addEventListener('submit', function(submitEvent) {
+                            const editVariantForm = editModal.querySelector('#editVariantFormDynamic'); // Ensure your loaded form has this ID
+                            if(editVariantForm) {
+                                editVariantForm.addEventListener('submit', function(submitEvent) {
                                     submitEvent.preventDefault();
                                     const formData = new FormData(this);
                                     fetch(updateUrl, { // Use data-update-url from button
@@ -144,15 +144,15 @@
                                     .then(resp => resp.json())
                                     .then(data => {
                                         if(data.success) {
-                                            fetch("{{ route('admin.products.variations.index', $product) }}")
+                                            fetch("{{ route('admin.products.variants.index', $product) }}")
                                                .then(response => response.text())
                                                .then(html => {
-                                                    document.getElementById('product-variations-list').innerHTML = html;
+                                                    document.getElementById('product-variants-list').innerHTML = html;
                                                     modalInstance.hide();
                                                     alert(data.message);
                                                 });
                                         } else {
-                                            alert(data.message || 'Error updating variation.');
+                                            alert(data.message || 'Error updating variant.');
                                             console.error(data.errors);
                                         }
                                     }).catch(err => {

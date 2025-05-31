@@ -181,8 +181,8 @@
                         </div>
 
                         <div id="attributes-container">
-                            @if(isset($product) && $product->attributes->count() > 0)
-                                @foreach($product->attributes as $index => $attribute)
+                            @if(isset($product) && $product->attributes?->count() > 0)
+                                @foreach($product->attributes ?? [] as $index => $attribute)
                                     <div class="attribute-item card mb-3">
                                         <div class="card-body">
                                             <div class="row">
@@ -257,8 +257,8 @@
                                     </tr>
                                 </thead>
                                 <tbody id="variations-container">
-                                    @if(isset($product) && $product->variations->count() > 0)
-                                        @foreach($product->variations as $index => $variation)
+                                    @if(isset($product) && $product->variations?->count() > 0)
+                                        @foreach($product->variations ?? [] as $index => $variation)
                                             <tr class="variation-row">
                                                 <td>
                                                     <div class="image-upload">
@@ -617,7 +617,7 @@ $(document).ready(function() {
     });
 
     // Add new variation
-    let variationIndex = {{ isset($product) ? $product->variations->count() : 0 }};
+    let variationIndex = {{ isset($product) ? ($product->variations?->count() ?? 0) : 0 }};
     $('#addVariation').click(function() {
         const template = $('#variation-template').html();
         const newRow = template.replace(/{index}/g, variationIndex);
@@ -640,7 +640,7 @@ $(document).ready(function() {
     });
 
     // Add new attribute
-    let attributeIndex = {{ isset($product) ? $product->attributes->count() : 0 }};
+    let attributeIndex = {{ isset($product) ? ($product->attributes?->count() ?? 0) : 0 }};
     $('#addAttribute').click(function() {
         const template = `
             <div class="attribute-item card mb-3">

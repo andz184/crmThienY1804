@@ -36,7 +36,7 @@ class CategoryController extends Controller
     public function index(Request $request)
     {
         // $this->authorize('categories.view'); // Or use middleware
-        $query = Category::with('parent')->withCount('products');
+        $query = PancakeCategory::with('parent')->withCount('products');
 
         if ($request->filled('search')) {
             $searchTerm = $request->search;
@@ -46,8 +46,8 @@ class CategoryController extends Controller
             });
         }
 
-        $categories = $query->orderBy('name')->paginate(15);
-        return view('categories.index', compact('categories'));
+        $pancakeCategories = $query->orderBy('name')->paginate(15);
+        return view('categories.index', compact('pancakeCategories'));
     }
 
     /**

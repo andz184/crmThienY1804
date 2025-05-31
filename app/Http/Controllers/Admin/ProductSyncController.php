@@ -42,16 +42,18 @@ class ProductSyncController extends Controller
             }
 
             $stats = [
-                'created' => 0,
-                'updated' => 0,
+                'products_created' => 0,
+                'products_updated' => 0,
+                'variants_created' => 0,
+                'variants_updated' => 0,
                 'errors' => 0
             ];
 
             // Get products from Pancake API
-            $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/products", [
+            $response = Http::get("{$this->baseUri}/shops/{$this->shopId}/products/variations", [
                 'api_key' => $this->apiKey,
                 'page_size' => 100,
-                'page_number' => $request->input('page', 1)
+                'page_number' => 1
             ]);
 
             if (!$response->successful()) {
@@ -66,9 +68,27 @@ class ProductSyncController extends Controller
             }
 
             $data = $response->json();
-
+            dd($data );
             DB::beginTransaction();
             try {
+                // First, get all pancake categories that might be referenced
+                $allCategoryIds = collect($data['data'])->pluck('category_ids')->flatten()->unique()->filter()->values()->toArray();
+                foreach ($data['data'] as $productData) {
+                    if (!empty($productData['variations'])) {
+                        foreach ($productData['variations'] as $variation) {
+                            if (!empty($variation['category_ids'])) {
+                                $allCategoryIds = array_merge($allCategoryIds, $variation['category_ids']);
+                            }
+                        }
+                    }
+                }
+                $allCategoryIds = array_unique($allCategoryIds);
+
+                // Get all referenced categories in one query
+                $pancakeCategories = PancakeCategory::whereIn('pancake_id', $allCategoryIds)
+                    ->get()
+                    ->keyBy('pancake_id');
+                dd($pancakeCategories);
                 foreach ($data['data'] as $productData) {
                     // Process each product
                     $product = Product::updateOrCreate(
@@ -78,8 +98,31 @@ class ProductSyncController extends Controller
                             'sku' => $productData['sku'] ?? null,
                             'description' => $productData['description'] ?? null,
                             'is_active' => !($productData['is_removed'] ?? false),
+                            'metadata' => [
+                                'pancake_data' => $productData,
+                                'last_sync' => now()
+                            ]
                         ]
                     );
+
+                    if ($product->wasRecentlyCreated) {
+                        $stats['products_created']++;
+                    } else {
+                        $stats['products_updated']++;
+                    }
+
+                    // Sync product categories
+                    if (!empty($productData['category_ids']) && is_array($productData['category_ids'])) {
+                        $categoryIds = collect($productData['category_ids'])
+                            ->map(function($pancakeCategoryId) use ($pancakeCategories) {
+                                return $pancakeCategories->get($pancakeCategoryId)->id ?? null;
+                            })
+                            ->filter()
+                            ->values()
+                            ->toArray();
+
+                        $product->pancakeCategories()->sync($categoryIds);
+                    }
 
                     // Process variants
                     if (!empty($productData['variations'])) {
@@ -104,9 +147,22 @@ class ProductSyncController extends Controller
                             );
 
                             if ($variant->wasRecentlyCreated) {
-                                $stats['created']++;
+                                $stats['variants_created']++;
                             } else {
-                                $stats['updated']++;
+                                $stats['variants_updated']++;
+                            }
+
+                            // Sync variant categories if they differ from product categories
+                            if (!empty($variantData['category_ids']) && is_array($variantData['category_ids'])) {
+                                $variantCategoryIds = collect($variantData['category_ids'])
+                                    ->map(function($pancakeCategoryId) use ($pancakeCategories) {
+                                        return $pancakeCategories->get($pancakeCategoryId)->id ?? null;
+                                    })
+                                    ->filter()
+                                    ->values()
+                                    ->toArray();
+
+                                $variant->categories()->sync($variantCategoryIds);
                             }
                         }
                     }
@@ -116,9 +172,11 @@ class ProductSyncController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => sprintf(
-                        'Products sync completed. Created: %d, Updated: %d, Errors: %d',
-                        $stats['created'],
-                        $stats['updated'],
+                        'Sync completed. Products created: %d, Products updated: %d, Variants created: %d, Variants updated: %d, Errors: %d',
+                        $stats['products_created'],
+                        $stats['products_updated'],
+                        $stats['variants_created'],
+                        $stats['variants_updated'],
                         $stats['errors']
                     ),
                     'stats' => $stats
@@ -167,6 +225,7 @@ class ProductSyncController extends Controller
                 'sku' => $product->sku,
                 'description' => $product->description,
                 'is_removed' => !$product->is_active,
+                'category_ids' => $product->pancakeCategories->pluck('pancake_id')->toArray(),
                 'variations' => []
             ];
 
@@ -179,7 +238,7 @@ class ProductSyncController extends Controller
                     'retail_price' => $variant->price,
                     'cost' => $variant->cost,
                     'stock' => $variant->stock,
-                    'category_ids' => $variant->category_ids,
+                    'category_ids' => $variant->categories->pluck('pancake_id')->toArray(),
                     'attributes' => $variant->attributes,
                     'barcode' => $variant->metadata['barcode'] ?? null,
                     'weight' => $variant->metadata['weight'] ?? 0
@@ -193,32 +252,30 @@ class ProductSyncController extends Controller
             ]);
 
             if (!$response->successful()) {
-                Log::error('Failed to push product to Pancake', [
+                Log::error('Failed to update product in Pancake', [
                     'product_id' => $product->id,
                     'status' => $response->status(),
                     'response' => $response->body()
                 ]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to push product to Pancake API'
+                    'message' => 'Failed to update product in Pancake API'
                 ], $response->status());
             }
 
             return response()->json([
                 'success' => true,
-                'message' => 'Product successfully pushed to Pancake',
-                'data' => $response->json()
+                'message' => 'Product updated successfully in Pancake'
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Error pushing product to Pancake', [
+            Log::error('Error updating product in Pancake', [
                 'product_id' => $product->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'error' => $e->getMessage()
             ]);
             return response()->json([
                 'success' => false,
-                'message' => 'Error pushing product to Pancake: ' . $e->getMessage()
+                'message' => 'Error updating product: ' . $e->getMessage()
             ], 500);
         }
     }

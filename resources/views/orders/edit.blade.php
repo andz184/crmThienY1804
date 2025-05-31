@@ -89,6 +89,9 @@
                                                     </button>
                                                 </div>
                                             </div>
+                                            <div id="product_suggestions" class="position-absolute bg-white w-100" style="display:none; z-index: 1000;">
+                                                <!-- Product suggestions will be populated here -->
+                                            </div>
                                         </div>
                                         <div class="col-md-4">
                                             <label class="small font-weight-bold">Tên sản phẩm</label>
@@ -750,7 +753,7 @@ textarea.form-control {
     border-radius: 0.35rem;
     box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
     max-height: 280px;
-            overflow-y: auto;
+    overflow-y: auto;
     position: absolute;
     background: white;
     z-index: 1050;
@@ -843,6 +846,67 @@ textarea.form-control {
         margin-bottom: 1rem;
     }
 }
+
+/* Product Suggestions */
+#product_suggestions {
+    border: 1px solid #d1d3e2;
+    border-radius: 0.35rem;
+    box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+    max-height: 280px;
+    overflow-y: auto;
+    position: absolute;
+    background: white;
+    z-index: 1050;
+    width: 100%;
+}
+
+.product-suggestion-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #e3e6f0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.product-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.product-suggestion-item:hover {
+    background-color: #f8f9fc;
+}
+
+.product-suggestion-image {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.product-suggestion-info {
+    flex: 1;
+}
+
+.product-suggestion-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #4e73df;
+    margin: 0;
+}
+
+.product-suggestion-meta {
+    font-size: 0.8125rem;
+    color: #5a5c69;
+    margin: 0;
+}
+
+.product-suggestion-price {
+    font-size: 0.875rem;
+    color: #e74a3b;
+    font-weight: 600;
+    margin: 0;
+}
     </style>
 @endpush
 
@@ -896,13 +960,13 @@ textarea.form-control {
                 // Position the suggestion box under the current input
                 const offset = currentInput.offset();
                 const inputHeight = currentInput.outerHeight();
-                const inputWidth = currentInput.outerWidth();
+                const inputWidth = currentInput.closest('.col-md-3, .col-md-4').width();
 
                 suggestionBox.css({
                     top: offset.top + inputHeight + 'px',
                     left: offset.left + 'px',
                     width: inputWidth + 'px',
-                    marginTop: '0px' // Reset any previous margin-top
+                    marginTop: '0px'
                 });
 
                 searchTimeout = setTimeout(function() {
@@ -1518,6 +1582,152 @@ textarea.form-control {
 
             $('#notes').val(currentNotes);
         }
+
+        // Product search functionality
+        let productSuggestionsInitialized = false;
+        let productSuggestionBox;
+        let currentProductRow = null; // Add this line to store the current row
+
+        // Handle product search button click and input
+        $(document).on('click', '.search-product', function() {
+            const itemRow = $(this).closest('.item-row');
+            const productNameInput = itemRow.find('.product-name');
+            const productCodeInput = itemRow.find('.product-code');
+            currentProductRow = itemRow; // Store the current row when clicking search
+
+            // Focus on product name input
+            productNameInput.focus();
+        });
+
+        $(document).on('input', '.product-name, .product-code', function() {
+            const currentInput = $(this);
+            const itemRow = currentInput.closest('.item-row');
+            currentProductRow = itemRow; // Store the current row when typing
+            const query = currentInput.val().trim();
+
+            if (!productSuggestionsInitialized) {
+                productSuggestionBox = $('#product_suggestions').detach().appendTo('body');
+                productSuggestionsInitialized = true;
+            } else {
+                productSuggestionBox = $('#product_suggestions');
+            }
+
+            clearTimeout(searchTimeout);
+
+            if (query.length === 0) {
+                productSuggestionBox.slideUp(150);
+                return;
+            }
+
+            if (query.length >= 1) {
+                // Position the suggestion box under the current input
+                const offset = currentInput.offset();
+                const inputHeight = currentInput.outerHeight();
+                const inputWidth = currentInput.closest('.col-md-3, .col-md-4').width();
+
+                productSuggestionBox.css({
+                    top: offset.top + inputHeight + 'px',
+                    left: offset.left + 'px',
+                    width: inputWidth + 'px',
+                    marginTop: '0px'
+                });
+
+                searchTimeout = setTimeout(function() {
+                    $.ajax({
+                        url: '/api/products/search',
+                        method: 'GET',
+                        data: { query: query },
+                        dataType: 'json',
+                        success: function(response) {
+                            let html = '';
+                            if (response && response.success && Array.isArray(response.data)) {
+                                if (response.data.length > 0) {
+                                    response.data.forEach(product => {
+                                        try {
+                                            const imageUrl = product.image_url || '/images/no-image.png';
+                                            const productJson = JSON.stringify(product).replace(/'/g, "&apos;").replace(/\"/g, "&quot;");
+
+                                            html += `
+                                                <div class="product-suggestion-item" data-product='${productJson}'>
+                                                    <img src="${imageUrl}" class="product-suggestion-image" alt="${product.name}">
+                                                    <div class="product-suggestion-info">
+                                                        <div class="product-suggestion-name">${product.name}</div>
+                                                        <div class="product-suggestion-meta">Mã: ${product.pancake_id || 'N/A'}</div>
+                                                        <div class="product-suggestion-price">${formatCurrency(product.price || 0)}</div>
+                                                    </div>
+                                                </div>`;
+                                        } catch (e) {
+                                            console.error("Error processing product data for suggestion: ", product, e);
+                                        }
+                                    });
+                                    productSuggestionBox.html(html);
+                                } else {
+                                    productSuggestionBox.html('<div class="p-2 text-center text-muted">Không tìm thấy sản phẩm nào.</div>');
+                                }
+                            } else {
+                                console.warn("API call successful, but response indicates failure or malformed data: ", response);
+                                productSuggestionBox.html('<div class="p-2 text-center text-warning">Phản hồi từ máy chủ không hợp lệ.</div>');
+                            }
+                            productSuggestionBox.slideDown(150);
+                        },
+                        error: function(jqXHR, textStatus, errorThrown) {
+                            console.error("Product search AJAX error: ", textStatus, errorThrown, jqXHR.responseText);
+                            productSuggestionBox.html('<div class="p-2 text-center text-danger">Lỗi kết nối hoặc tìm kiếm thất bại.</div>').slideDown(150);
+                        }
+                    });
+                }, 250);
+            } else {
+                productSuggestionBox.slideUp(150);
+            }
+        });
+
+        // Handle product selection
+        $(document).on('click', '.product-suggestion-item', function() {
+            let product;
+            try {
+                const productDataString = $(this).attr('data-product')
+                                             .replace(/&apos;/g, "'")
+                                             .replace(/&quot;/g, '"');
+                product = JSON.parse(productDataString);
+            } catch (e) {
+                console.error("Failed to parse product data from attribute: ", e, $(this).attr('data-product'));
+                alert("Có lỗi khi chọn sản phẩm này.");
+                return;
+            }
+
+            if (product && typeof product === 'object') {
+                fillProductInfo(product);
+                $('#product_suggestions').slideUp(150);
+            } else {
+                console.error("Invalid product data after parsing: ", product);
+                alert("Dữ liệu sản phẩm không hợp lệ.");
+            }
+        });
+
+        function fillProductInfo(product) {
+            // Use the stored currentProductRow instead of trying to find it by focus
+            if (!currentProductRow || !currentProductRow.length) return;
+
+            currentProductRow.find('.product-code').val(product.pancake_id || '');
+            currentProductRow.find('.product-name').val(product.name || '');
+            currentProductRow.find('.item-price').val(product.price || 0);
+            currentProductRow.find('input[name$="[product_id]"]').val(product.id || '');
+
+            // Store variation info if available
+            if (product.variation_info) {
+                currentProductRow.find('input[name$="[variation_info]"]').val(JSON.stringify(product.variation_info));
+            }
+
+            // Recalculate totals
+            calculateTotals();
+        }
+
+        // Hide product suggestions when clicking outside
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.product-name, .product-code, #product_suggestions, .search-product').length) {
+                $('#product_suggestions').slideUp(150);
+            }
+        });
     });
     </script>
 @endpush

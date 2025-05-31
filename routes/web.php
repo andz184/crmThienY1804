@@ -136,6 +136,10 @@ Route::middleware(['auth'])
             ->name('products.store')
             ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.create');
 
+        Route::get('products/{product}', [App\Http\Controllers\ProductController::class, 'show'])
+            ->name('products.show')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.view');
+
         Route::get('products/{product}/edit', [App\Http\Controllers\ProductController::class, 'edit'])
             ->name('products.edit')
             ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
@@ -151,6 +155,27 @@ Route::middleware(['auth'])
         Route::post('products/sync', [App\Http\Controllers\ProductController::class, 'syncFromPancake'])
             ->name('products.sync')
             ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.sync');
+
+        // Product Variants
+        Route::get('products/{product}/variants/create', [App\Http\Controllers\ProductController::class, 'createVariant'])
+            ->name('products.variants.create')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
+
+        Route::post('products/{product}/variants', [App\Http\Controllers\ProductController::class, 'storeVariant'])
+            ->name('products.variants.store')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
+
+        Route::get('products/{product}/variants/{variant}/edit', [App\Http\Controllers\ProductController::class, 'editVariant'])
+            ->name('products.variants.edit')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
+
+        Route::put('products/{product}/variants/{variant}', [App\Http\Controllers\ProductController::class, 'updateVariant'])
+            ->name('products.variants.update')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
+
+        Route::delete('products/{product}/variants/{variant}', [App\Http\Controllers\ProductController::class, 'destroyVariant'])
+            ->name('products.variants.destroy')
+            ->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':products.edit');
 
         // Roles
         Route::resource('roles', RoleController::class)->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':roles.view');

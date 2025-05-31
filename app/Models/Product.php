@@ -38,6 +38,15 @@ class Product extends Model
     }
 
     /**
+     * The pancake categories that belong to the product
+     */
+    public function pancakeCategories()
+    {
+        return $this->belongsToMany(PancakeCategory::class, 'pancake_category_product')
+                    ->withTimestamps();
+    }
+
+    /**
      * Get the variants for the product
      */
     public function variants()

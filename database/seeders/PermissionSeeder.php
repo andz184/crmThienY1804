@@ -31,7 +31,7 @@ class PermissionSeeder extends Seeder
                 'categories.delete',
                 'categories.sync', // New permission for Pancake sync
 
-                // Order permissions
+        // Order permissions
                 'orders.view',
                 'orders.create',
                 'orders.edit',

@@ -118,7 +118,7 @@
                                 <td>{{ number_format($product->base_price, 0, ',', '.') }} đ</td>
                                 <td>
                                     @php
-                                        $totalStock = $product->variations->sum('stock_quantity') ?? 0;
+                                        $totalStock = $product->variants?->sum('stock_quantity') ?? 0;
                                         $stockClass = $totalStock > 0 ? 'success' : 'danger';
                                     @endphp
                                     <span class="badge badge-{{ $stockClass }}">

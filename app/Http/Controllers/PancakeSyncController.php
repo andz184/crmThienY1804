@@ -3477,7 +3477,7 @@ public function syncCategories(Request $request)
                 }
 
                 $items[] = [
-                    'variation_id' => "0327ec71-f056-4451-8a75-288e3590751e",
+                    'variation_id' => "50be40bf-5f60-4dfb-bf64-832557916e42",
                     'quantity' => $product['quantity'],
                     'variation_info' => [
                         'retail_price' => $product['variation_info']['retail_price']

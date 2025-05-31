@@ -13,7 +13,14 @@
             <input type="text" name="search" class="form-control" placeholder="Tìm kiếm danh mục..." value="{{ request('search') }}" style="width: 220px;">
             <button class="btn btn-outline-secondary" type="submit">Tìm kiếm</button>
         </form>
-        <a href="{{ route('admin.categories.create') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Thêm danh mục</a>
+        <div>
+            @can('settings.manage') {{-- Hoặc quyền phù hợp: categories.sync --}}
+                <button type="button" class="btn btn-info mr-2" id="syncPancakeCategories">
+                    <i class="fas fa-sync-alt"></i> Đồng bộ từ Pancake
+                </button>
+            @endcan
+            <a href="{{ route('admin.categories.create') }}" class="btn btn-primary"><i class="fas fa-plus"></i> Thêm danh mục</a>
+        </div>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -29,15 +36,15 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @forelse ($categories as $category)
+                    @forelse ($pancakeCategories as $category)
                         <tr>
                             <td>{{ $category->name }}</td>
                             <td>{{ $category->slug }}</td>
                             <td>{{ $category->parent->name ?? 'N/A' }}</td>
                             <td><span class="badge bg-info">{{ $category->products_count }}</span></td>
                             <td>
-                                @if ($category->is_active)
-                                    <span class="badge bg-success">Có</span>
+                                @if ($category->status == 'active')
+                                    <span class="badge bg-success">kích hoạt </span>
                                 @else
                                     <span class="badge bg-danger">Không</span>
                                 @endif
@@ -62,7 +69,72 @@
         </div>
     </div>
     <div class="card-footer d-flex justify-content-center">
-        {{ $categories->links('vendor.pagination.bootstrap-4') }}
+        {{ $pancakeCategories->links('vendor.pagination.bootstrap-4') }}
     </div>
 </div>
+
+
+
+@stop
+
+@section('js')
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script>
+        $(document).ready(function() {
+            // Sync Pancake Categories
+            $('#syncPancakeCategories').on('click', function() {
+                var syncButton = $(this);
+                syncButton.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Đang đồng bộ...');
+
+                Swal.fire({
+                    title: 'Đang đồng bộ danh mục...',
+                    text: 'Vui lòng đợi trong giây lát.',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                $.ajax({
+                    url: '{{ route("admin.pancake.categories.sync") }}', // Đảm bảo route này tồn tại và là POST
+                    type: 'POST',
+                    data: {
+                        _token: '{{ csrf_token() }}'
+                    },
+                    success: function(response) {
+                        syncButton.prop('disabled', false).html('<i class="fas fa-sync-alt"></i> Đồng bộ từ Pancake');
+                        if (response.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Thành công!',
+                                text: response.message || 'Đồng bộ danh mục thành công!',
+                                timer: 3000
+                            }).then(() => {
+                                location.reload(); // Reload trang để cập nhật danh sách
+                            });
+                        } else {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Lỗi!',
+                                text: response.message || 'Có lỗi xảy ra trong quá trình đồng bộ.'
+                            });
+                        }
+                    },
+                    error: function(xhr) {
+                        syncButton.prop('disabled', false).html('<i class="fas fa-sync-alt"></i> Đồng bộ từ Pancake');
+                        var errorMsg = 'Lỗi không xác định.';
+                        if (xhr.responseJSON && xhr.responseJSON.message) {
+                            errorMsg = xhr.responseJSON.message;
+                        }
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Lỗi Máy Chủ!',
+                            text: errorMsg + ' (Code: ' + xhr.status + ')'
+                        });
+                        console.error("AJAX Error:", xhr.status, xhr.responseText);
+                    }
+                });
+            });
+        });
+    </script>
 @stop

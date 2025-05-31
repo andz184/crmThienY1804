@@ -21,6 +21,9 @@ Route::group([
 
 Route::get('/customers/search', [App\Http\Controllers\CustomerController::class, 'search']);
 
+// Product search route
+Route::get('/products/search', [App\Http\Controllers\ProductController::class, 'search']);
+
 // Protected routes
 Route::middleware(['auth:api'])->group(function () {
     // Customer routes
