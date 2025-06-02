@@ -111,10 +111,10 @@ class ReportController extends Controller
         Log::info("ReportController@productGroupsPage: Processing report for date range: {$startDate->toDateTimeString()} to {$endDate->toDateTimeString()}");
 
         // Fetch orders with products_data within the date range
-        $orders = Order::where('pancake_status', 6) // Only completed orders
-            ->whereNotNull('products_data')
-            ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
-            ->get();
+        $orders = Order::whereNotNull('products_data')
+        ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
+        ->get();
+
 
         Log::info("ReportController@productGroupsPage: Found " . $orders->count() . " orders for the period.");
 
