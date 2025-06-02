@@ -774,13 +774,14 @@ class PancakeSyncController extends Controller
         $order->payment_method = $orderData['payment_method'] ?? 'cod';
         $order->total_value = $orderData['total'] ?? 0;
         $order->discount_amout = $orderData['discount_amout'] ?? 0;
-
+       
         // Xử lý địa chỉ nếu có
         if (!empty($orderData['shipping_address'])) {
             $order->full_address = $orderData['shipping_address']['full_address'] ?? '';
+            $order->country_code = $orderData['shipping_address']['country_id'] ?? null;
             $order->province_code = $orderData['shipping_address']['province_id'] ?? null;
-            $order->district_code = $orderData['shipping_address']['district_id'] ?? null;
-            $order->ward_code = $orderData['shipping_address']['commune_id'] ?? null;
+            $order->district_id = $orderData['shipping_address']['district_id'] ?? null;
+            $order->ward_id = $orderData['shipping_address']['commune_id'] ?? null;
             $order->street_address = $orderData['shipping_address']['address'] ?? '';
         }
 

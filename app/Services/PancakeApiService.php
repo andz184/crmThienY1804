@@ -183,6 +183,7 @@ class PancakeApiService
      */
     public function createOrderOnPancake(array $orderData): array
     {
+
         if (!$this->apiKey) {
             Log::error('Pancake API: API key not configured for creating order.');
             return ['success' => false, 'data' => null, 'message' => 'Pancake API key not configured.'];

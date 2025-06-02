@@ -3499,7 +3499,7 @@ public function syncCategories(Request $request)
                 }
 
                 $items[] = [
-                    'variation_id' => "50be40bf-5f60-4dfb-bf64-832557916e42",
+                    'variation_id' => $product['variation_id'],
                     'quantity' => $product['quantity'],
                     'variation_info' => [
                         'retail_price' => $product['variation_info']['retail_price']
@@ -3524,20 +3524,21 @@ public function syncCategories(Request $request)
                 'shipping_fee' => (float)($order->shipping_fee ?? 0),
                 'note' => $order->notes ?? "",
                 'note_print' => "",
+                'marketer_id' => $order->marketing_id ?? "",
                 'transfer_money' => (float)($order->transfer_money ?? 0),
                 'partner' => [
                     'partner_id' => $order->pancake_shipping_provider_id ?? "3",
                 ],
                 'shipping_address' => [
                     'address' => $order->street_address ?? "",
-                    'commune_id' => $order->commune_id ?? "",
+                    'commune_id' => $order->ward_code ?? "",
                     'country_code' => "84",
-                    'district_id' => $order->district_id ?? "101",
-                    'full_address' => $order->shipping_address ?? "",
+                    'district_id' => $order->district_code ?? "101",
+                    'full_address' => $order->full_address ?? "",
                     'full_name' => $order->bill_full_name ?? "",
                     'phone_number' => $order->bill_phone_number ?? "",
                     'post_code' => null,
-                    'province_id' => $order->province_id ?? ""
+                    'province_id' => $order->province_code ?? ""
                 ],
                 'third_party' => [
                     'custom_information' => new \stdClass()
