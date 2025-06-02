@@ -3524,7 +3524,6 @@ public function syncCategories(Request $request)
                 'shipping_fee' => (float)($order->shipping_fee ?? 0),
                 'note' => $order->notes ?? "",
                 'note_print' => "",
-                'marketer_id' => $order->marketing_id ?? "",
                 'transfer_money' => (float)($order->transfer_money ?? 0),
                 'partner' => [
                     'partner_id' => $order->pancake_shipping_provider_id ?? "3",
