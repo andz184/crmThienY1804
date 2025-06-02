@@ -228,7 +228,7 @@
                     </div>
 
                     <!-- Scatter Plot Row -->
-                    <div class="row">
+                    {{-- <div class="row">
                         <div class="col-md-12">
                             <div class="card">
                                 <div class="card-header border-0">
@@ -252,7 +252,7 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div> --}}
 
                     <!-- Product Groups Table -->
                     <div class="card">
