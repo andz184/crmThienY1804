@@ -576,7 +576,8 @@ class OrderController extends Controller
             $order->assigning_seller_name = $assigningSellerName;
             $order->user_id = $user_id;
             $order->created_by = Auth::id();
-           
+            $order->transfer_money = $request->transfer_money ?? 0;
+
             $order->province_code = $validatedData['province_code'] ?? null;
             $order->district_code = $validatedData['district_code'] ?? null;
             $order->ward_code = $validatedData['ward_code'] ?? null;

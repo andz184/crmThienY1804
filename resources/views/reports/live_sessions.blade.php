@@ -23,24 +23,111 @@
                 </button>
             </div>
             <div class="modal-body">
-                <h5>Giải thích các chỉ số:</h5>
+                <h5>Giải thích chi tiết các chỉ số:</h5>
                 <ul>
-                    <li><strong>Doanh thu dự kiến:</strong> Tổng giá trị của tất cả đơn hàng (bao gồm cả đơn hủy và đang giao)</li>
-                    <li><strong>Doanh thu thực tế:</strong> Tổng giá trị của các đơn hàng đã chốt thành công</li>
-                    <li><strong>Tổng đơn:</strong> Tổng số đơn hàng nhận được trong phiên live</li>
-                    <li><strong>Đơn chốt:</strong> Số đơn hàng đã xác nhận thành công (đã giao hàng và thanh toán)</li>
-                    <li><strong>Đơn hủy:</strong> Số đơn hàng đã bị hủy vì bất kỳ lý do gì</li>
-                    <li><strong>Tỷ lệ chốt (%):</strong> = (Đơn chốt / (Tổng đơn - Đơn đang giao)) × 100</li>
-                    <li><strong>Tỷ lệ hủy (%):</strong> = (Đơn hủy / Tổng đơn) × 100</li>
-                    <li><strong>Khách mới:</strong> Số khách hàng lần đầu mua hàng trong phiên live</li>
-                    <li><strong>Khách cũ:</strong> Số khách hàng đã từng mua hàng trước đó</li>
+                    <li>
+                        <strong>Doanh thu dự kiến:</strong>
+                        <ul>
+                            <li>Nguồn dữ liệu: Bảng orders (đơn hàng)</li>
+                            <li>Cách tính: Tổng (số lượng × giá bán) của tất cả đơn hàng</li>
+                            <li>Bao gồm: Tất cả đơn hàng (chốt + hủy + đang giao)</li>
+                            <li>Công thức: SUM(quantity × price) FROM orders WHERE live_session_id = X</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Doanh thu thực tế:</strong>
+                        <ul>
+                            <li>Nguồn dữ liệu: Bảng orders (đơn đã hoàn thành)</li>
+                            <li>Cách tính: Tổng (số lượng × giá bán) của đơn hàng đã chốt thành công</li>
+                            <li>Chỉ tính: Đơn có trạng thái "completed" (đã giao hàng và thanh toán)</li>
+                            <li>Công thức: SUM(quantity × price) FROM orders WHERE status = 'completed' AND live_session_id = X</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Tổng đơn:</strong>
+                        <ul>
+                            <li>Nguồn dữ liệu: Bảng orders</li>
+                            <li>Cách tính: Đếm tổng số đơn hàng trong phiên live</li>
+                            <li>Bao gồm: Tất cả trạng thái đơn hàng</li>
+                            <li>Công thức: COUNT(*) FROM orders WHERE live_session_id = X</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Đơn chốt:</strong>
+                        <ul>
+                            <li>Nguồn dữ liệu: Bảng orders (đơn thành công)</li>
+                            <li>Cách tính: Đếm số đơn có trạng thái "completed"</li>
+                            <li>Chỉ tính: Đơn đã giao hàng và thanh toán thành công</li>
+                            <li>Công thức: COUNT(*) FROM orders WHERE status = 'completed' AND live_session_id = X</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Đơn hủy:</strong>
+                        <ul>
+                            <li>Nguồn dữ liệu: Bảng orders (đơn đã hủy)</li>
+                            <li>Cách tính: Đếm số đơn có trạng thái "cancelled"</li>
+                            <li>Bao gồm: Đơn hủy bởi khách và đơn hủy bởi shop</li>
+                            <li>Công thức: COUNT(*) FROM orders WHERE status = 'cancelled' AND live_session_id = X</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Tỷ lệ chốt (%):</strong>
+                        <ul>
+                            <li>Cách tính: (Đơn chốt / (Tổng đơn - Đơn đang giao)) × 100</li>
+                            <li>Ý nghĩa: Phần trăm đơn hàng thành công trên tổng số đơn đã có kết quả cuối cùng</li>
+                            <li>Không tính: Đơn đang giao (vì chưa có kết quả cuối)</li>
+                            <li>Công thức: (completed_orders / (total_orders - delivering_orders)) × 100</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Tỷ lệ hủy (%):</strong>
+                        <ul>
+                            <li>Cách tính: (Đơn hủy / Tổng đơn) × 100</li>
+                            <li>Ý nghĩa: Phần trăm đơn hàng bị hủy trên tổng số đơn</li>
+                            <li>Bao gồm: Tất cả các loại hủy đơn</li>
+                            <li>Công thức: (cancelled_orders / total_orders) × 100</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Khách mới:</strong>
+                        <ul>
+                            <li>Nguồn dữ liệu: Bảng customers và orders</li>
+                            <li>Cách tính: Đếm số khách hàng lần đầu mua trong phiên live</li>
+                            <li>Xác định: Dựa vào ngày tạo tài khoản khách hàng</li>
+                            <li>Công thức: COUNT(DISTINCT customer_id) WHERE first_order_date = live_session_date</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <strong>Khách cũ:</strong>
+                        <ul>
+                            <li>Nguồn dữ liệu: Bảng customers và orders</li>
+                            <li>Cách tính: Đếm số khách hàng đã từng mua trước phiên live</li>
+                            <li>Xác định: Khách có đơn hàng trước ngày diễn ra live</li>
+                            <li>Công thức: COUNT(DISTINCT customer_id) WHERE first_order_date < live_session_date</li>
+                        </ul>
+                    </li>
                 </ul>
 
-                <h5>Lưu ý quan trọng:</h5>
+                <h5>Lưu ý quan trọng về tính toán:</h5>
                 <ul>
-                    <li>Đơn đang giao không được tính vào tỷ lệ chốt đơn</li>
-                    <li>Tỷ lệ chốt được tính trên số đơn đã có kết quả cuối cùng (loại trừ đơn đang giao)</li>
-                    <li>Doanh thu thực tế chỉ tính các đơn đã chốt thành công</li>
+                    <li>Tất cả số liệu được cập nhật theo thời gian thực (realtime)</li>
+                    <li>Đơn đang giao không được tính vào tỷ lệ chốt để đảm bảo độ chính xác của báo cáo</li>
+                    <li>Doanh thu thực tế chỉ tính các đơn đã hoàn thành 100% (đã giao hàng và thanh toán)</li>
+                    <li>Khách hàng được tính là "mới" nếu đơn hàng đầu tiên của họ nằm trong phiên live hiện tại</li>
+                    <li>Các chỉ số được làm tròn theo quy tắc:
+                        <ul>
+                            <li>Doanh thu: Làm tròn đến hàng nghìn đồng</li>
+                            <li>Tỷ lệ phần trăm: Làm tròn đến 1 chữ số thập phân</li>
+                            <li>Số lượng đơn/khách: Số nguyên</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <h5>Cập nhật dữ liệu:</h5>
+                <ul>
+                    <li>Dữ liệu được cập nhật tự động mỗi 5 phút</li>
+                    <li>Có thể làm mới thủ công bằng nút "Làm mới" trên giao diện</li>
+                    <li>Thời gian cập nhật cuối cùng được hiển thị ở góc phải màn hình</li>
                 </ul>
             </div>
             <div class="modal-footer">
