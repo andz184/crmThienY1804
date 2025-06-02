@@ -828,7 +828,7 @@ class PancakeSyncController extends Controller
      * @param array $orderData Dữ liệu đơn hàng từ Pancake API
      * @return \App\Models\Order
      */
-    protected function updateOrderFromPancakeData(\App\Models\Order $order, array $orderData)
+    protected function updateOrderOnPancake(\App\Models\Order $order, array $orderData)
     {
         // Cập nhật thông tin cơ bản
         $order->order_code = $orderData['code'] ?? $order->order_code;
@@ -1957,116 +1957,116 @@ class PancakeSyncController extends Controller
      * @param Order $order
      * @return array
      */
-    public function updateOrderOnPancake(Order $order)
-    {
-       
-        if (empty($order->pancake_order_id)) {
-            Log::error('Cannot update order on Pancake: No pancake_order_id found', ['order_id' => $order->id]);
-            return [
-                'success' => false,
-                'message' => 'Không thể cập nhật đơn hàng lên Pancake: Không tìm thấy pancake_order_id'
-            ];
-        }
+    // public function updateOrderOnPancake(Order $order)
+    // {
 
-        $apiKey = config('pancake.api_key');
-        $baseUri = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1/'), '/');
-        $shopId = config('pancake.shop_id');
+    //     if (empty($order->pancake_order_id)) {
+    //         Log::error('Cannot update order on Pancake: No pancake_order_id found', ['order_id' => $order->id]);
+    //         return [
+    //             'success' => false,
+    //             'message' => 'Không thể cập nhật đơn hàng lên Pancake: Không tìm thấy pancake_order_id'
+    //         ];
+    //     }
 
-        if (empty($apiKey) || empty($shopId)) {
-            Log::error('Pancake API configuration missing', ['api_key_exists' => !empty($apiKey), 'shop_id_exists' => !empty($shopId)]);
-            return [
-                'success' => false,
-                'message' => 'Thiếu cấu hình Pancake API (api_key hoặc shop_id)'
-            ];
-        }
+    //     $apiKey = config('pancake.api_key');
+    //     $baseUri = rtrim(config('pancake.base_uri', 'https://pos.pages.fm/api/v1/'), '/');
+    //     $shopId = config('pancake.shop_id');
 
-        try {
+    //     if (empty($apiKey) || empty($shopId)) {
+    //         Log::error('Pancake API configuration missing', ['api_key_exists' => !empty($apiKey), 'shop_id_exists' => !empty($shopId)]);
+    //         return [
+    //             'success' => false,
+    //             'message' => 'Thiếu cấu hình Pancake API (api_key hoặc shop_id)'
+    //         ];
+    //     }
 
-            // Prepare order data for Pancake API
-            $orderData = [
-                'id' => $order->pancake_order_id,
-                'customer' => [
-                    'name' => $order->customer_name,
-                    'phone' => $order->customer_phone,
-                    'email' => $order->customer_email,
-                ],
-                'shipping_address' => [
-                    'name' => $order->bill_full_name ?: $order->customer_name,
-                    'phone' => $order->bill_phone_number ?: $order->customer_phone,
-                    'address' => $order->street_address,
-                    'province' => $order->province_code ? \App\Models\Province::where('code', $order->province_code)->value('name') : null,
-                    'district' => $order->district_code ? \App\Models\District::where('code', $order->district_code)->value('name') : null,
-                    'ward' => $order->ward_code ? \App\Models\Ward::where('code', $order->ward_code)->value('name') : null,
-                ],
-                'items' => $order->items->map(function ($item) {
-                    return [
-                        'product_id' => $item->pancake_product_id,
-                        'variation_id' => $item->pancake_variation_id,
-                        'quantity' => $item->quantity,
-                        'price' => $item->price,
-                        'note' => null,
-                    ];
-                })->toArray(),
-                'shipping_fee' => $order->shipping_fee,
-                'note' => $order->notes,
-                'partner_note' => $order->additional_notes,
-                'source' => $order->source,
-                'shipping_partner_id' => $order->pancake_shipping_provider_id,
-                'warehouse_id' => $order->pancake_warehouse_id,
-                'status' => $this->mapInternalStatusToPancake($order->status),
-                'assigning_seller_id' => $order->assigning_seller_id,
-                'assigning_care_id' => $order->assigning_care_id,
-            ];
+    //     try {
 
-            // Make API call to update order
-            $endpoint = "{$baseUri}/shops/{$shopId}/orders/{$order->pancake_order_id}?api_key={$apiKey}";
-            $response = Http::put($endpoint, $orderData);
+    //         // Prepare order data for Pancake API
+    //         $orderData = [
+    //             'id' => $order->pancake_order_id,
+    //             'customer' => [
+    //                 'name' => $order->customer_name,
+    //                 'phone' => $order->customer_phone,
+    //                 'email' => $order->customer_email,
+    //             ],
+    //             'shipping_address' => [
+    //                 'name' => $order->bill_full_name ?: $order->customer_name,
+    //                 'phone' => $order->bill_phone_number ?: $order->customer_phone,
+    //                 'address' => $order->street_address,
+    //                 'province' => $order->province_code ? \App\Models\Province::where('code', $order->province_code)->value('name') : null,
+    //                 'district' => $order->district_code ? \App\Models\District::where('code', $order->district_code)->value('name') : null,
+    //                 'ward' => $order->ward_code ? \App\Models\Ward::where('code', $order->ward_code)->value('name') : null,
+    //             ],
+    //             'items' => $order->items->map(function ($item) {
+    //                 return [
+    //                     'product_id' => $item->pancake_product_id,
+    //                     'variation_id' => $item->pancake_variation_id,
+    //                     'quantity' => $item->quantity,
+    //                     'price' => $item->price,
+    //                     'note' => null,
+    //                 ];
+    //             })->toArray(),
+    //             'shipping_fee' => $order->shipping_fee,
+    //             'note' => $order->notes,
+    //             'partner_note' => $order->additional_notes,
+    //             'source' => $order->source,
+    //             'shipping_partner_id' => $order->pancake_shipping_provider_id,
+    //             'warehouse_id' => $order->pancake_warehouse_id,
+    //             'status' => $this->mapInternalStatusToPancake($order->status),
+    //             'assigning_seller_id' => $order->assigning_seller_id,
+    //             'assigning_care_id' => $order->assigning_care_id,
+    //         ];
 
-            if (!$response->successful()) {
-                Log::error('Failed to update order on Pancake API', [
-                    'order_id' => $order->id,
-                    'pancake_order_id' => $order->pancake_order_id,
-                    'status' => $response->status(),
-                    'response' => $response->json()
-                ]);
+    //         // Make API call to update order
+    //         $endpoint = "{$baseUri}/shops/{$shopId}/orders/{$order->pancake_order_id}?api_key={$apiKey}";
+    //         $response = Http::put($endpoint, $orderData);
 
-                return [
-                    'success' => false,
-                    'message' => 'Lỗi khi cập nhật đơn hàng trên Pancake: ' . ($response->json()['message'] ?? 'Unknown error'),
-                    'errors' => $response->json()['errors'] ?? null
-                ];
-            }
+    //         if (!$response->successful()) {
+    //             Log::error('Failed to update order on Pancake API', [
+    //                 'order_id' => $order->id,
+    //                 'pancake_order_id' => $order->pancake_order_id,
+    //                 'status' => $response->status(),
+    //                 'response' => $response->json()
+    //             ]);
 
-            $responseData = $response->json();
+    //             return [
+    //                 'success' => false,
+    //                 'message' => 'Lỗi khi cập nhật đơn hàng trên Pancake: ' . ($response->json()['message'] ?? 'Unknown error'),
+    //                 'errors' => $response->json()['errors'] ?? null
+    //             ];
+    //         }
 
-            // Update local order with response data if needed
-            $order->update([
-                'internal_status' => 'Updated on Pancake successfully at ' . now(),
-                'last_synced_at' => now(),
-            ]);
+    //         $responseData = $response->json();
 
-            Log::info('Successfully updated order on Pancake', [
-                'order_id' => $order->id,
-                'pancake_order_id' => $order->pancake_order_id
-            ]);
+    //         // Update local order with response data if needed
+    //         $order->update([
+    //             'internal_status' => 'Updated on Pancake successfully at ' . now(),
+    //             'last_synced_at' => now(),
+    //         ]);
 
-            return [
-                'success' => true,
-                'message' => 'Đơn hàng đã được cập nhật thành công trên Pancake',
-                'data' => $responseData
-            ];
+    //         Log::info('Successfully updated order on Pancake', [
+    //             'order_id' => $order->id,
+    //             'pancake_order_id' => $order->pancake_order_id
+    //         ]);
 
-        } catch (\Exception $e) {
-            Log::error('Exception while updating order on Pancake', [
-                'order_id' => $order->id,
-                'exception' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+    //         return [
+    //             'success' => true,
+    //             'message' => 'Đơn hàng đã được cập nhật thành công trên Pancake',
+    //             'data' => $responseData
+    //         ];
 
-            return [
-                'success' => false,
-                'message' => 'Lỗi khi cập nhật đơn hàng: ' . $e->getMessage()
-            ];
-        }
-    }
+    //     } catch (\Exception $e) {
+    //         Log::error('Exception while updating order on Pancake', [
+    //             'order_id' => $order->id,
+    //             'exception' => $e->getMessage(),
+    //             'trace' => $e->getTraceAsString()
+    //         ]);
+
+    //         return [
+    //             'success' => false,
+    //             'message' => 'Lỗi khi cập nhật đơn hàng: ' . $e->getMessage()
+    //         ];
+    //     }
+    // }
 }

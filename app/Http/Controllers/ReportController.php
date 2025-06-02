@@ -113,13 +113,14 @@ class ReportController extends Controller
         // Fetch orders with products_data within the date range
         $orders = Order::where('pancake_status', 6) // Only completed orders
             ->whereNotNull('products_data')
-            ->whereBetween('created_at', [$startDate, $endDate])
+            ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
             ->get();
 
         Log::info("ReportController@productGroupsPage: Found " . $orders->count() . " orders for the period.");
 
         $categoryData = [];
         $categoryMap = \App\Models\PancakeCategory::pluck('name', 'pancake_id')->all();
+
         $processedOrderIds = []; // Track processed order IDs for accurate order counting
 
         foreach ($orders as $order) {
@@ -133,19 +134,20 @@ class ReportController extends Controller
 
             foreach ($productsData as $item) {
                 if (empty($item['variation_info']['category_ids'])) {
+
                     Log::warning("Missing category_ids for item in order ID: {$order->id}");
                     continue;
                 }
 
                 // Validate and get quantity and price
                 $quantity = isset($item['quantity']) && is_numeric($item['quantity']) ? (int)$item['quantity'] : 1;
-                $price = isset($item['price']) && is_numeric($item['price']) ? (float)$item['price'] : 0;
+                $price = isset($item['variation_info']['retail_price']) && is_numeric($item['variation_info']['retail_price']) ? (float)$item['variation_info']['retail_price'] : 0;
 
                 if ($price <= 0) {
                     Log::warning("Invalid price (0 or negative) for item in order ID: {$order->id}");
                     continue;
                 }
-
+                // dd($item);
                 $totalAmount = $quantity * $price;
 
                 foreach ($item['variation_info']['category_ids'] as $categoryId) {
@@ -178,6 +180,7 @@ class ReportController extends Controller
                     }
 
                     // Track product details
+
                     $productId = $item['product_id'] ?? null;
                     if ($productId) {
                         if (!isset($categoryData[$categoryId]['products'][$productId])) {
@@ -201,6 +204,7 @@ class ReportController extends Controller
 
         // Calculate average order value for each category
         foreach ($categoryData as &$category) {
+
             if ($category['total_orders'] > 0) {
                 $category['average_order_value'] = $category['total_revenue'] / $category['total_orders'];
             }
@@ -347,12 +351,24 @@ class ReportController extends Controller
         $chartOrderCountData = [];
         $chartQuantityData = [];
 
+        Log::info('ReportController@prepareChartData: Starting data preparation with categories:', [
+            'category_count' => count($categoryData),
+            'category_keys' => array_keys($categoryData)
+        ]);
+
         foreach ($categoryData as $category) {
             $chartCategoryNames[] = $category['name'];
             $chartRevenueData[] = $category['total_revenue'];
             $chartOrderCountData[] = $category['total_orders'];
             $chartQuantityData[] = $category['total_quantity_sold'];
         }
+
+        Log::info('ReportController@prepareChartData: Chart data prepared', [
+            'categoryNames' => $chartCategoryNames,
+            'revenueData' => $chartRevenueData,
+            'orderCountData' => $chartOrderCountData,
+            'quantityData' => $chartQuantityData
+        ]);
 
         return compact('chartCategoryNames', 'chartRevenueData', 'chartOrderCountData', 'chartQuantityData');
     }

@@ -16,6 +16,7 @@
 @stop
 
 @section('content')
+
     <div class="container-fluid">
         <!-- Main row -->
         <div class="row">
@@ -226,6 +227,33 @@
                         </div>
                     </div>
 
+                    <!-- Scatter Plot Row -->
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header border-0">
+                                    <h3 class="card-title">
+                                        <i class="fas fa-braille mr-1"></i>
+                                        Tương Quan Doanh Thu và Số Lượng Đơn
+                                    </h3>
+                                    <div class="card-tools">
+                                        <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                                            <i class="fas fa-minus"></i>
+                                        </button>
+                                        <button type="button" class="btn btn-tool" data-card-widget="maximize">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="card-body">
+                                    <div class="chart-container" style="height: 350px;">
+                                        <canvas id="scatterRevenueVsOrdersChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Product Groups Table -->
                     <div class="card">
                         <div class="card-header border-0">
@@ -355,11 +383,11 @@
 @stop
 
 @section('js')
-    <script src="https://cdn.jsdelivr.net/npm/moment/min/moment.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.10.21/js/dataTables.bootstrap4.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/moment/moment.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
 
     <script>
         $(document).ready(function() {
@@ -392,12 +420,12 @@
             });
 
             // DataTable
-            $('#productGroupsTable').DataTable({
-                "language": {
-                    "url": "//cdn.datatables.net/plug-ins/1.10.21/i18n/Vietnamese.json"
-                },
+            /* $('#productGroupsTable').DataTable({
+                // "language": {
+                //     "url": "//cdn.datatables.net/plug-ins/1.10.21/i18n/Vietnamese.json"
+                // },
                 "order": [[ 2, "desc" ]] // Default sort by revenue descending
-            });
+            }); */
 
             // Number formatting function (from live_sessions)
             function number_format(number, decimals, dec_point, thousands_sep) {
@@ -548,8 +576,15 @@
 
             function renderChartOrNoDataMessage(canvasId, chartConfig) {
                 const canvas = document.getElementById(canvasId);
-                if (!canvas) return;
+                if (!canvas) {
+                    // console.error('Debug: Canvas element not found:', canvasId);
+                    return;
+                }
                 const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    // console.error('Debug: Failed to get 2D context for canvas:', canvasId);
+                    return;
+                }
 
                 let hasData = false;
                 if (chartConfig.data && chartConfig.data.datasets) {
@@ -560,17 +595,34 @@
                     });
                 }
                  // For pie charts, data is directly in data.datasets[0].data and labels are in data.labels
-                if (!hasData && chartConfig.type === 'pie' && chartConfig.data && chartConfig.data.labels && chartConfig.data.labels.length > 0 && chartConfig.data.datasets && chartConfig.data.datasets[0] && chartConfig.data.datasets[0].data.some(d => d > 0)){
+                if (!hasData && (chartConfig.type === 'pie' || chartConfig.type === 'doughnut') && chartConfig.data && chartConfig.data.labels && chartConfig.data.labels.length > 0 && chartConfig.data.datasets && chartConfig.data.datasets[0] && chartConfig.data.datasets[0].data && chartConfig.data.datasets[0].data.some(d => d > 0)){
                     hasData = true;
                 }
 
                 if (window.existingCharts && window.existingCharts[canvasId]) {
-                    window.existingCharts[canvasId].destroy();
+                    try {
+                        window.existingCharts[canvasId].destroy();
+                    } catch (e) {
+                        // console.error('Debug: Error destroying existing chart ' + canvasId + ':', e);
+                    }
                 }
                 window.existingCharts = window.existingCharts || {};
 
                 if (hasData) {
-                    window.existingCharts[canvasId] = new Chart(ctx, chartConfig);
+                    try {
+                        window.existingCharts[canvasId] = new Chart(ctx, chartConfig);
+                    } catch (e) {
+                        // console.error('Debug: Error creating new chart ' + canvasId + ':', e);
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.textAlign = 'center';
+                        ctx.fillStyle = '#dc3545'; // Error color (red)
+                        ctx.font = "16px 'Source Sans Pro'";
+                        ctx.fillText('Lỗi khi khởi tạo biểu đồ.', canvas.width / 2, canvas.height / 2 - 10);
+                        // Optionally display a snippet of the error message if needed for debugging
+                        // if (e.message) {
+                        //    ctx.fillText(e.message.substring(0, 100) + '...', canvas.width / 2, canvas.height / 2 + 10);
+                        // }
+                    }
                 } else {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     ctx.textAlign = 'center';
@@ -586,7 +638,15 @@
             const orderCountByGroupData = @json($chartOrderCountData ?? []);
             const quantitySoldByGroupData = @json($chartQuantityData ?? []);
 
-            // 1. Revenue by Product Group (Bar Chart)
+
+            // For debugging - uncomment these lines in your browser's developer console to check data
+            // console.log('Debug: Category Names:', JSON.parse(JSON.stringify(categoryNames)));
+            // console.log('Debug: Revenue Data:', JSON.parse(JSON.stringify(revenueByGroupData)));
+            // console.log('Debug: Order Count Data:', JSON.parse(JSON.stringify(orderCountByGroupData)));
+            // console.log('Debug: Quantity Sold Data:', JSON.parse(JSON.stringify(quantitySoldByGroupData)));
+
+
+            // 1. Revenue by Product Group (All Bar Chart)
             renderChartOrNoDataMessage('revenueByGroupChart', {
                 type: 'bar',
                 data: {
@@ -594,11 +654,11 @@
                     datasets: [
                         {
                             label: 'Doanh Thu (VND)',
-                        data: revenueByGroupData,
+                            data: revenueByGroupData,
                             backgroundColor: 'rgba(0, 123, 255, 0.2)',
-                        borderColor: chartColors.primary,
+                            borderColor: chartColors.primary,
                             borderWidth: 2,
-                        barPercentage: 0.6,
+                            barPercentage: 0.6,
                             categoryPercentage: 0.7,
                             hoverBackgroundColor: 'rgba(0, 123, 255, 0.4)',
                             hoverBorderColor: chartColors.primary,
@@ -607,29 +667,23 @@
                         },
                         {
                             label: 'Số Đơn Hàng',
-                        data: orderCountByGroupData,
-                            type: 'line',
-                        borderColor: chartColors.success,
-                            backgroundColor: 'transparent',
-                            borderWidth: 2,
-                            pointBackgroundColor: chartColors.success,
-                            pointRadius: 4,
-                            pointHoverRadius: 6,
+                            data: orderCountByGroupData,
+                            type: 'bar', // Changed from line
+                            backgroundColor: 'rgba(40, 167, 69, 0.2)',
+                            borderColor: chartColors.success,
+                            borderWidth: 1,
                             yAxisID: 'y1',
-                            order: 0
+                            order: 2
                         },
                         {
                             label: 'Số Lượng Sản Phẩm',
                             data: quantitySoldByGroupData,
-                            type: 'line',
+                            type: 'bar', // Changed from line
+                            backgroundColor: 'rgba(255, 193, 7, 0.2)',
                             borderColor: chartColors.warning,
-                            backgroundColor: 'transparent',
-                        borderWidth: 2,
-                            pointBackgroundColor: chartColors.warning,
-                            pointRadius: 4,
-                            pointHoverRadius: 6,
+                            borderWidth: 1,
                             yAxisID: 'y1',
-                            order: 0
+                            order: 3
                         }
                     ]
                 },
@@ -644,25 +698,11 @@
                                 display: true,
                                 text: 'Doanh Thu (VND)',
                                 color: chartColors.primary,
-                                font: {
-                                    size: 12,
-                                    weight: 'bold'
-                                }
+                                font: { size: 12, weight: 'bold' }
                             },
-                            grid: {
-                                color: 'rgba(0, 0, 0, 0.05)',
-                                drawBorder: false,
-                            },
+                            grid: { display: true, color: 'rgba(0,0,0,0.05)' },
                             ticks: {
-                                callback: function(value) {
-                                    if (value >= 1000000000) return (value / 1000000000).toFixed(1) + ' Tỷ';
-                                    if (value >= 1000000) return (value / 1000000).toFixed(1) + ' Tr';
-                                    if (value >= 1000) return (value / 1000).toFixed(1) + ' K';
-                                    return number_format(value);
-                                },
-                                font: {
-                                    size: 11
-                                }
+                                callback: function(value) { return number_format(value); }
                             }
                         },
                         y1: {
@@ -673,86 +713,22 @@
                                 display: true,
                                 text: 'Số lượng',
                                 color: chartColors.success,
-                                font: {
-                                    size: 12,
-                                    weight: 'bold'
-                                }
+                                font: { size: 12, weight: 'bold' }
                             },
-                            grid: {
-                                display: false,
-                                drawBorder: false
-                            },
-                            ticks: {
-                                callback: function(value) {
-                                    if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
-                                    return number_format(value);
-                                },
-                                font: {
-                                    size: 11
-                                }
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            },
-                            ticks: {
-                                font: {
-                                    size: 11
-                                },
-                                maxRotation: 45,
-                                minRotation: 45
-                            }
+                            grid: { display: false, drawBorder: false }
                         }
                     },
                     plugins: {
                         ...commonChartOptions.plugins,
                         tooltip: {
                             ...commonChartOptions.plugins.tooltip,
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            titleFont: {
-                                size: 13,
-                                weight: 'bold'
-                            },
-                            bodyFont: {
-                                size: 12
-                            },
-                            padding: 12,
-                            displayColors: true,
                             callbacks: {
-                                title: function(tooltipItems) {
-                                    return tooltipItems[0].label;
-                                },
                                 label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) {
-                                        label += ': ';
+                                    const dataPoint = context.raw;
+                                    if (dataPoint && typeof dataPoint === 'object') {
+                                        return `${dataPoint.label || 'Điểm dữ liệu'}: (Đơn: ${number_format(dataPoint.x)}, Doanh thu: ${number_format(dataPoint.y)} VND)`
                                     }
-                                    if (context.dataset.yAxisID === 'y') {
-                                        if (context.parsed.y >= 1000000000) {
-                                            label += (context.parsed.y / 1000000000).toFixed(1) + ' Tỷ VND';
-                                        } else if (context.parsed.y >= 1000000) {
-                                            label += (context.parsed.y / 1000000).toFixed(1) + ' Triệu VND';
-                                        } else {
-                                            label += number_format(context.parsed.y) + ' VND';
-                                        }
-                                    } else {
-                                        if (context.parsed.y >= 1000) {
-                                            label += (context.parsed.y / 1000).toFixed(1) + 'K';
-                                        } else {
-                                            label += number_format(context.parsed.y);
-                                        }
-                                    }
-                                    return label;
-                                }
-                            }
-                        },
-                        legend: {
-                            labels: {
-                                usePointStyle: true,
-                                padding: 15,
-                                font: {
-                                    size: 11
+                                    return context.dataset.label + ': ' + number_format(context.parsed.y) + ' VND'; // Fallback
                                 }
                             }
                         }
@@ -765,10 +741,10 @@
                 const totalRevenue = revenueByGroupData.reduce((sum, val) => sum + val, 0);
                 if (totalRevenue > 0) {
                     renderChartOrNoDataMessage('revenueDistributionChart', {
-                        type: 'doughnut', // Changed to doughnut for better visualization
-                data: {
-                    labels: categoryNames,
-                    datasets: [{
+                        type: 'doughnut',
+                        data: {
+                            labels: categoryNames,
+                            datasets: [{
                                 label: 'Phân Bổ Doanh Thu',
                                 data: revenueByGroupData,
                                 backgroundColor: getColors(categoryNames.length).map(color => {
@@ -776,15 +752,15 @@
                                     return color.replace('rgb', 'rgba').replace(')', ', 0.8)');
                                 }),
                                 borderColor: getColors(categoryNames.length),
-                        borderWidth: 1,
+                                borderWidth: 1,
                                 hoverOffset: 8,
                                 hoverBorderWidth: 2
                             }]
                         },
                         options: {
                             ...pieChartOptions,
-                            cutout: '60%', // Makes the doughnut thinner
-                            radius: '90%', // Makes the chart slightly smaller to fit labels
+                            cutout: '60%',
+                            radius: '90%',
                             plugins: {
                                 ...pieChartOptions.plugins,
                                 legend: {
@@ -793,21 +769,14 @@
                                         padding: 15,
                                         usePointStyle: true,
                                         pointStyle: 'circle',
-                                        font: {
-                                            size: 11
-                                        }
+                                        font: { size: 11 }
                                     }
                                 },
                                 tooltip: {
                                     ...pieChartOptions.plugins.tooltip,
                                     backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                    titleFont: {
-                                        size: 13,
-                                        weight: 'bold'
-                                    },
-                                    bodyFont: {
-                                        size: 12
-                                    },
+                                    titleFont: { size: 13, weight: 'bold' },
+                                    bodyFont: { size: 12 },
                                     padding: 12,
                                     callbacks: {
                                         label: function(context) {
@@ -826,31 +795,78 @@
                 }
             }
 
-            // 4. Optional: Order Distribution by Product Group (Pie Chart)
-            // This requires an additional canvas in the HTML, e.g., id="orderDistributionByGroupChart"
-            // For now, let's assume it's not added yet to avoid errors.
-            // If you add a <canvas id="orderDistributionByGroupChart"></canvas> in a new card,
-            // you can uncomment and use the following:
-            /*
-            if (document.getElementById('orderDistributionByGroupChart') && orderCountByGroupData.length > 0) {
-                const totalOrdersForPie = orderCountByGroupData.reduce((sum, val) => sum + val, 0);
-                if (totalOrdersForPie > 0) {
-                     renderChartOrNoDataMessage('orderDistributionByGroupChart', {
-                        type: 'pie',
-                        data: {
-                            labels: categoryNames,
-                            datasets: [{
-                                label: 'Phân Bổ Đơn Hàng theo Nhóm',
-                                data: orderCountByGroupData,
-                                backgroundColor: getColors(categoryNames.length),
-                                hoverOffset: 4
-                            }]
+            // 3. Scatter Plot: Revenue vs Order Count by Product Group
+            if (categoryNames.length > 0 && revenueByGroupData.length > 0 && orderCountByGroupData.length > 0) {
+                const scatterData = categoryNames.map((name, index) => ({
+                    x: orderCountByGroupData[index] || 0,
+                    y: revenueByGroupData[index] || 0,
+                    label: name // Store name for tooltip
+                }));
+
+                renderChartOrNoDataMessage('scatterRevenueVsOrdersChart', {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Nhóm Hàng Hóa',
+                            data: scatterData,
+                            backgroundColor: getColors(1)[0].replace('rgb','rgba').replace(')',', 0.7)'), // Single transparent color
+                            borderColor: getColors(1)[0],
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                        }]
+                    },
+                    options: {
+                        ...commonChartOptions,
+                        scales: {
+                            x: {
+                                ...commonChartOptions.scales.x,
+                                type: 'linear',
+                                position: 'bottom',
+                                title: {
+                                    display: true,
+                                    text: 'Số Lượng Đơn Hàng',
+                                    font: { size: 12, weight: 'bold' }
+                                },
+                                grid: { display: true, color: 'rgba(0,0,0,0.05)' },
+                                ticks: {
+                                    callback: function(value) { return number_format(value); }
+                                }
+                            },
+                            y: {
+                                ...commonChartOptions.scales.y,
+                                title: {
+                                    display: true,
+                                    text: 'Tổng Doanh Thu (VND)',
+                                    font: { size: 12, weight: 'bold' }
+                                },
+                            }
                         },
-                        options: { ...pieChartOptions } // Use specific pie chart options
-                    });
-                }
+                        plugins: {
+                            ...commonChartOptions.plugins,
+                            tooltip: {
+                                ...commonChartOptions.plugins.tooltip,
+                                callbacks: {
+                                    label: function(context) {
+                                        const dataPoint = context.raw;
+                                        if (dataPoint && typeof dataPoint === 'object') {
+                                            return `${dataPoint.label || 'Điểm dữ liệu'}: (Đơn: ${number_format(dataPoint.x)}, Doanh thu: ${number_format(dataPoint.y)} VND)`
+                                        }
+                                        // Fallback for other types or if dataPoint.label is not set
+                                        let label = context.dataset.label || '';
+                                        if (label) {
+                                            label += ': ';
+                                        }
+                                        if (context.parsed.x !== null && context.parsed.y !== null) {
+                                             label += `(${number_format(context.parsed.x)}, ${number_format(context.parsed.y)} VND)`;
+                                        }
+                                        return label;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
             }
-            */
 
         });
     </script>
