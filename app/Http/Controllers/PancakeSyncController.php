@@ -1707,14 +1707,30 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 'page_size' => 100
             ];
 
-            dd($endTimestamp);
+
             // Add date filtering parameters if provided
+            // if ($startTimestamp) {
+
+            //     $apiParams['startDateTime'] = $startTimestamp;
+            // }
+            // if ($endTimestamp) {
+            //     $apiParams['endDateTime'] = $endTimestamp;
+            // }
+
+
+
+            $startTimestamp = strtotime('2025-05-01 00:00:00');
+            $endTimestamp = strtotime('2025-05-31 23:59:59');
+
             if ($startTimestamp) {
-                $apiParams['startDateTime'] = $startTimestamp;
+                $apiParams['startDateTime'] = (string) $startTimestamp;
             }
             if ($endTimestamp) {
-                $apiParams['endDateTime'] = $endTimestamp;
+                $apiParams['endDateTime'] = (string) $endTimestamp;
             }
+
+
+
 
             // Log API call for debugging
             Log::info('Starting date-based Pancake API sync', [
@@ -2692,6 +2708,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
     public function syncAllOrders(Request $request)
     {
         try {
+
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
             ini_set('memory_limit', '1024M');
@@ -2699,7 +2716,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $this->authorize('sync-pancake');
 
             // First check if this is actually a date-specific sync that should be redirected
-            if ($request->has('sync_type') && $request->input('sync_type') === 'date' && $request->has('date')) {
+            if ($request->has('startDateTime') && $request->has('endDateTime')) {
                 Log::info('Redirecting date sync request to syncOrdersByDateManual', [
                     'date' => $request->input('date'),
                     'startDateTime' => $request->input('startDateTime'),
