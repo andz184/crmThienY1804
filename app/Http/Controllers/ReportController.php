@@ -2690,7 +2690,7 @@ class ReportController extends Controller
                     'per_page' => $dailyRevenue->perPage(),
                     'current_page' => $dailyRevenue->currentPage(),
                     'last_page' => $dailyRevenue->lastPage(),
-                    'links' => $dailyRevenue->links()
+                    'links' => $dailyRevenue->appends(request()->query())->links()
                 ],
                 'totals' => [
                     'expected_total' => $totals->total_expected_total,
