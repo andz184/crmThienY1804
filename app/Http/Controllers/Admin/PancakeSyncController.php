@@ -773,6 +773,7 @@ class PancakeSyncController extends Controller
         $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
         $order->payment_method = $orderData['payment_method'] ?? 'cod';
         $order->total_value = $orderData['total'] ?? 0;
+        $order->discount_amout = $orderData['discount_amout'] ?? 0;
 
         // Xử lý địa chỉ nếu có
         if (!empty($orderData['shipping_address'])) {

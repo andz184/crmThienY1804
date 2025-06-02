@@ -552,7 +552,9 @@ class PancakeSyncController extends Controller
 
         $order->pancake_shop_id = $shopId;
         $order->pancake_page_id = $pageId;
+
         $order->warehouse_id = $warehouseId;
+        $order->source = $orderData['order_sources'] ?? null;
         $order->warehouse_code = $warehouseCode;
         $order->pancake_warehouse_id = $pancakeWarehouseId;
         $order->shipping_provider_id = $shippingProviderId;
@@ -731,6 +733,7 @@ class PancakeSyncController extends Controller
 private function updateOrderFromPancake(Order $order, array $orderData)
 {
     try {
+
         DB::beginTransaction();
 
         Log::info('Updating existing order from Pancake data', [
@@ -770,7 +773,8 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
         $product_data = $orderData['items'] ?? null;
         $order->products_data = json_encode($product_data);
-        $order->source = $orderData['source'] ?? ($orderData['order_sources_name'] ?? $order->source);
+
+        $order->source = $orderData['order_sources'] ?? ($orderData['order_sources'] ?? $order->source);
 
         // Update tracking info if available
         if (isset($orderData['tracking_code'])) {
@@ -1583,6 +1587,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
      */
     public function syncOrdersByDateManual(Request $request)
     {
+
         try {
             // Increase execution time limit to 2 hours and memory limit to 1GB
             set_time_limit(7200);
@@ -3433,7 +3438,7 @@ public function syncCategories(Request $request)
                 // Update order status
                 $order->pancake_order_id = $response['data']['id'] ?? null;
                 $order->status = 'pushed_to_pancake';
-                $order->notes = 'Đẩy đơn hàng thành công lên Pancake';
+                // Không ghi đè notes nữa
                 $order->saveQuietly();
 
                 return $response;
@@ -3508,7 +3513,7 @@ public function syncCategories(Request $request)
           $assigning_care_id = User::where('id', $order->assigning_care_id)->pluck('pancake_uuid')->first();
             error_log('Formatted items: ' . print_r($items, true));
             $warehouse = Warehouse::find($order->warehouse_id)->pluck('pancake_id')->first();
-
+            $page_id = PancakePage::where('id', $order->pancake_page_id)->pluck('pancake_page_id')->first();
             // Build the complete order data structure
             $orderData = [
                 'assigning_seller_id' => $order->assigning_seller_id,
@@ -3537,9 +3542,9 @@ public function syncCategories(Request $request)
                 'third_party' => [
                     'custom_information' => new \stdClass()
                 ],
-                'order_sources' => -1,
-                'page_id' => "1",
-                'account' => "1",
+                'order_sources' => $order->source,
+                'page_id' => $page_id,
+                'account' => $page_id,
                 'items' => $items
             ];
 

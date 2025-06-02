@@ -425,19 +425,38 @@ class OrderController extends Controller
         $order->pushed_to_pancake_at = null;
         $order->source = '';
 
-        // Get all pancake pages with their shop_id for dynamic dropdown
-        $allPancakePages = PancakePage::select('id', 'name', 'pancake_shop_table_id as shop_id')->get()->groupBy('shop_id');
+        // Get all pancake pages with source info for proper mapping
+        $allPancakePages = PancakePage::select('id', 'name', 'platform', 'pancake_shop_table_id as shop_id')
+            ->whereNotNull('platform')
+            ->get()
+            ->map(function($page) {
+                $page->platform = trim(strtolower((string) $page->platform));
+                $page->name = trim((string) $page->name);
+                return $page;
+            })
+            ->groupBy('platform');
 
-        // Get active product sources
+        // Get active product sources and their pages
         $productSources = \App\Models\PancakeProductSource::where('is_active', true)
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->map(function($source) use ($allPancakePages) {
+                $source->name = trim((string) $source->name); // Keep original case for display
+                $lookupKey = strtolower($source->name);      // Use lowercase for matching with platform keys
+                $source->pages = $allPancakePages[$lookupKey] ?? collect();
+                return $source;
+            });
+
+        // dd($productSources, $allPancakePages);
 
         $data = [
             'order' => $order,
             'provinces' => Province::pluck('name', 'code'),
+            'districts' => collect(),
+            'wards' => collect(),
             'statuses' => Order::getAllStatuses(),
             'pancakeShops' => PancakeShop::pluck('name', 'id'),
+            'pancakePages' => collect(),
             'allPancakePages' => $allPancakePages,
             'warehouses' => Warehouse::pluck('name', 'id'),
             'shippingProviders' => ShippingProvider::pluck('name', 'id'),
@@ -484,7 +503,7 @@ class OrderController extends Controller
             'pancake_page_id' => 'nullable|exists:pancake_pages,id',
         ]);
 
-        try {
+        // try {
             DB::beginTransaction();
 
             // Calculate total value
@@ -535,12 +554,13 @@ class OrderController extends Controller
 
             // Create order
             $order = new Order();
+
             $order->order_code = $request->input('order_code', 'ORD-' . time() . rand(1000, 9999));
             $order->customer_name = $validatedData['customer_name'];
             $order->customer_phone = $validatedData['customer_phone'];
             $order->customer_email = $validatedData['customer_email'] ?? null;
             $order->bill_full_name = $request->filled('billing_name') ? $validatedData['billing_name'] : $validatedData['customer_name'];
-            $order->bill_phone_number = $request->filled('billing_phone') ? $validatedData['billing_phone'] : $validatedData['customer_phone'];
+            $order->bill_phone_number = $request->filled('billing_phone') ? $request->billing_phone : $validatedData['customer_phone'];
             $order->bill_email = $request->filled('billing_email') ? $request->billing_email : ($validatedData['customer_email'] ?? null);
             $order->shipping_fee = $validatedData['shipping_fee'] ?? 0;
             $order->payment_method = $validatedData['payment_method'] ?? null;
@@ -566,6 +586,7 @@ class OrderController extends Controller
             $order->pancake_shop_id = $validatedData['pancake_shop_id'] ?? null;
             $order->pancake_page_id = $validatedData['pancake_page_id'] ?? null;
             $order->products_data = json_encode($pancakeItemsPayload);
+            $order->discount_amount = $request->discount_amount ?? 0;
             $order->save();
 
             // Create order items
@@ -613,17 +634,17 @@ class OrderController extends Controller
             return redirect()->route('orders.index')
                 ->with('success', 'Đơn hàng đã được tạo thành công.');
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error creating order: ' . $e->getMessage(), [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+        // } catch (\Exception $e) {
+        //     DB::rollBack();
+        //     Log::error('Error creating order: ' . $e->getMessage(), [
+        //         'error' => $e->getMessage(),
+        //         'trace' => $e->getTraceAsString()
+        //     ]);
 
-            return redirect()->back()
-                ->with('error', 'Có lỗi xảy ra khi tạo đơn hàng: ' . $e->getMessage())
-                ->withInput();
-        }
+        //     return redirect()->back()
+        //         ->with('error', 'Có lỗi xảy ra khi tạo đơn hàng: ' . $e->getMessage())
+        //         ->withInput();
+        // }
     }
 
     /**
@@ -631,13 +652,27 @@ class OrderController extends Controller
      */
     public function edit(Order $order)
     {
-        // Get all pancake pages with their shop_id for dynamic dropdown
-        $allPancakePages = PancakePage::select('id', 'name', 'pancake_shop_table_id as shop_id')->get()->groupBy('shop_id');
+        // Get all pancake pages with source info for proper mapping
+        $allPancakePages = PancakePage::select('id', 'name', 'platform', 'pancake_shop_table_id as shop_id')
+            ->whereNotNull('platform')
+            ->get()
+            ->map(function($page) {
+                $page->platform = trim(strtolower((string) $page->platform));
+                $page->name = trim((string) $page->name);
+                return $page;
+            })
+            ->groupBy('platform');
 
-        // Get active product sources
+        // Get active product sources and their pages
         $productSources = \App\Models\PancakeProductSource::where('is_active', true)
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->map(function($source) use ($allPancakePages) {
+                $source->name = trim((string) $source->name); // Keep original case for display
+                $lookupKey = strtolower($source->name);      // Use lowercase for matching with platform keys
+                $source->pages = $allPancakePages[$lookupKey] ?? collect();
+                return $source;
+            });
 
         $data = [
             'order' => $order,
@@ -646,8 +681,8 @@ class OrderController extends Controller
             'wards' => $order->district_code ? Ward::where('district_code', $order->district_code)->pluck('name', 'code') : collect(),
             'statuses' => Order::getAllStatuses(),
             'pancakeShops' => PancakeShop::pluck('name', 'id'),
-            'pancakePages' => $order->pancake_shop_id ? PancakePage::where('pancake_shop_table_id', $order->pancake_shop_id)->get() : collect(), // Current pages for selected shop
-            'allPancakePages' => $allPancakePages, // Pass all pages grouped by shop_id
+            'pancakePages' => $order->pancake_shop_id ? PancakePage::where('pancake_shop_table_id', $order->pancake_shop_id)->get() : collect(),
+            'allPancakePages' => $allPancakePages,
             'warehouses' => Warehouse::pluck('name', 'id'),
             'shippingProviders' => ShippingProvider::pluck('name', 'id'),
             'users' => User::whereNotNull('pancake_uuid')->orWhereNotNull('pancake_care_uuid')->get(),

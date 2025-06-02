@@ -34,18 +34,26 @@
                         </h3>
                     </div>
                     <div class="card-body">
-                    {{-- Product Source Selection --}}
-                    <div class="form-group">
-                        <label class="small font-weight-bold">Nguồn đơn hàng</label>
-                        <select name="source" class="form-control select2" data-placeholder="-- Chọn nguồn đơn --">
-                            <option value="">-- Chọn nguồn đơn --</option>
 
-                            @foreach($productSources as $source)
-                                <option value="{{old('source', $order->source) ?? $source->pancake_id }}" {{ $order->source == $source->pancake_id ? 'selected' : '' }}>
-                                    {{ $source->name }}
-                                </option>
-                            @endforeach
-                        </select>
+                    <div class="form-group">
+                        <label for="order_source_main">Nguồn đơn hàng <span class="text-danger">*</span></label>
+                        <div class="custom-source-dropdown">
+                            <button type="button" class="btn btn-default dropdown-toggle form-control text-left" id="sourceDropdownToggle">
+                                <span id="selectedSourceDisplay">-- Chọn nguồn đơn --</span>
+                            </button>
+                            <div class="dropdown-menu" id="sourceDropdownMenu" style="width: 100%; display: none;">
+                                {{-- Main sources will be populated here by JS --}}
+                            </div>
+                        </div>
+                        <input type="hidden" name="source" id="final_order_source" value="{{ old('source', $order->source) }}">
+                        <input type="hidden" name="source" id="final_order_source" value="{{ old('source', $order->source ?? '') }}">
+                        <input type="hidden" name="pancake_page_id" id="final_pancake_page_id" value="{{ old('pancake_page_id', $order->pancake_page_id ?? '') }}">
+                    </div>
+                    {{-- End Product Source Selection --}}
+
+                    {{-- Product Suggestions Container (ensure this ID is unique) --}}
+                    <div id="product_suggestions" class="position-absolute bg-white w-100" style="display:none; z-index: 1000; border: 1px solid #d1d3e2; border-radius: 0.35rem; box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15); max-height: 280px; overflow-y: auto;">
+                        <!-- Product suggestions will be populated here by JavaScript -->
                     </div>
 
                     <div id="items_container">
@@ -88,9 +96,6 @@
                                                         <i class="fas fa-search"></i>
                                                     </button>
                                                 </div>
-                                            </div>
-                                            <div id="product_suggestions" class="position-absolute bg-white w-100" style="display:none; z-index: 1000;">
-                                                <!-- Product suggestions will be populated here -->
                                             </div>
                                         </div>
                                         <div class="col-md-4">
@@ -327,47 +332,49 @@
                     <div class="card-body">
                         {{-- Livestream Order Selection --}}
                         <div class="form-group">
+                            @php
+                                $currentNotes = old('notes', $order->notes ?? '');
+                                $isLivestreamOrder = false;
+                                $liveSessionValue = old('live_session', '');
+                                $liveDateValue = old('live_date', '');
+
+                                if (preg_match('/LIVE\s*([1-3])\s+(\d{1,2}\/\d{1,2})/i', $currentNotes, $matches)) {
+                                    $isLivestreamOrder = true;
+                                    if (!$liveSessionValue) $liveSessionValue = 'LIVE' . $matches[1];
+                                    if (!$liveDateValue) {
+                                        $dateParts = explode('/', $matches[2]);
+                                        if (count($dateParts) == 2) {
+                                            $day = str_pad($dateParts[0], 2, '0', STR_PAD_LEFT);
+                                            $month = str_pad($dateParts[1], 2, '0', STR_PAD_LEFT);
+                                            $year = date('Y'); // Assume current year if not specified
+                                            $liveDateValue = "{$year}-{$month}-{$day}";
+                                        }
+                                    }
+                                }
+                            @endphp
                             <div class="custom-control custom-switch">
-                                <input type="checkbox" class="custom-control-input" id="is_livestream" name="is_livestream" value="1" {{ preg_match('/LIVE[1-3]\s+\d{2}\/\d{2}/', $order->notes ?? '') ? 'checked' : '' }}>
+                                <input type="checkbox" class="custom-control-input" id="is_livestream" name="is_livestream" value="1" {{ $isLivestreamOrder ? 'checked' : '' }}>
                                 <label class="custom-control-label" for="is_livestream">Đơn hàng livestream</label>
                             </div>
                         </div>
 
-                        <div id="livestream_details" style="display: {{ preg_match('/LIVE[1-3]\s+\d{2}\/\d{2}/', $order->notes ?? '') ? 'block' : 'none' }};">
+                        <div id="livestream_details" style="display: {{ $isLivestreamOrder ? 'block' : 'none' }};">
                             <div class="row">
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label class="small font-weight-bold">Ca live</label>
                                         <select class="form-control" id="live_session" name="live_session">
                                             <option value="">-- Chọn ca live --</option>
-                                            @php
-                                                $liveSession = '';
-                                                $liveDate = '';
-                                                if(preg_match('/LIVE[1-3]\s+\d{2}\/\d{2}/', $order->notes ?? '', $matches)) {
-                                                    $parts = explode(' ', $matches[0]);
-                                                    $liveSession = $parts[0];
-                                                    $liveDate = $parts[1];
-                                                }
-                                            @endphp
-                                            <option value="LIVE1" {{ $liveSession == 'LIVE1' ? 'selected' : '' }}>LIVE1</option>
-                                            <option value="LIVE2" {{ $liveSession == 'LIVE2' ? 'selected' : '' }}>LIVE2</option>
-                                            <option value="LIVE3" {{ $liveSession == 'LIVE3' ? 'selected' : '' }}>LIVE3</option>
+                                            <option value="LIVE1" {{ $liveSessionValue == 'LIVE1' ? 'selected' : '' }}>LIVE1</option>
+                                            <option value="LIVE2" {{ $liveSessionValue == 'LIVE2' ? 'selected' : '' }}>LIVE2</option>
+                                            <option value="LIVE3" {{ $liveSessionValue == 'LIVE3' ? 'selected' : '' }}>LIVE3</option>
                                         </select>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="form-group">
                                         <label class="small font-weight-bold">Ngày live</label>
-                                        @php
-                                            $formattedDate = '';
-                                            if($liveDate) {
-                                                $dateParts = explode('/', $liveDate);
-                                                if(count($dateParts) == 2) {
-                                                    $formattedDate = date('Y') . '-' . str_pad($dateParts[1], 2, '0', STR_PAD_LEFT) . '-' . str_pad($dateParts[0], 2, '0', STR_PAD_LEFT);
-                                                }
-                                            }
-                                        @endphp
-                                        <input type="date" class="form-control" id="live_date" name="live_date" value="{{ $formattedDate }}">
+                                        <input type="date" class="form-control" id="live_date" name="live_date" value="{{ $liveDateValue }}">
                                     </div>
                                 </div>
                             </div>
@@ -435,37 +442,7 @@
                             </select>
                         </div>
 
-                                    {{-- Pancake Shop --}}
-                                    <div class="form-group">
-                                        <label class="small font-weight-bold" for="pancake_shop_id">Pancake Shop</label>
-                                        <select name="pancake_shop_id" id="pancake_shop_id" class="form-control select2" data-placeholder="-- Chọn Shop Pancake --">
-                                            <option value="">-- Chọn Shop Pancake --</option>
-                                            @if(isset($pancakeShops))
-                                                @foreach($pancakeShops as $id => $name)
-                                                    <option value="{{ $id }}" {{ old('pancake_shop_id', $order->pancake_shop_id) == $id ? 'selected' : '' }}>{{ $name }}</option>
-                                                @endforeach
-                                            @endif
-                                        </select>
-                                    </div>
 
-                                    {{-- Pancake Page --}}
-                                    <div class="form-group">
-                                        <label class="small font-weight-bold" for="pancake_page_id">Pancake Page</label>
-                                        <select name="pancake_page_id" id="pancake_page_id" class="form-control select2" data-placeholder="-- Chọn Page (sau khi chọn Shop) --" {{ !$order->pancake_shop_id ? 'disabled' : '' }}>
-                                            <option value="">-- Chọn Page (sau khi chọn Shop) --</option>
-                                            @if(isset($pancakePages) && $order->pancake_shop_id)
-                                                @foreach($pancakePages as $page)
-                                                    <option value="{{ $page->id }}" {{ old('pancake_page_id', $order->pancake_page_id) == $page->id ? 'selected' : '' }}>{{ $page->name }}</option>
-                                                @endforeach
-                                            @endif
-                                        </select>
-                                    </div>
-
-                                    {{-- Post ID --}}
-                                    <div class="form-group mb-0">
-                                        <label class="small font-weight-bold" for="pancake_post_id">Post ID (Pancake)</label>
-                                        <input type="text" name="pancake_post_id" id="pancake_post_id" class="form-control" placeholder="Nhập Post ID từ Pancake (nếu có)" value="{{ old('pancake_post_id', $order->pancake_post_id) }}">
-                                    </div>
 
                                 </div>
                 </div>
@@ -907,6 +884,189 @@ textarea.form-control {
     font-weight: 600;
     margin: 0;
 }
+
+.custom-source-dropdown {
+    position: relative;
+}
+
+.custom-source-dropdown .dropdown-toggle {
+    background-color: #fff;
+    border: 1px solid #ced4da;
+    text-align: left;
+    width: 100%;
+    padding: 0.375rem 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.custom-source-dropdown .dropdown-toggle::after {
+    margin-left: 0.5rem;
+}
+
+.custom-source-dropdown .dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1001;
+    display: none;
+    min-width: 250px;
+    padding: 0;
+    margin: 0;
+    background-color: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.custom-source-dropdown .dropdown-menu.show {
+    display: flex;
+}
+
+.custom-source-dropdown .main-sources-list,
+.custom-source-dropdown .flyout-pages-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    min-width: 200px;
+}
+
+.custom-source-dropdown .main-sources-list {
+    border-right: 1px solid #e9ecef;
+    flex: 1;
+}
+
+.custom-source-dropdown .flyout-pages-list {
+    background-color: #f8f9fa;
+    flex: 1;
+}
+
+.custom-source-dropdown .source-item,
+.custom-source-dropdown .page-item {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.custom-source-dropdown .source-item:last-child,
+.custom-source-dropdown .page-item:last-child {
+    border-bottom: none;
+}
+
+.custom-source-dropdown .source-item:hover,
+.custom-source-dropdown .page-item:hover,
+.custom-source-dropdown .source-item.active,
+.custom-source-dropdown .page-item.active {
+    background-color: #e9ecef;
+}
+
+.custom-source-dropdown .source-item .has-flyout-indicator {
+    color: #6c757d;
+    font-size: 1.2em;
+    margin-left: 0.5rem;
+}
+
+.custom-source-dropdown .page-item.disabled {
+    color: #6c757d;
+    cursor: not-allowed;
+    background-color: #f8f9fa;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .custom-source-dropdown .dropdown-menu.show {
+        flex-direction: column;
+    }
+
+    .custom-source-dropdown .main-sources-list {
+        border-right: none;
+        border-bottom: 1px solid #e9ecef;
+    }
+}
+
+/* Update CSS section */
+.custom-source-dropdown {
+    position: relative;
+}
+
+.custom-source-dropdown .dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1001;
+    min-width: 250px;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    border: 1px solid #ced4da;
+    background-color: #fff;
+    padding: 0;
+}
+
+.custom-source-dropdown .dropdown-menu.show {
+    display: flex;
+}
+
+.custom-source-dropdown .main-sources-list,
+.custom-source-dropdown .flyout-pages-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    border-right: 1px solid #e9ecef;
+}
+
+.custom-source-dropdown .flyout-pages-list {
+    border-right: none;
+    min-width: 200px;
+}
+
+.custom-source-dropdown .main-sources-list .source-item,
+.custom-source-dropdown .flyout-pages-list .page-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.custom-source-dropdown .main-sources-list .source-item:last-child,
+.custom-source-dropdown .flyout-pages-list .page-item:last-child {
+    border-bottom: none;
+}
+
+.custom-source-dropdown .main-sources-list .source-item:hover,
+.custom-source-dropdown .flyout-pages-list .page-item:hover,
+.custom-source-dropdown .main-sources-list .source-item.active {
+    background-color: #f8f9fa;
+}
+
+.custom-source-dropdown .main-sources-list .source-item .has-flyout-indicator {
+    font-size: 0.8em;
+}
+
+#sourceDropdownToggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+#sourceDropdownToggle::after {
+    display: inline-block;
+    margin-left: .255em;
+    vertical-align: .255em;
+    content: "";
+    border-top: .3em solid;
+    border-right: .3em solid transparent;
+    border-bottom: 0;
+    border-left: .3em solid transparent;
+}
     </style>
 @endpush
 
@@ -923,13 +1083,229 @@ textarea.form-control {
         // Initialize Select2
         $('.select2').each(function() {
             $(this).select2({
-            theme: 'bootstrap4',
+                theme: 'bootstrap4',
                 width: '100%',
                 placeholder: $(this).attr('data-placeholder') || '-- Chọn --',
                 allowClear: $(this).prop('multiple') ? false : true
             });
         });
 
+        // Nguồn đơn hàng logic
+        let currentFlyoutPanel = null;
+        const $sourceDropdownToggle = $('#sourceDropdownToggle');
+        const $sourceDropdownMenu = $('#sourceDropdownMenu');
+        const $selectedSourceDisplay = $('#selectedSourceDisplay');
+        const $finalOrderSourceInput = $('#final_order_source');
+        const $finalPancakePageIdInput = $('#final_pancake_page_id');
+
+        let productSourcesData = @json($productSources ?? []);
+        const initialSourceId = '{{ old('source', $order->source) }}';
+        const initialPageId = '{{ old('pancake_page_id', $order->pancake_page_id) }}';
+
+        function buildMainSourcesList() {
+            let mainListHtml = '<ul class="main-sources-list">';
+            productSourcesData.forEach(source => {
+                const hasPages = source.pages && source.pages.length > 0;
+                const isSelected = String(source.pancake_id) === String(initialSourceId);
+                const displayName = source.parent_name ? `${source.parent_name} > ${source.name}` : source.name;
+                mainListHtml += `
+                    <li class="source-item ${isSelected ? 'active' : ''}"
+                        data-source-id="${source.pancake_id}"
+                        data-source-name="${source.name}"
+                        data-parent-name="${source.parent_name || ''}"
+                        data-has-pages="${hasPages}">
+                        ${displayName}
+                        ${hasPages ? '<span class="has-flyout-indicator">&rsaquo;</span>' : ''}
+                    </li>`;
+            });
+            mainListHtml += '</ul>';
+            $sourceDropdownMenu.html(mainListHtml);
+
+            // If there's a selected source with pages, show the flyout
+            if (initialSourceId) {
+                const selectedSource = productSourcesData.find(s => String(s.pancake_id) === String(initialSourceId));
+                if (selectedSource && selectedSource.pages && selectedSource.pages.length > 0) {
+                    const $selectedItem = $sourceDropdownMenu.find(`.source-item[data-source-id="${selectedSource.pancake_id}"]`);
+                    if ($selectedItem.length) {
+                        showFlyout($selectedItem[0], true); // true indicates this is initial load
+                    }
+                }
+            }
+        }
+
+        function showFlyout(mainSourceItem, isInitialLoad = false) {
+            const $mainSourceItem = $(mainSourceItem);
+            if (currentFlyoutPanel) {
+                currentFlyoutPanel.remove();
+                currentFlyoutPanel = null;
+            }
+            $sourceDropdownMenu.find('.source-item.active').removeClass('active');
+            $mainSourceItem.addClass('active');
+
+            const sourceId = $mainSourceItem.data('source-id');
+            const sourceName = $mainSourceItem.data('source-name');
+            const source = productSourcesData.find(s => String(s.pancake_id) === String(sourceId));
+
+            if (!source || !source.pages) return;
+
+            let flyoutHtml = '<ul class="flyout-pages-list">';
+            if (source.pages.length > 0) {
+                source.pages.forEach(page => {
+                    const isSelected = String(page.id) === String(initialPageId);
+                    flyoutHtml += `<li class="page-item ${isSelected ? 'active' : ''}"
+                                    data-page-id="${page.id}"
+                                    data-page-name="${page.name}"
+                                    data-parent-source-id="${sourceId}"
+                                    data-parent-source-name="${sourceName}">
+                                    ${page.name}
+                                </li>`;
+                });
+            } else {
+                flyoutHtml += `<li class="page-item disabled">Không có trang con cho ${sourceName}.</li>`;
+            }
+            flyoutHtml += '</ul>';
+
+            currentFlyoutPanel = $(flyoutHtml).appendTo($sourceDropdownMenu);
+
+            // If this is initial load and we have a selected page, update the display
+            if (isInitialLoad && initialPageId) {
+                const selectedPage = source.pages.find(p => String(p.id) === String(initialPageId));
+                if (selectedPage) {
+                    $selectedSourceDisplay.text(`${sourceName} > ${selectedPage.name}`);
+                }
+            }
+        }
+
+        function closeDropdown() {
+            if (currentFlyoutPanel) {
+                currentFlyoutPanel.remove();
+                currentFlyoutPanel = null;
+            }
+            $sourceDropdownMenu.removeClass('show').hide();
+            $sourceDropdownMenu.find('.source-item.active').removeClass('active');
+        }
+
+        function setInitialDisplay() {
+            if (!initialSourceId) {
+                $selectedSourceDisplay.text('-- Chọn nguồn đơn --');
+                return;
+            }
+
+            const source = productSourcesData.find(s => String(s.pancake_id) === String(initialSourceId));
+            if (!source) {
+                $selectedSourceDisplay.text('-- Chọn nguồn đơn --');
+                return;
+            }
+
+            // If source has no pages, just display source name
+            if (!source.pages || source.pages.length === 0) {
+                $selectedSourceDisplay.text(source.name);
+                $finalOrderSourceInput.val(initialSourceId);
+                $finalPancakePageIdInput.val('');
+                return;
+            }
+
+            // If source has pages and a page is selected
+            if (initialPageId) {
+                const page = source.pages.find(p => String(p.id) === String(initialPageId));
+                if (page) {
+                    $selectedSourceDisplay.text(`${source.name} > ${page.name}`);
+                    $finalOrderSourceInput.val(initialSourceId);
+                    $finalPancakePageIdInput.val(initialPageId);
+
+                    buildMainSourcesList();
+                    const $sourceItem = $sourceDropdownMenu.find(`.source-item[data-source-id="${initialSourceId}"]`);
+                    if ($sourceItem.length) {
+                        $sourceItem.addClass('active');
+                        showFlyout($sourceItem[0], true);
+                    }
+                } else {
+                    $selectedSourceDisplay.text(source.name);
+                    $finalOrderSourceInput.val(initialSourceId);
+                    $finalPancakePageIdInput.val('');
+                }
+            } else {
+                $selectedSourceDisplay.text(source.name);
+                $finalOrderSourceInput.val(initialSourceId);
+                $finalPancakePageIdInput.val('');
+            }
+        }
+
+        // Event Handlers
+        $sourceDropdownToggle.on('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const isVisible = $sourceDropdownMenu.hasClass('show');
+            if (isVisible) {
+                closeDropdown();
+            } else {
+                buildMainSourcesList();
+                $sourceDropdownMenu.css({
+                    top: '100%',
+                    left: 0,
+                    width: '100%',
+                    display: 'block'
+                }).addClass('show');
+            }
+        });
+
+        $sourceDropdownMenu.on('click', '.source-item', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const $this = $(this);
+            const sourceId = $this.data('source-id');
+            const sourceName = $this.data('source-name');
+            const hasPages = $this.data('has-pages') === true || String($this.data('has-pages')) === 'true';
+
+            if (hasPages) {
+                if ($this.hasClass('active') && currentFlyoutPanel) {
+                    currentFlyoutPanel.remove();
+                    currentFlyoutPanel = null;
+                    $this.removeClass('active');
+                    $selectedSourceDisplay.text(sourceName);
+                    $finalOrderSourceInput.val(sourceId);
+                    $finalPancakePageIdInput.val('');
+                } else {
+                    showFlyout(this);
+                }
+            } else {
+                $finalOrderSourceInput.val(sourceId);
+                $finalPancakePageIdInput.val('');
+                $selectedSourceDisplay.text(sourceName);
+                closeDropdown();
+            }
+        });
+
+        $sourceDropdownMenu.on('click', '.page-item', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if ($(this).hasClass('disabled')) return;
+
+            const $this = $(this);
+            const pageId = $this.data('page-id');
+            const pageName = $this.data('page-name');
+            const parentSourceId = $this.data('parent-source-id');
+            const parentSourceName = $this.data('parent-source-name');
+
+            $finalOrderSourceInput.val(parentSourceId);
+            $finalPancakePageIdInput.val(pageId);
+            $selectedSourceDisplay.text(`${parentSourceName} > ${pageName}`);
+            closeDropdown();
+        });
+
+        $(document).on('click', function(e) {
+            if (!$(e.target).closest('.custom-source-dropdown').length) {
+                closeDropdown();
+            }
+        });
+
+        // Initialize on page load
+        setInitialDisplay();
+
+        // Rest of your existing JavaScript code...
         let suggestionsInitialized = false;
         let suggestionBox;
 
@@ -1568,8 +1944,8 @@ textarea.form-control {
         function updateNotes(livestreamString) {
             let currentNotes = $('#notes').val();
 
-            // Xóa thông tin livestream cũ nếu có
-            currentNotes = currentNotes.replace(/LIVE[1-3]\s+\d{2}\/\d{2}(\n|$)/, '');
+            // Xóa thông tin livestream cũ nếu có (case-insensitive)
+            currentNotes = currentNotes.replace(/LIVE\s*[1-3]\s+\d{1,2}\/\d{1,2}(\n|$)/i, '');
 
             // Thêm thông tin livestream mới
             if(livestreamString) {
@@ -1728,6 +2104,10 @@ textarea.form-control {
                 $('#product_suggestions').slideUp(150);
             }
         });
+
+        // Build the sources list and set initial display
+        buildMainSourcesList();
+        setInitialDisplay();
     });
     </script>
 @endpush
