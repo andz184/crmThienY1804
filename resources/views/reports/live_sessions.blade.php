@@ -123,12 +123,7 @@
                     </li>
                 </ul>
 
-                <h5>Cập nhật dữ liệu:</h5>
-                <ul>
-                    <li>Dữ liệu được cập nhật tự động mỗi 5 phút</li>
-                    <li>Có thể làm mới thủ công bằng nút "Làm mới" trên giao diện</li>
-                    <li>Thời gian cập nhật cuối cùng được hiển thị ở góc phải màn hình</li>
-                </ul>
+
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
