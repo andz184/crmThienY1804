@@ -1,40 +1,42 @@
 @if($order)
 <style>
     .product-item-modal {
-        display: flex;
-        align-items: center;
-        margin-bottom: 15px;
-        padding-bottom: 15px;
-        border-bottom: 1px solid #eee;
+        background: #f8f9fa;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
     }
     .product-item-modal:last-child {
         margin-bottom: 0;
-        padding-bottom: 0;
-        border-bottom: none;
-    }
-    .product-image-modal {
-        width: 80px;
-        height: 80px;
-        object-fit: cover;
-        border-radius: 4px;
-        margin-right: 15px;
     }
     .product-details-modal {
-        flex-grow: 1;
+        width: 100%;
     }
     .product-name-modal {
         font-weight: bold;
+        font-size: 1.1em;
+        color: #2c3e50;
         display: block;
-        margin-bottom: 5px;
+        margin-bottom: 8px;
     }
     .product-variation-modal {
         font-size: 0.9em;
-        color: #555;
-        margin-bottom: 5px;
+        color: #6c757d;
+        margin-bottom: 8px;
+        padding-bottom: 8px;
+        border-bottom: 1px dashed #dee2e6;
     }
     .product-price-qty-modal {
-        font-size: 0.9em;
-        color: #333;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.95em;
+        color: #495057;
+    }
+    .product-subtotal {
+        font-weight: bold;
+        color: #28a745;
     }
 </style>
 
@@ -45,10 +47,10 @@
         <dd class="col-sm-8">{{ $order->order_code }}</dd>
 
         <dt class="col-sm-4">Tên khách hàng:</dt>
-        <dd class="col-sm-8">{{ $order->customer_name }}</dd>
+        <dd class="col-sm-8">{{ $order->bill_full_name }}</dd>
 
         <dt class="col-sm-4">Số điện thoại:</dt>
-        <dd class="col-sm-8">{{ $order->customer_phone }}</dd>
+        <dd class="col-sm-8">{{ $order->bill_phone_number }}</dd>
 
         <dt class="col-sm-4">Trạng thái:</dt>
         <dd class="col-sm-8"><span class="badge {{ $order->getStatusClass() }}">{{ $order->getStatusText() }}</span></dd>
@@ -60,7 +62,7 @@
         <dd class="col-sm-8">{{ $order->user->name ?? 'Chưa gán' }}</dd>
 
         <dt class="col-sm-4">Ngày tạo:</dt>
-        <dd class="col-sm-8">{{ $order->created_at->format('d/m/Y H:i:s') }}</dd>
+        <dd class="col-sm-8">{{ $order->inserted_at }}</dd>
 
         @if($order->address_full)
         <dt class="col-sm-4">Địa chỉ đầy đủ:</dt>
@@ -74,37 +76,50 @@
     </dl>
 
     {{-- Thông tin sản phẩm --}}
-    <h5 class="mt-4">Sản phẩm trong đơn</h5>
-    <div class="product-item-modal">
+    <h5 class="mt-4 mb-3">Sản phẩm trong đơn</h5>
+    @if($order->products_data)
         @php
-            $product = $order->productVariation->product ?? null;
-            $variation = $order->productVariation ?? null;
-            $imageUrl = $variation->image_url ?? $product->image_url ?? 'https://via.placeholder.com/80'; // Placeholder
+            $productsData = json_decode($order->products_data, true);
+            $totalItems = 0;
+            if(is_array($productsData)) {
+                foreach($productsData as $product) {
+                    $totalItems += $product['quantity'] ?? 0;
+                }
+            }
         @endphp
-        <img src="{{ $imageUrl }}" alt="{{ $product->name ?? 'Sản phẩm' }}" class="product-image-modal">
-        <div class="product-details-modal">
-            <span class="product-name-modal">{{ $order->product_name ?: ($product->name ?? 'N/A') }}</span>
-            @if($variation)
-                <div class="product-variation-modal">
-                    SKU: {{ $variation->sku ?? $order->variation_id ?? 'N/A' }}
-                    {{-- Ví dụ thêm nếu có attributes:
-                    @if($variation->attributes)
-                        @foreach($variation->attributes as $key => $value)
-                            | {{ ucfirst($key) }}: {{ $value }}
-                        @endforeach
-                    @endif
-                    --}}
-                </div>
-            @endif
-            <div class="product-price-qty-modal">
-                {{ number_format($order->price, 0, '.', ',') }}đ x {{ $order->quantity }}
+        @if(is_array($productsData) && count($productsData) > 0)
+            <div class="text-muted mb-2">
+                Tổng số sản phẩm: {{ count($productsData) }} ({{ $totalItems }} items)
             </div>
-        </div>
-    </div>
-    {{-- Nếu đơn hàng có thể có nhiều sản phẩm, bạn sẽ cần lặp qua chúng ở đây.
-         Hiện tại, cấu trúc order có vẻ như chỉ hỗ trợ một loại sản phẩm chính qua variation_id.
-         Nếu có bảng order_items, logic sẽ khác. --}}
-
+            @foreach($productsData as $product)
+                <div class="product-item-modal">
+                    <div class="product-details-modal">
+                        <span class="product-name-modal">{{ $product['variation_info']['name'] ?? 'N/A' }}</span>
+                        <div class="product-variation-modal">
+                            <strong>Mã SP:</strong> {{ $product['variation_id'] ?? 'N/A' }}
+                            @if(!empty($product['variation_info']['detail']))
+                                <span class="mx-2">|</span> {{ $product['variation_info']['detail'] }}
+                            @endif
+                        </div>
+                        <div class="product-price-qty-modal">
+                            <div>
+                                <span class="text-primary">{{ number_format($product['variation_info']['retail_price'] ?? 0, 0, '.', ',') }}đ</span>
+                                <span class="mx-2">×</span>
+                                <span>{{ $product['quantity'] ?? 1 }}</span>
+                            </div>
+                            <div class="product-subtotal">
+                                {{ number_format(($product['variation_info']['retail_price'] ?? 0) * ($product['quantity'] ?? 1), 0, '.', ',') }}đ
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endforeach
+        @else
+            <p>Không có thông tin sản phẩm.</p>
+        @endif
+    @else
+        <p>Không có thông tin sản phẩm.</p>
+    @endif
 
     {{-- Lịch sử cuộc gọi --}}
     <h5 class="mt-4">Lịch sử cuộc gọi ({{ $order->calls->count() }})</h5>

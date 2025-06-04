@@ -95,6 +95,11 @@
                             <label for="province">Tỉnh/Thành phố</label>
                             <select name="province" id="province" class="form-control select2 @error('province') is-invalid @enderror">
                                 <option value="">-- Chọn Tỉnh/Thành phố --</option>
+                                @foreach(\App\Models\Province::orderBy('name')->get() as $province)
+                                    <option value="{{ $province->code }}" {{ old('province', $customer->province) == $province->code ? 'selected' : '' }}>
+                                        {{ $province->name }}
+                                    </option>
+                                @endforeach
                             </select>
                             @error('province')
                                 <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
@@ -177,76 +182,77 @@ $(document).ready(function() {
     // Initialize Select2
     $('.select2').select2();
 
-    // Load provinces
-    $.get('/api/geo/provinces', function(response) {
-        const provinces = response.data;
-        let options = '<option value="">-- Chọn Tỉnh/Thành phố --</option>';
-        provinces.forEach(function(province) {
-            options += `<option value="${province.id}" ${province.id == '{{ old('province', $customer->province) }}' ? 'selected' : ''}>${province.name}</option>`;
-        });
-        $('#province').html(options);
-
-        // If province is selected, load districts
-        if ($('#province').val()) {
-            loadDistricts($('#province').val());
-        }
-    });
-
-    // Province change event
+    // Load districts when province changes
     $('#province').on('change', function() {
-        const provinceId = $(this).val();
-        if (provinceId) {
-            loadDistricts(provinceId);
+        const provinceCode = $(this).val();
+        if (provinceCode) {
+            loadDistricts(provinceCode);
         } else {
-            $('#district').html('<option value="">-- Chọn Quận/Huyện --</option>');
-            $('#ward').html('<option value="">-- Chọn Phường/Xã --</option>');
-            updateFullAddress();
+            resetLocationSelects('province');
         }
     });
 
-    // District change event
+    // Load wards when district changes
     $('#district').on('change', function() {
-        const districtId = $(this).val();
-        if (districtId) {
-            loadWards(districtId);
+        const districtCode = $(this).val();
+        if (districtCode) {
+            loadWards(districtCode);
         } else {
-            $('#ward').html('<option value="">-- Chọn Phường/Xã --</option>');
-            updateFullAddress();
+            resetLocationSelects('district');
         }
     });
 
-    // Ward and street_address change events
+    // Update full address when any address component changes
     $('#ward, #street_address').on('change', function() {
         updateFullAddress();
     });
 
-    function loadDistricts(provinceId) {
-        $.get(`/api/geo/districts?province_id=${provinceId}`, function(response) {
-            const districts = response.data;
-            let options = '<option value="">-- Chọn Quận/Huyện --</option>';
-            districts.forEach(function(district) {
-                options += `<option value="${district.id}" ${district.id == '{{ old('district', $customer->district) }}' ? 'selected' : ''}>${district.name}</option>`;
-            });
-            $('#district').html(options);
+    // Initial load of districts if province is selected
+    if ($('#province').val()) {
+        loadDistricts($('#province').val(), function() {
+            // After districts are loaded, set the selected district if it exists
+            if ('{{ $customer->district }}') {
+                $('#district').val('{{ $customer->district }}').trigger('change');
+            }
+        });
+    }
 
-            // If district is selected, load wards
-            if ($('#district').val()) {
-                loadWards($('#district').val());
+    function loadDistricts(provinceCode, callback) {
+        $.get('/api/districts?province_code=' + provinceCode, function(districts) {
+            let options = '<option value="">-- Chọn Quận/Huyện --</option>';
+            $.each(districts, function(code, name) {
+                options += `<option value="${code}">${name}</option>`;
+            });
+            $('#district').html(options).prop('disabled', false);
+            if (typeof callback === 'function') callback();
+        });
+    }
+
+    function loadWards(districtCode, callback) {
+        $.get('/api/wards?district_code=' + districtCode, function(wards) {
+            let options = '<option value="">-- Chọn Phường/Xã --</option>';
+            $.each(wards, function(code, name) {
+                options += `<option value="${code}">${name}</option>`;
+            });
+            $('#ward').html(options).prop('disabled', false);
+            if (typeof callback === 'function') callback();
+
+            // Set the selected ward if it exists
+            if ('{{ $customer->ward }}') {
+                $('#ward').val('{{ $customer->ward }}');
             }
             updateFullAddress();
         });
     }
 
-    function loadWards(districtId) {
-        $.get(`/api/geo/wards?district_id=${districtId}`, function(response) {
-            const wards = response.data;
-            let options = '<option value="">-- Chọn Phường/Xã --</option>';
-            wards.forEach(function(ward) {
-                options += `<option value="${ward.id}" ${ward.id == '{{ old('ward', $customer->ward) }}' ? 'selected' : ''}>${ward.name}</option>`;
-            });
-            $('#ward').html(options);
-            updateFullAddress();
-        });
+    function resetLocationSelects(fromLevel) {
+        if (fromLevel === 'province') {
+            $('#district').html('<option value="">-- Chọn Quận/Huyện --</option>').prop('disabled', true);
+            $('#ward').html('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', true);
+        } else if (fromLevel === 'district') {
+            $('#ward').html('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', true);
+        }
+        updateFullAddress();
     }
 
     function updateFullAddress() {

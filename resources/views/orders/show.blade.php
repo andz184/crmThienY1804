@@ -55,7 +55,7 @@
                                             <dd class="col-sm-8">{{ $order->customer_name }}</dd>
 
                                             <dt class="col-sm-4">Số điện thoại</dt>
-                                            <dd class="col-sm-8">{{ $order->customer_phone }}</dd>
+                                            <dd class="col-sm-8">{{ $order->bill_phone_number }}</dd>
 
                                             <dt class="col-sm-4">Email</dt>
                                             <dd class="col-sm-8">{{ $order->customer_email ?? 'N/A' }}</dd>
@@ -109,58 +109,56 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            @foreach($order->items as $item)
-                                            <tr>
-                                                <td>{{ $item->pancake_variant_id ?? $item->code }}</td>
-                                                <td>
-                                                    {{ $item->product_name ?? $item->name }}
-                                                    @php
-                                                        $variationDetail = null;
-                                                        $imageUrl = null;
-
-                                                        // Extract variation details and image from product_info if available
-                                                        if ($item->product_info) {
-                                                            $productInfo = is_string($item->product_info) ? json_decode($item->product_info, true) : $item->product_info;
-
-                                                            if (!empty($productInfo['processed_variation_info'])) {
-                                                                $variationInfo = $productInfo['processed_variation_info'];
-                                                                $variationDetail = $variationInfo['detail'] ?? null;
-
-                                                                if (!empty($variationInfo['images']) && is_array($variationInfo['images'])) {
-                                                                    $imageUrl = $variationInfo['images'][0] ?? null;
-                                                                }
-                                                            }
-                                                        }
-                                                    @endphp
-
-                                                    @if($variationDetail)
-                                                        <div><small class="text-muted">{{ $variationDetail }}</small></div>
-                                                    @endif
-
-                                                    @if($imageUrl)
-                                                        <div class="mt-2">
-                                                            <img src="{{ $imageUrl }}" alt="{{ $item->product_name }}" class="img-thumbnail" style="max-height: 80px;">
-                                                        </div>
-                                                    @endif
-                                                </td>
-                                                <td>{{ number_format($item->price ?? 0) }} VNĐ</td>
-                                                <td>{{ $item->quantity }}</td>
-                                                <td>{{ number_format(($item->price ?? 0) * $item->quantity) }} VNĐ</td>
-                                            </tr>
-                                            @endforeach
+                                            @if($order->products_data)
+                                                @php
+                                                    $productsData = json_decode($order->products_data, true);
+                                                    $totalAmount = 0;
+                                                @endphp
+                                                @if(is_array($productsData) && count($productsData) > 0)
+                                                    @foreach($productsData as $product)
+                                                        @php
+                                                            $price = $product['variation_info']['retail_price'] ?? 0;
+                                                            $quantity = $product['quantity'] ?? 1;
+                                                            $subtotal = $price * $quantity;
+                                                            $totalAmount += $subtotal;
+                                                        @endphp
+                                                        <tr>
+                                                            <td>{{ $product['variation_id'] ?? 'N/A' }}</td>
+                                                            <td>
+                                                                {{ $product['variation_info']['name'] ?? 'N/A' }}
+                                                                @if(!empty($product['variation_info']['detail']))
+                                                                    <br>
+                                                                    <small class="text-muted">{{ $product['variation_info']['detail'] }}</small>
+                                                                @endif
+                                                            </td>
+                                                            <td class="text-right">{{ number_format($price, 0, '.', ',') }}đ</td>
+                                                            <td class="text-center">{{ $quantity }}</td>
+                                                            <td class="text-right">{{ number_format($subtotal, 0, '.', ',') }}đ</td>
+                                                        </tr>
+                                                    @endforeach
+                                                @else
+                                                    <tr>
+                                                        <td colspan="5" class="text-center">Không có thông tin sản phẩm</td>
+                                                    </tr>
+                                                @endif
+                                            @else
+                                                <tr>
+                                                    <td colspan="5" class="text-center">Không có thông tin sản phẩm</td>
+                                                </tr>
+                                            @endif
                                         </tbody>
                                         <tfoot>
                                             <tr>
                                                 <th colspan="4" class="text-right">Tổng giá trị sản phẩm:</th>
-                                                <td>{{ number_format($order->items->sum(function($item) { return ($item->price ?? 0) * $item->quantity; })) }} VNĐ</td>
+                                                <td class="text-right">{{ number_format($totalAmount ?? 0, 0, '.', ',') }} VNĐ</td>
                                             </tr>
                                             <tr>
                                                 <th colspan="4" class="text-right">Phí vận chuyển:</th>
-                                                <td>{{ number_format($order->shipping_fee ?? 0) }} VNĐ</td>
+                                                <td class="text-right">{{ number_format($order->shipping_fee ?? 0, 0, '.', ',') }} VNĐ</td>
                                             </tr>
                                             <tr>
                                                 <th colspan="4" class="text-right">Tổng cộng:</th>
-                                                <td class="font-weight-bold">{{ number_format(($order->items->sum(function($item) { return ($item->price ?? 0) * $item->quantity; }) + ($order->shipping_fee ?? 0))) }} VNĐ</td>
+                                                <td class="text-right font-weight-bold">{{ number_format(($totalAmount ?? 0) + ($order->shipping_fee ?? 0), 0, '.', ',') }} VNĐ</td>
                                             </tr>
                                         </tfoot>
                                     </table>
@@ -180,21 +178,6 @@
                                                             <small class="text-muted ml-2">(Đơn được tạo từ Pancake)</small>
                                                         @else
                                                             <span class="text-muted">Không có</span>
-                                                        @endif
-                                                    </dd>
-
-                                                    <dt class="col-sm-5">Pancake Push Status</dt>
-                                                    <dd class="col-sm-7">
-                                                        @if($order->pancake_push_status === 'success' || $order->internal_status === 'Pushed to Pancake successfully.')
-                                                            <span class="badge badge-success">Đã đẩy thành công</span>
-                                                        @elseif($order->pancake_push_status === 'failed_stock')
-                                                            <span class="badge badge-danger">Lỗi tồn kho</span>
-                                                        @elseif($order->pancake_push_status === 'failed_other')
-                                                            <span class="badge badge-warning">Lỗi khác</span>
-                                                        @elseif($order->pancake_push_status)
-                                                            <span class="badge badge-secondary">{{ ucfirst(str_replace('_', ' ', $order->pancake_push_status)) }}</span>
-                                                        @else
-                                                            <span class="text-muted">Chưa đẩy</span>
                                                         @endif
                                                     </dd>
                                                 </dl>
@@ -234,14 +217,9 @@
                                             </div>
                                             <div class="col-md-6">
                                                 <dl class="row">
-                                                    <dt class="col-sm-5">Loại đơn hàng</dt>
+                                                    <dt class="col-sm-5">Ghi Chú</dt>
                                                     <dd class="col-sm-7">
-                                                        @if($order->is_livestream)
-                                                            <span class="badge badge-info">Livestream</span>
-                                                        @endif
-                                                        @if($order->is_live_shopping)
-                                                            <span class="badge badge-primary">Live Shopping</span>
-                                                        @endif
+                                                        {{ $order->notes ?? 'N/A' }}
                                                     </dd>
 
                                                     <dt class="col-sm-5">Phí vận chuyển</dt>
@@ -385,57 +363,7 @@
         </div>
     </div>
 
-    {{-- Order Items Section --}}
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-white py-3">
-            <h3 class="card-title m-0 font-weight-bold text-primary">
-                <i class="fas fa-boxes mr-2"></i>Sản phẩm trong đơn
-            </h3>
-        </div>
-        <div class="card-body p-0"> {{-- p-0 to remove padding if table is directly inside --}}
-            @if($order->items && $order->items->count() > 0)
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0" width="100%" cellspacing="0">
-                        <thead class="thead-light">
-                            <tr>
-                                <th class="pl-3">Tên sản phẩm</th>
-                                <th>Mã SP (Code)</th>
-                                <th class="text-center">Số lượng</th>
-                                <th class="text-right">Đơn giá</th>
-                                <th class="text-right pr-3">Thành tiền</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($order->items as $item)
-                            <tr>
-                                <td class="pl-3">
-                                    {{ $item->name ?? ($item->product_name ?? 'N/A') }}
-                                    @if($item->pancake_product_id || $item->pancake_variation_id)
-                                        <br><small class="text-muted">Pancake ID: {{ $item->pancake_product_id }} / {{ $item->pancake_variation_id }}</small>
-                                    @endif
-                                </td>
-                                <td>{{ $item->code ?? ($item->product_code ?? 'N/A') }}</td>
-                                <td class="text-center">{{ $item->quantity }}</td>
-                                <td class="text-right">{{ number_format($item->price, 0, ',', '.') }} đ</td>
-                                <td class="text-right pr-3">{{ number_format($item->price * $item->quantity, 0, ',', '.') }} đ</td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                        <tfoot class="bg-light font-weight-bold">
-                            <tr>
-                                <td colspan="4" class="text-right">Tổng giá trị sản phẩm:</td>
-                                <td class="text-right pr-3">{{ number_format($order->items->sum(function($item){ return $item->price * $item->quantity; }), 0, ',', '.') }} đ</td>
-                            </tr>
-                            {{-- You can add more totals like shipping, discount, grand total here if needed --}}
-                        </tfoot>
-                    </table>
-                </div>
-            @else
-                <div class="p-3">
-                    <p class="mb-0 text-muted">Không có sản phẩm nào trong đơn hàng này.</p>
-                </div>
-            @endif
-        </div>
+
     </div>
 
     {{-- Other sections like Call History etc. --}}

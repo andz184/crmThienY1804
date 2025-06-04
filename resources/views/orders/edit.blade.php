@@ -34,18 +34,15 @@
                         </h3>
                     </div>
                     <div class="card-body">
-
+                    {{-- Product Source Selection - New Structure --}}
                     <div class="form-group">
                         <label for="order_source_main">Nguồn đơn hàng <span class="text-danger">*</span></label>
                         <div class="custom-source-dropdown">
-                            <button type="button" class="btn btn-default dropdown-toggle form-control text-left" id="sourceDropdownToggle">
+                            <button type="button" class="btn btn-default dropdown-toggle w-100 text-left" id="sourceDropdownToggle">
                                 <span id="selectedSourceDisplay">-- Chọn nguồn đơn --</span>
                             </button>
-                            <div class="dropdown-menu" id="sourceDropdownMenu" style="width: 100%; display: none;">
-                                {{-- Main sources will be populated here by JS --}}
-                            </div>
+                            <div class="dropdown-menu custom-source-menu" id="sourceDropdownMenu"></div>
                         </div>
-                        <input type="hidden" name="source" id="final_order_source" value="{{ old('source', $order->source) }}">
                         <input type="hidden" name="source" id="final_order_source" value="{{ old('source', $order->source ?? '') }}">
                         <input type="hidden" name="pancake_page_id" id="final_pancake_page_id" value="{{ old('pancake_page_id', $order->pancake_page_id ?? '') }}">
                     </div>
@@ -442,7 +439,37 @@
                             </select>
                         </div>
 
+                                    {{-- Pancake Shop --}}
+                                    <div class="form-group">
+                                        <label class="small font-weight-bold" for="pancake_shop_id">Pancake Shop</label>
+                                        <select name="pancake_shop_id" id="pancake_shop_id" class="form-control select2" data-placeholder="-- Chọn Shop Pancake --">
+                                            <option value="">-- Chọn Shop Pancake --</option>
+                                            @if(isset($pancakeShops))
+                                                @foreach($pancakeShops as $id => $name)
+                                                    <option value="{{ $id }}" {{ old('pancake_shop_id', $order->pancake_shop_id) == $id ? 'selected' : '' }}>{{ $name }}</option>
+                                                @endforeach
+                                            @endif
+                                        </select>
+                                    </div>
 
+                                    {{-- Pancake Page --}}
+                                    <div class="form-group">
+                                        <label class="small font-weight-bold" for="pancake_page_id">Pancake Page</label>
+                                        <select name="pancake_page_id" id="pancake_page_id" class="form-control select2" data-placeholder="-- Chọn Page (sau khi chọn Shop) --" {{ !$order->pancake_shop_id ? 'disabled' : '' }}>
+                                            <option value="">-- Chọn Page (sau khi chọn Shop) --</option>
+                                            @if(isset($pancakePages) && $order->pancake_shop_id)
+                                                @foreach($pancakePages as $page)
+                                                    <option value="{{ $page->id }}" {{ old('pancake_page_id', $order->pancake_page_id) == $page->id ? 'selected' : '' }}>{{ $page->name }}</option>
+                                                @endforeach
+                                            @endif
+                                        </select>
+                                    </div>
+
+                                    {{-- Post ID --}}
+                                    <div class="form-group mb-0">
+                                        <label class="small font-weight-bold" for="pancake_post_id">Post ID (Pancake)</label>
+                                        <input type="text" name="pancake_post_id" id="pancake_post_id" class="form-control" placeholder="Nhập Post ID từ Pancake (nếu có)" value="{{ old('pancake_post_id', $order->pancake_post_id) }}">
+                                    </div>
 
                                 </div>
                 </div>
@@ -895,177 +922,95 @@ textarea.form-control {
     text-align: left;
     width: 100%;
     padding: 0.375rem 0.75rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
 }
 
 .custom-source-dropdown .dropdown-toggle::after {
-    margin-left: 0.5rem;
+    float: right;
+    margin-top: 8px;
 }
 
-.custom-source-dropdown .dropdown-menu {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 1001;
+.custom-source-menu {
     display: none;
-    min-width: 250px;
+    position: absolute;
+    width: 100%;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 1000;
     padding: 0;
     margin: 0;
     background-color: #fff;
-    border: 1px solid #ced4da;
+    border: 1px solid rgba(0, 0, 0, 0.15);
     border-radius: 0.25rem;
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
 }
 
-.custom-source-dropdown .dropdown-menu.show {
-    display: flex;
+.custom-source-menu.show {
+    display: block;
 }
 
-.custom-source-dropdown .main-sources-list,
-.custom-source-dropdown .flyout-pages-list {
+.main-sources-list {
     list-style: none;
     padding: 0;
     margin: 0;
-    max-height: 250px;
-    overflow-y: auto;
-    min-width: 200px;
 }
 
-.custom-source-dropdown .main-sources-list {
-    border-right: 1px solid #e9ecef;
-    flex: 1;
-}
-
-.custom-source-dropdown .flyout-pages-list {
-    background-color: #f8f9fa;
-    flex: 1;
-}
-
-.custom-source-dropdown .source-item,
-.custom-source-dropdown .page-item {
-    padding: 0.5rem 1rem;
+.source-item {
+    padding: 8px 16px;
     cursor: pointer;
+    position: relative;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #e9ecef;
 }
 
-.custom-source-dropdown .source-item:last-child,
-.custom-source-dropdown .page-item:last-child {
-    border-bottom: none;
+.source-item:hover {
+    background-color: #f8f9fa;
 }
 
-.custom-source-dropdown .source-item:hover,
-.custom-source-dropdown .page-item:hover,
-.custom-source-dropdown .source-item.active,
-.custom-source-dropdown .page-item.active {
+.source-item.active {
     background-color: #e9ecef;
 }
 
-.custom-source-dropdown .source-item .has-flyout-indicator {
-    color: #6c757d;
+.has-flyout-indicator {
+    margin-left: 8px;
     font-size: 1.2em;
-    margin-left: 0.5rem;
-}
-
-.custom-source-dropdown .page-item.disabled {
     color: #6c757d;
-    cursor: not-allowed;
-    background-color: #f8f9fa;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .custom-source-dropdown .dropdown-menu.show {
-        flex-direction: column;
-    }
-
-    .custom-source-dropdown .main-sources-list {
-        border-right: none;
-        border-bottom: 1px solid #e9ecef;
-    }
-}
-
-/* Update CSS section */
-.custom-source-dropdown {
-    position: relative;
-}
-
-.custom-source-dropdown .dropdown-menu {
-    display: none;
+.flyout-pages-list {
     position: absolute;
-    top: 100%;
-    left: 0;
-    z-index: 1001;
-    min-width: 250px;
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-    border: 1px solid #ced4da;
+    left: 100%;
+    top: 0;
+    width: 100%;
     background-color: #fff;
-    padding: 0;
-}
-
-.custom-source-dropdown .dropdown-menu.show {
-    display: flex;
-}
-
-.custom-source-dropdown .main-sources-list,
-.custom-source-dropdown .flyout-pages-list {
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 0.25rem;
     list-style: none;
     padding: 0;
     margin: 0;
-    max-height: 250px;
+    max-height: 300px;
     overflow-y: auto;
-    border-right: 1px solid #e9ecef;
 }
 
-.custom-source-dropdown .flyout-pages-list {
-    border-right: none;
-    min-width: 200px;
-}
-
-.custom-source-dropdown .main-sources-list .source-item,
-.custom-source-dropdown .flyout-pages-list .page-item {
-    padding: 8px 12px;
+.page-item {
+    padding: 8px 16px;
     cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #e9ecef;
 }
 
-.custom-source-dropdown .main-sources-list .source-item:last-child,
-.custom-source-dropdown .flyout-pages-list .page-item:last-child {
-    border-bottom: none;
-}
-
-.custom-source-dropdown .main-sources-list .source-item:hover,
-.custom-source-dropdown .flyout-pages-list .page-item:hover,
-.custom-source-dropdown .main-sources-list .source-item.active {
+.page-item:hover {
     background-color: #f8f9fa;
 }
 
-.custom-source-dropdown .main-sources-list .source-item .has-flyout-indicator {
-    font-size: 0.8em;
+.page-item.disabled {
+    color: #6c757d;
+    cursor: not-allowed;
 }
 
-#sourceDropdownToggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-#sourceDropdownToggle::after {
-    display: inline-block;
-    margin-left: .255em;
-    vertical-align: .255em;
-    content: "";
-    border-top: .3em solid;
-    border-right: .3em solid transparent;
-    border-bottom: 0;
-    border-left: .3em solid transparent;
+@media (max-width: 768px) {
+    .flyout-pages-list {
+        left: 0;
+        top: 100%;
+        width: 100%;
+    }
 }
     </style>
 @endpush
@@ -1083,229 +1028,13 @@ textarea.form-control {
         // Initialize Select2
         $('.select2').each(function() {
             $(this).select2({
-                theme: 'bootstrap4',
+            theme: 'bootstrap4',
                 width: '100%',
                 placeholder: $(this).attr('data-placeholder') || '-- Chọn --',
                 allowClear: $(this).prop('multiple') ? false : true
             });
         });
 
-        // Nguồn đơn hàng logic
-        let currentFlyoutPanel = null;
-        const $sourceDropdownToggle = $('#sourceDropdownToggle');
-        const $sourceDropdownMenu = $('#sourceDropdownMenu');
-        const $selectedSourceDisplay = $('#selectedSourceDisplay');
-        const $finalOrderSourceInput = $('#final_order_source');
-        const $finalPancakePageIdInput = $('#final_pancake_page_id');
-
-        let productSourcesData = @json($productSources ?? []);
-        const initialSourceId = '{{ old('source', $order->source) }}';
-        const initialPageId = '{{ old('pancake_page_id', $order->pancake_page_id) }}';
-
-        function buildMainSourcesList() {
-            let mainListHtml = '<ul class="main-sources-list">';
-            productSourcesData.forEach(source => {
-                const hasPages = source.pages && source.pages.length > 0;
-                const isSelected = String(source.pancake_id) === String(initialSourceId);
-                const displayName = source.parent_name ? `${source.parent_name} > ${source.name}` : source.name;
-                mainListHtml += `
-                    <li class="source-item ${isSelected ? 'active' : ''}"
-                        data-source-id="${source.pancake_id}"
-                        data-source-name="${source.name}"
-                        data-parent-name="${source.parent_name || ''}"
-                        data-has-pages="${hasPages}">
-                        ${displayName}
-                        ${hasPages ? '<span class="has-flyout-indicator">&rsaquo;</span>' : ''}
-                    </li>`;
-            });
-            mainListHtml += '</ul>';
-            $sourceDropdownMenu.html(mainListHtml);
-
-            // If there's a selected source with pages, show the flyout
-            if (initialSourceId) {
-                const selectedSource = productSourcesData.find(s => String(s.pancake_id) === String(initialSourceId));
-                if (selectedSource && selectedSource.pages && selectedSource.pages.length > 0) {
-                    const $selectedItem = $sourceDropdownMenu.find(`.source-item[data-source-id="${selectedSource.pancake_id}"]`);
-                    if ($selectedItem.length) {
-                        showFlyout($selectedItem[0], true); // true indicates this is initial load
-                    }
-                }
-            }
-        }
-
-        function showFlyout(mainSourceItem, isInitialLoad = false) {
-            const $mainSourceItem = $(mainSourceItem);
-            if (currentFlyoutPanel) {
-                currentFlyoutPanel.remove();
-                currentFlyoutPanel = null;
-            }
-            $sourceDropdownMenu.find('.source-item.active').removeClass('active');
-            $mainSourceItem.addClass('active');
-
-            const sourceId = $mainSourceItem.data('source-id');
-            const sourceName = $mainSourceItem.data('source-name');
-            const source = productSourcesData.find(s => String(s.pancake_id) === String(sourceId));
-
-            if (!source || !source.pages) return;
-
-            let flyoutHtml = '<ul class="flyout-pages-list">';
-            if (source.pages.length > 0) {
-                source.pages.forEach(page => {
-                    const isSelected = String(page.id) === String(initialPageId);
-                    flyoutHtml += `<li class="page-item ${isSelected ? 'active' : ''}"
-                                    data-page-id="${page.id}"
-                                    data-page-name="${page.name}"
-                                    data-parent-source-id="${sourceId}"
-                                    data-parent-source-name="${sourceName}">
-                                    ${page.name}
-                                </li>`;
-                });
-            } else {
-                flyoutHtml += `<li class="page-item disabled">Không có trang con cho ${sourceName}.</li>`;
-            }
-            flyoutHtml += '</ul>';
-
-            currentFlyoutPanel = $(flyoutHtml).appendTo($sourceDropdownMenu);
-
-            // If this is initial load and we have a selected page, update the display
-            if (isInitialLoad && initialPageId) {
-                const selectedPage = source.pages.find(p => String(p.id) === String(initialPageId));
-                if (selectedPage) {
-                    $selectedSourceDisplay.text(`${sourceName} > ${selectedPage.name}`);
-                }
-            }
-        }
-
-        function closeDropdown() {
-            if (currentFlyoutPanel) {
-                currentFlyoutPanel.remove();
-                currentFlyoutPanel = null;
-            }
-            $sourceDropdownMenu.removeClass('show').hide();
-            $sourceDropdownMenu.find('.source-item.active').removeClass('active');
-        }
-
-        function setInitialDisplay() {
-            if (!initialSourceId) {
-                $selectedSourceDisplay.text('-- Chọn nguồn đơn --');
-                return;
-            }
-
-            const source = productSourcesData.find(s => String(s.pancake_id) === String(initialSourceId));
-            if (!source) {
-                $selectedSourceDisplay.text('-- Chọn nguồn đơn --');
-                return;
-            }
-
-            // If source has no pages, just display source name
-            if (!source.pages || source.pages.length === 0) {
-                $selectedSourceDisplay.text(source.name);
-                $finalOrderSourceInput.val(initialSourceId);
-                $finalPancakePageIdInput.val('');
-                return;
-            }
-
-            // If source has pages and a page is selected
-            if (initialPageId) {
-                const page = source.pages.find(p => String(p.id) === String(initialPageId));
-                if (page) {
-                    $selectedSourceDisplay.text(`${source.name} > ${page.name}`);
-                    $finalOrderSourceInput.val(initialSourceId);
-                    $finalPancakePageIdInput.val(initialPageId);
-
-                    buildMainSourcesList();
-                    const $sourceItem = $sourceDropdownMenu.find(`.source-item[data-source-id="${initialSourceId}"]`);
-                    if ($sourceItem.length) {
-                        $sourceItem.addClass('active');
-                        showFlyout($sourceItem[0], true);
-                    }
-                } else {
-                    $selectedSourceDisplay.text(source.name);
-                    $finalOrderSourceInput.val(initialSourceId);
-                    $finalPancakePageIdInput.val('');
-                }
-            } else {
-                $selectedSourceDisplay.text(source.name);
-                $finalOrderSourceInput.val(initialSourceId);
-                $finalPancakePageIdInput.val('');
-            }
-        }
-
-        // Event Handlers
-        $sourceDropdownToggle.on('click', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const isVisible = $sourceDropdownMenu.hasClass('show');
-            if (isVisible) {
-                closeDropdown();
-            } else {
-                buildMainSourcesList();
-                $sourceDropdownMenu.css({
-                    top: '100%',
-                    left: 0,
-                    width: '100%',
-                    display: 'block'
-                }).addClass('show');
-            }
-        });
-
-        $sourceDropdownMenu.on('click', '.source-item', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            const $this = $(this);
-            const sourceId = $this.data('source-id');
-            const sourceName = $this.data('source-name');
-            const hasPages = $this.data('has-pages') === true || String($this.data('has-pages')) === 'true';
-
-            if (hasPages) {
-                if ($this.hasClass('active') && currentFlyoutPanel) {
-                    currentFlyoutPanel.remove();
-                    currentFlyoutPanel = null;
-                    $this.removeClass('active');
-                    $selectedSourceDisplay.text(sourceName);
-                    $finalOrderSourceInput.val(sourceId);
-                    $finalPancakePageIdInput.val('');
-                } else {
-                    showFlyout(this);
-                }
-            } else {
-                $finalOrderSourceInput.val(sourceId);
-                $finalPancakePageIdInput.val('');
-                $selectedSourceDisplay.text(sourceName);
-                closeDropdown();
-            }
-        });
-
-        $sourceDropdownMenu.on('click', '.page-item', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            if ($(this).hasClass('disabled')) return;
-
-            const $this = $(this);
-            const pageId = $this.data('page-id');
-            const pageName = $this.data('page-name');
-            const parentSourceId = $this.data('parent-source-id');
-            const parentSourceName = $this.data('parent-source-name');
-
-            $finalOrderSourceInput.val(parentSourceId);
-            $finalPancakePageIdInput.val(pageId);
-            $selectedSourceDisplay.text(`${parentSourceName} > ${pageName}`);
-            closeDropdown();
-        });
-
-        $(document).on('click', function(e) {
-            if (!$(e.target).closest('.custom-source-dropdown').length) {
-                closeDropdown();
-            }
-        });
-
-        // Initialize on page load
-        setInitialDisplay();
-
-        // Rest of your existing JavaScript code...
         let suggestionsInitialized = false;
         let suggestionBox;
 
@@ -2105,9 +1834,170 @@ textarea.form-control {
             }
         });
 
-        // Build the sources list and set initial display
-        buildMainSourcesList();
-        setInitialDisplay();
+        // Nguồn đơn hàng logic (for edit.blade.php) - NEW FLYOUT LOGIC
+        const $sourceDropdownToggleEdit = $('#sourceDropdownToggle');
+        const $sourceDropdownMenuEdit = $('#sourceDropdownMenu');
+        const $selectedSourceDisplayEdit = $('#selectedSourceDisplay');
+        const $finalOrderSourceInputEdit = $('#final_order_source');
+        const $finalPancakePageIdInputEdit = $('#final_pancake_page_id');
+
+        let productSourcesDataEdit = @json($productSources ?? []);
+        console.log('Product Sources Data:', productSourcesDataEdit); // Debug log
+
+        function buildMainSourcesListEdit() {
+            let mainListHtml = '<ul class="main-sources-list">';
+            if (Array.isArray(productSourcesDataEdit)) {
+                productSourcesDataEdit.forEach(source => {
+                    const hasPages = source.pages && source.pages.length > 0;
+                    mainListHtml += `
+                        <li class="source-item"
+                            data-source-id="${source.pancake_id}"
+                            data-source-name="${source.name}"
+                            data-has-pages="${hasPages}">
+                            ${source.name}
+                            ${hasPages ? '<span class="has-flyout-indicator">&rsaquo;</span>' : ''}
+                        </li>`;
+                });
+            }
+            mainListHtml += '</ul>';
+            $sourceDropdownMenuEdit.html(mainListHtml);
+        }
+
+        function showFlyoutEdit(mainSourceItem) {
+            if (currentFlyoutPanelEdit) {
+                currentFlyoutPanelEdit.remove();
+                currentFlyoutPanelEdit = null;
+            }
+            $sourceDropdownMenuEdit.find('.source-item.active').removeClass('active');
+            $(mainSourceItem).addClass('active');
+
+            const sourceId = $(mainSourceItem).data('source-id');
+            const sourceName = $(mainSourceItem).data('source-name');
+
+            const source = productSourcesDataEdit.find(s => String(s.pancake_id) === String(sourceId));
+            const pages = source && source.pages ? source.pages : [];
+
+            let flyoutHtml = '<ul class="flyout-pages-list">';
+            if (pages.length > 0) {
+                pages.forEach(page => {
+                    flyoutHtml += `<li class="page-item"
+                                        data-page-id="${page.id}"
+                                        data-page-name="${page.name}"
+                                        data-parent-source-id="${sourceId}"
+                                        data-parent-source-name="${sourceName}">
+                                        ${page.name}
+                                    </li>`;
+                });
+            } else {
+                flyoutHtml += `<li class="page-item disabled">Không có trang con cho ${sourceName}.</li>`;
+            }
+            flyoutHtml += '</ul>';
+            currentFlyoutPanelEdit = $(flyoutHtml).appendTo($sourceDropdownMenuEdit);
+            $sourceDropdownMenuEdit.addClass('show');
+        }
+
+        function closeDropdownEdit() {
+            if (currentFlyoutPanelEdit) {
+                currentFlyoutPanelEdit.remove();
+                currentFlyoutPanelEdit = null;
+            }
+            $sourceDropdownMenuEdit.removeClass('show').hide();
+            $sourceDropdownMenuEdit.find('.source-item.active').removeClass('active');
+        }
+
+        $sourceDropdownToggleEdit.on('click', function(e) {
+            e.stopPropagation();
+            if ($sourceDropdownMenuEdit.is(':visible')) {
+                closeDropdownEdit();
+            } else {
+                buildMainSourcesListEdit();
+                $sourceDropdownMenuEdit.css({
+                    top: $sourceDropdownToggleEdit.outerHeight() + 'px',
+                    left: 0,
+                    width: '100%',
+                    display: 'block'
+                }).addClass('show');
+            }
+        });
+
+        $sourceDropdownMenuEdit.on('click', '.source-item', function(e) {
+            e.stopPropagation();
+            const $this = $(this);
+            const sourceId = $this.data('source-id');
+            const sourceName = $this.data('source-name');
+            const hasPages = $this.data('has-pages') === true || String($this.data('has-pages')) === 'true';
+
+            if (hasPages) {
+                if ($this.hasClass('active') && currentFlyoutPanelEdit) {
+                    currentFlyoutPanelEdit.remove();
+                    currentFlyoutPanelEdit = null;
+                    $this.removeClass('active');
+                    $selectedSourceDisplayEdit.text(sourceName);
+                    $finalOrderSourceInputEdit.val(sourceId);
+                    $finalPancakePageIdInputEdit.val('');
+                } else {
+                    showFlyoutEdit(this);
+                }
+            } else {
+                $finalOrderSourceInputEdit.val(sourceId);
+                $finalPancakePageIdInputEdit.val('');
+                $selectedSourceDisplayEdit.text(sourceName);
+                closeDropdownEdit();
+            }
+        });
+
+        $sourceDropdownMenuEdit.on('click', '.page-item', function(e) {
+            e.stopPropagation();
+            if ($(this).hasClass('disabled')) return;
+
+            const $this = $(this);
+            const pageId = $this.data('page-id');
+            const pageName = $this.data('page-name');
+            const parentSourceId = $this.data('parent-source-id');
+            const parentSourceName = $this.data('parent-source-name');
+
+            $finalOrderSourceInputEdit.val(parentSourceId);
+            $finalPancakePageIdInputEdit.val(pageId);
+            $selectedSourceDisplayEdit.text(`${parentSourceName} > ${pageName}`);
+            closeDropdownEdit();
+        });
+
+        $(document).on('click', function(e) {
+            if (!$sourceDropdownToggleEdit.is(e.target) && $sourceDropdownToggleEdit.has(e.target).length === 0 &&
+                !$sourceDropdownMenuEdit.is(e.target) && $sourceDropdownMenuEdit.has(e.target).length === 0) {
+                closeDropdownEdit();
+            }
+        });
+
+        // Initial population based on old values or $order data for edit form
+        function setInitialDisplayEdit() {
+            const initialSourceId = $finalOrderSourceInputEdit.val();
+            const initialPancakePageId = $finalPancakePageIdInputEdit.val();
+
+            if (initialSourceId) {
+                const parentSource = productSourcesDataEdit.find(s => String(s.pancake_id) === String(initialSourceId));
+                if (parentSource) {
+                    if (initialPancakePageId && parentSource.pages && parentSource.pages.length > 0) {
+                        const page = parentSource.pages.find(p => String(p.id) === String(initialPancakePageId));
+                        if (page) {
+                            $selectedSourceDisplayEdit.text(`${parentSource.name} > ${page.name}`);
+                        } else {
+                            $selectedSourceDisplayEdit.text(parentSource.name);
+                        }
+                    } else {
+                        $selectedSourceDisplayEdit.text(parentSource.name);
+                    }
+                } else {
+                    $selectedSourceDisplayEdit.text('-- Chọn nguồn đơn --');
+                }
+            } else {
+                $selectedSourceDisplayEdit.text('-- Chọn nguồn đơn --');
+            }
+        }
+        setInitialDisplayEdit(); // Call on page load
+        // --- END OF NEW FLYOUT LOGIC ---
+
+        let suggestionsInitialized = false;
     });
     </script>
 @endpush

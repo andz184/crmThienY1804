@@ -318,7 +318,7 @@ class PancakeSyncController extends Controller
     protected function createOrderFromPancakeData(array $orderData)
     {
         // Tìm hoặc tạo khách hàng
-        $customer = null;
+            $customer = null;
         if (!empty($orderData['customer'])) {
             $customerData = $orderData['customer'];
 
@@ -333,15 +333,37 @@ class PancakeSyncController extends Controller
             }
 
             // Nếu vẫn không tìm thấy, tạo khách hàng mới
-            if (!$customer) {
+                if (!$customer) {
                 $customer = new \App\Models\Customer();
-                $customer->name = $customerData['name'] ?? '';
-                $customer->phone = $customerData['phone'] ?? '';
-                $customer->email = $customerData['email'] ?? '';
+                $customer->name = $customerData['bill_full_name'] ?? '';
+                $customer->phone = $customerData['bill_phone_number'] ?? '';
+                $customer->email = $customerData['customer_email'] ?? '';
                 $customer->pancake_id = $customerData['id'] ?? null;
                 // Xóa dòng này gây lỗi, column 'address' không tồn tại
                 // $customer->address = $customerData['address'] ?? '';
-                $customer->save();
+                $shippingAddress = $orderData['shipping_address'];
+            $customer->full_address = $shippingAddress['full_address'] ?? '';
+            $customer->province = $shippingAddress['province_id'] ?? $shippingAddress['province_code'] ?? null;
+            $customer->district = $shippingAddress['district_id'] ?? $shippingAddress['district_code'] ?? null;
+            $customer->ward = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
+            $customer->street_address = $shippingAddress['address'] ?? '';
+                    $customer->save();
+
+            // Cập nhật tổng số đơn và tổng chi tiêu
+            $aggregates = \App\Models\Order::where('customer_phone', $customer->phone)
+                ->selectRaw('COUNT(*) as total_orders, COALESCE(SUM(total_value), 0) as total_spent')
+                ->first();
+
+            $customer->total_orders_count = $aggregates->total_orders;
+            $customer->total_spent = $aggregates->total_spent;
+
+            $customer->save();
+
+            Log::info('Đã cập nhật thông tin khách hàng từ Pancake', [
+                'customer_id' => $customer->id,
+                'total_orders' => $customer->total_orders_count,
+                'total_spent' => $customer->total_spent
+            ]);
             }
         }
 
@@ -410,7 +432,7 @@ class PancakeSyncController extends Controller
                 $warehouseId = $warehouse->id;
                 $warehouseCode = $warehouse->code;
                 $pancakeWarehouseId = $warehouse->pancake_id;
-            } else {
+                } else {
                 // Lưu pancake_warehouse_id ngay cả khi không tìm thấy warehouse
                 $pancakeWarehouseId = $orderData['warehouse_id'];
             }
@@ -446,28 +468,28 @@ class PancakeSyncController extends Controller
         } else {
                 // Lưu pancake_shipping_provider_id ngay cả khi không tìm thấy provider
                 $pancakeShippingProviderId = $providerId;
+                }
             }
-        }
 
-        // Map trạng thái Pancake sang trạng thái nội bộ
-        $status = $this->mapPancakeStatus($orderData['status'] ?? 'pending');
+            // Map trạng thái Pancake sang trạng thái nội bộ
+            $status = $this->mapPancakeStatus($orderData['status'] ?? 'pending');
 
-        // Tạo đơn hàng mới
+            // Tạo đơn hàng mới
         $order = new \App\Models\Order();
-        $order->pancake_order_id = $orderData['id'] ?? null;
-        $order->order_code = $orderData['code'] ?? ('PCK-' . \Illuminate\Support\Str::random(8));
-        $order->customer_name = $orderData['customer']['name'] ?? ($customer ? $customer->name : '');
+            $order->pancake_order_id = $orderData['id'] ?? null;
+            $order->order_code = $orderData['code'] ?? ('PCK-' . \Illuminate\Support\Str::random(8));
+            $order->customer_name = $orderData['customer']['name'] ?? ($customer ? $customer->name : '');
         $order->customer_phone = $orderData['customer']['phone'] ?? ($customer ? $customer->phone : '');
-        $order->customer_email = $orderData['customer']['email'] ?? ($customer ? $customer->email : '');
-        $order->customer_id = $customer ? $customer->id : null;
+            $order->customer_email = $orderData['customer']['email'] ?? ($customer ? $customer->email : '');
+            $order->customer_id = $customer ? $customer->id : null;
         $product_data = $orderData['items'] ?? null;
         $order->products_data = json_encode($product_data);
-        $order->status = $status;
+            $order->status = $status;
         $order->post_id = $orderData['post_id'] ?? null;
-        $order->pancake_status = $orderData['status'] ?? '';
-        $order->internal_status = 'Imported from Pancake';
-        $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
-        $order->payment_method = $orderData['payment_method'] ?? 'cod';
+            $order->pancake_status = $orderData['status'] ?? '';
+            $order->internal_status = 'Imported from Pancake';
+            $order->shipping_fee = $orderData['shipping_fee'] ?? 0;
+            $order->payment_method = $orderData['payment_method'] ?? 'cod';
         $order->total_value = $orderData['total_price'] ?? 0;
         if (isset($orderData['bill_full_name']) || isset($orderData['bill_phone_number']) || isset($orderData['customer_name']) || isset($orderData['customer_phone']) || isset($orderData['customer_email'])) {
             // Handle flat customer data structure
@@ -498,8 +520,8 @@ class PancakeSyncController extends Controller
             }
         }
 
-        // Xử lý địa chỉ nếu có
-        if (!empty($orderData['shipping_address'])) {
+            // Xử lý địa chỉ nếu có
+            if (!empty($orderData['shipping_address'])) {
             $shippingAddress = $orderData['shipping_address'];
             $order->full_address = $shippingAddress['full_address'] ?? '';
             $order->province_code = $shippingAddress['province_id'] ?? $shippingAddress['province_code'] ?? null;
@@ -563,21 +585,21 @@ class PancakeSyncController extends Controller
         $order->created_by = \Illuminate\Support\Facades\Auth::check() ? \Illuminate\Support\Facades\Auth::id() : null;
 
         // Lưu thông tin người bán từ Pancake
-        if (!empty($orderData['assigning_seller_id'])) {
-            $order->assigning_seller_id = $orderData['assigning_seller_id'];
-            $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
+            if (!empty($orderData['assigning_seller_id'])) {
+                $order->assigning_seller_id = $orderData['assigning_seller_id'];
+                $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
             } else {
             // Nếu không có seller được gán, tự động phân phối đơn hàng
             $this->assignOrderToSalesStaff($order);
-        }
+            }
 
         // Lưu thời gian tạo đơn từ Pancake
         if (!empty($orderData['inserted_at'])) {
-            try {
+                try {
 
                 $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7)->format('Y-m-d H:i:s');
 
-            } catch (\Exception $e) {
+                } catch (\Exception $e) {
                 Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
             }
         }
@@ -652,17 +674,17 @@ class PancakeSyncController extends Controller
                 }
 
                 return;
+                }
             }
-        }
 
-        $order->save();
+            $order->save();
 
         // Tạo các item của đơn hàng với hỗ trợ cấu trúc nâng cao
-        if (!empty($orderData['items'])) {
+            if (!empty($orderData['items'])) {
             $updated = false;
 
             // Create new items from the data
-            foreach ($orderData['items'] as $item) {
+                foreach ($orderData['items'] as $item) {
                 // Check if item has components structure
                 if (!empty($item['components']) && is_array($item['components'])) {
                     foreach ($item['components'] as $component) {
@@ -723,13 +745,13 @@ class PancakeSyncController extends Controller
         return $order;
     }
 
-  /**
- * Update existing order from Pancake data
- *
- * @param Order $order
- * @param array $orderData
- * @return array
- */
+    /**
+     * Update existing order from Pancake data
+     *
+     * @param Order $order
+     * @param array $orderData
+     * @return array
+     */
 private function updateOrderFromPancake(Order $order, array $orderData)
 {
     try {
@@ -741,6 +763,41 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             'pancake_order_id' => $orderData['id'] ?? 'N/A',
             'keys' => array_keys($orderData)
         ]);
+
+        // if (!empty($orderData['customer'])) {
+        //     $customerData = $orderData['customer'];
+
+        //     // Tìm khách hàng theo Pancake ID
+        //     if (!empty($customerData['id'])) {
+        //         $customer = \App\Models\Customer::where('pancake_id', $customerData['id'])->first();
+        //     }
+
+        //     // Nếu không tìm thấy, thử tìm theo số điện thoại
+        //     if (!$customer && !empty($customerData['phone'])) {
+        //         $customer = \App\Models\Customer::where('phone', $customerData['phone'])->first();
+        //     }
+
+        //     // Nếu vẫn không tìm thấy, tạo khách hàng mới
+        //         if (!$customer) {
+        //         $customer = new \App\Models\Customer();
+        //         $customer->name = $customerData['name'] ?? '';
+        //         $customer->phone = $customerData['phone'] ?? '';
+        //         $customer->email = $customerData['email'] ?? '';
+        //         $customer->pancake_id = $customerData['id'] ?? null;
+        //         // Xóa dòng này gây lỗi, column 'address' không tồn tại
+        //         // $customer->address = $customerData['address'] ?? '';
+        //         $shippingAddress = $orderData['shipping_address'];
+        //     $customer->full_address = $shippingAddress['full_address'] ?? '';
+        //     $customer->province = $shippingAddress['province_id'] ?? $shippingAddress['province_code'] ?? null;
+        //     $customer->district = $shippingAddress['district_id'] ?? $shippingAddress['district_code'] ?? null;
+        //     $customer->ward = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
+        //     $customer->street_address = $shippingAddress['address'] ?? '';
+        //             $customer->save();
+        //     }
+        // }
+
+
+
 
         // Update basic order info
         $order->order_code = $orderData['code'] ?? $order->order_code;
@@ -824,27 +881,27 @@ private function updateOrderFromPancake(Order $order, array $orderData)
             $order->ward_code = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
             $order->street_address = $shippingAddress['address'] ?? null;
 
-                // Look up and update address names from the database
-                $this->updateAddressNames($order);
+            // Look up and update address names from the database
+            $this->updateAddressNames($order);
 
-                // Update seller information if available
-                if (!empty($orderData['assigning_seller_id'])) {
-                    $order->assigning_seller_id = $orderData['assigning_seller_id'];
-                    $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
-                } else if (empty($order->assigning_seller_id)) {
-                    // Nếu không có seller được gán, tự động phân phối đơn hàng
-                    $this->assignOrderToSalesStaff($order);
+            // Update seller information if available
+            if (!empty($orderData['assigning_seller_id'])) {
+                $order->assigning_seller_id = $orderData['assigning_seller_id'];
+                $order->assigning_seller_name = $orderData['assigning_seller_name'] ?? '';
+            } else if (empty($order->assigning_seller_id)) {
+                // Nếu không có seller được gán, tự động phân phối đơn hàng
+                $this->assignOrderToSalesStaff($order);
+            }
+
+            // Update Pancake insertion timestamp if available and not already set
+            if (!empty($orderData['inserted_at']) && empty($order->pancake_inserted_at)) {
+                try {
+                    $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7)->format('Y-m-d H:i:s');
+
+                } catch (\Exception $e) {
+                    Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
                 }
-
-                // Update Pancake insertion timestamp if available and not already set
-                if (!empty($orderData['inserted_at']) && empty($order->pancake_inserted_at)) {
-                    try {
-                        $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7)->format('Y-m-d H:i:s');
-
-                    } catch (\Exception $e) {
-                        Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
-                    }
-                }
+            }
 
             // Store the full shipping address info if the column exists
             if (Schema::hasColumn('orders', 'shipping_address_info')) {
@@ -877,282 +934,258 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                 $order->district_name = $orderData['district_name'] ?? null;
                 $order->ward_name = $orderData['ward_name'] ?? null;
 
-                    // Look up and update address names if codes are provided but names are missing
-                    if (($order->province_code && empty($order->province_name)) ||
-                        ($order->district_code && empty($order->district_name)) ||
-                        ($order->ward_code && empty($order->ward_name))) {
-                        $this->updateAddressNames($order);
-                    }
+                // Look up and update address names if codes are provided but names are missing
+                if (($order->province_code && empty($order->province_name)) ||
+                    ($order->district_code && empty($order->district_name)) ||
+                    ($order->ward_code && empty($order->ward_name))) {
+                    $this->updateAddressNames($order);
                 }
-            }
-
-            // Update shop và page
-            if (!empty($orderData['shop_id'])) {
-                $shop = \App\Models\PancakeShop::where('pancake_id', $orderData['shop_id'])->first();
-
-                if (!$shop && !empty($orderData['shop_name'])) {
-                    // Tạo shop mới nếu không tồn tại
-                    $shop = new \App\Models\PancakeShop();
-                    $shop->pancake_id = $orderData['shop_id'];
-                    $shop->name = $orderData['shop_name'];
-                    $shop->save();
-
-                    Log::info('Đã tạo shop mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
-                        'shop_id' => $shop->id,
-                        'pancake_id' => $orderData['shop_id'],
-                        'name' => $orderData['shop_name']
-                    ]);
-                }
-
-                if ($shop) {
-                    $order->pancake_shop_id = $shop->id;
-                }
-            }
-
-            if (!empty($orderData['page_id'])) {
-                $page = \App\Models\PancakePage::where('pancake_id', $orderData['page_id'])->first();
-
-                if (!$page && !empty($orderData['page_name'])) {
-                    // Tạo page mới nếu không tồn tại
-                    $page = new \App\Models\PancakePage();
-                    $page->pancake_id = $orderData['page_id'];
-                    $page->pancake_page_id = $orderData['page_id']; // Thêm dòng này để đảm bảo cả pancake_id và pancake_page_id đều được set
-                    $page->name = $orderData['page_name'];
-                    $page->pancake_shop_table_id = $order->pancake_shop_id; // Liên kết với shop
-                    $page->save();
-
-                    Log::info('Đã tạo page mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
-                        'page_id' => $page->id,
-                        'pancake_id' => $orderData['page_id'],
-                        'name' => $orderData['page_name']
-                    ]);
-                }
-
-                if ($page) {
-                    $order->pancake_page_id = $page->id;
-                }
-            }
-
-            // Cập nhật kho hàng
-            if (!empty($orderData['warehouse_id'])) {
-                $warehouse = \App\Models\Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
-
-                if (!$warehouse) {
-                    // Thử tìm theo code
-                    $warehouse = \App\Models\Warehouse::where('code', $orderData['warehouse_id'])->first();
-                }
-
-                // Nếu không tìm thấy và có thông tin kho, tạo kho mới
-                if (!$warehouse && !empty($orderData['warehouse_name'])) {
-                    $warehouse = new \App\Models\Warehouse();
-                    $warehouse->name = $orderData['warehouse_name'];
-                    $warehouse->code = 'WH-' . $orderData['warehouse_id'];
-                    $warehouse->pancake_id = $orderData['warehouse_id'];
-                    $warehouse->save();
-
-                    Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
-                        'warehouse_id' => $warehouse->id,
-                        'pancake_id' => $orderData['warehouse_id'],
-                        'name' => $orderData['warehouse_name']
-                    ]);
-                }
-
-                if ($warehouse) {
-                    $order->warehouse_id = $warehouse->id;
-                    $order->warehouse_code = $warehouse->code;
-                    $order->pancake_warehouse_id = $warehouse->pancake_id;
-                } else {
-                    // Lưu pancake_warehouse_id ngay cả khi không tìm thấy warehouse
-                    $order->pancake_warehouse_id = $orderData['warehouse_id'];
-                }
-            }
-
-            // Cập nhật đơn vị vận chuyển
-            if (!empty($orderData['partner']['partner_id'])) {
-                $providerId = $orderData['partner']['partner_id'];
-                $provider = \App\Models\ShippingProvider::where('pancake_id', $providerId)
-                    ->orWhere('pancake_partner_id', $providerId)
-                    ->first();
-
-                // Nếu không tìm thấy và có tên đơn vị vận chuyển, tạo mới
-                if (!$provider && !empty($orderData['shipping_provider_name'])) {
-                    $provider = new \App\Models\ShippingProvider();
-                    $provider->name = $orderData['shipping_provider_name'];
-                    $provider->pancake_id = $providerId;
-                    $provider->save();
-
-                    Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
-                        'provider_id' => $provider->id,
-                        'pancake_id' => $providerId,
-                        'name' => $orderData['shipping_provider_name']
-                    ]);
-                }
-
-                if ($provider) {
-                    $order->shipping_provider_id = $provider->id;
-                    $order->pancake_shipping_provider_id = $provider->pancake_id;
-                } else {
-                    // Lưu pancake_shipping_provider_id ngay cả khi không tìm thấy provider
-                    $order->pancake_shipping_provider_id = $providerId;
             }
         }
 
-                    // Update order items and variant revenues
-            if (!empty($orderData['items']) && is_array($orderData['items'])) {
-                // First, mark all existing items for potential deletion
-                $existingItemIds = $order->items->pluck('id')->toArray();
-                $updatedItemIds = [];
+        // Update shop và page
+        if (!empty($orderData['shop_id'])) {
+            $shop = \App\Models\PancakeShop::where('pancake_id', $orderData['shop_id'])->first();
 
-                foreach ($orderData['items'] as $itemData) {
-                    // Find or create order item
-                    $orderItem = $order->items()
-                        ->where('pancake_product_id', $itemData['product_id'])
-                        ->first();
+            if (!$shop && !empty($orderData['shop_name'])) {
+                // Tạo shop mới nếu không tồn tại
+                $shop = new \App\Models\PancakeShop();
+                $shop->pancake_id = $orderData['shop_id'];
+                $shop->name = $orderData['shop_name'];
+                $shop->save();
 
-                    if (!$orderItem) {
-                        $orderItem = new OrderItem();
-                        $orderItem->order_id = $order->id;
-                    }
+                Log::info('Đã tạo shop mới từ dữ liệu Pancake khi cập nhật đơn hàng', [
+                    'shop_id' => $shop->id,
+                    'pancake_id' => $orderData['shop_id'],
+                    'name' => $orderData['shop_name']
+                ]);
+            }
 
-                    // Update order item fields and handle variant revenue
-                    $orderItem = $this->setOrderItemFields($orderItem, $itemData);
-                    $updatedItemIds[] = $orderItem->id;
+            if ($shop) {
+                $order->pancake_shop_id = $shop->id;
+            }
+        }
+
+        if (!empty($orderData['page_id'])) {
+            $page = \App\Models\PancakePage::where('pancake_id', $orderData['page_id'])->first();
+
+            if (!$page && !empty($orderData['page_name'])) {
+                // Tạo page mới nếu không tồn tại
+                $page = new \App\Models\PancakePage();
+                $page->pancake_id = $orderData['page_id'];
+                $page->pancake_page_id = $orderData['page_id']; // Thêm dòng này để đảm bảo cả pancake_id và pancake_page_id đều được set
+                $page->name = $orderData['page_name'];
+                $page->pancake_shop_table_id = $order->pancake_shop_id; // Liên kết với shop
+                $page->save();
+            }
+
+            if ($page) {
+                $order->pancake_page_id = $page->id;
+            }
+        }
+
+        // Cập nhật kho hàng
+        if (!empty($orderData['warehouse_id'])) {
+            $warehouse = \App\Models\Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
+
+            if (!$warehouse) {
+                // Thử tìm theo code
+                $warehouse = \App\Models\Warehouse::where('code', $orderData['warehouse_id'])->first();
+            }
+
+            // Nếu không tìm thấy và có thông tin kho, tạo kho mới
+            if (!$warehouse && !empty($orderData['warehouse_name'])) {
+                $warehouse = new \App\Models\Warehouse();
+                $warehouse->name = $orderData['warehouse_name'];
+                $warehouse->code = 'WH-' . $orderData['warehouse_id'];
+                $warehouse->pancake_id = $orderData['warehouse_id'];
+                $warehouse->save();
+
+                Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake', [
+                    'warehouse_id' => $warehouse->id,
+                    'pancake_id' => $orderData['warehouse_id'],
+                    'name' => $orderData['warehouse_name']
+                ]);
+            }
+
+            if ($warehouse) {
+                $order->warehouse_id = $warehouse->id;
+                $order->warehouse_code = $warehouse->code;
+                $order->pancake_warehouse_id = $warehouse->pancake_id;
+            } else {
+                // Lưu pancake_warehouse_id ngay cả khi không tìm thấy warehouse
+                $order->pancake_warehouse_id = $orderData['warehouse_id'];
+            }
+        }
+
+        // Cập nhật đơn vị vận chuyển
+        if (!empty($orderData['partner']['partner_id'])) {
+            $providerId = $orderData['partner']['partner_id'];
+            $provider = \App\Models\ShippingProvider::where('pancake_id', $providerId)
+                ->orWhere('pancake_partner_id', $providerId)
+                ->first();
+
+            // Nếu không tìm thấy và có tên đơn vị vận chuyển, tạo mới
+            if (!$provider && !empty($orderData['shipping_provider_name'])) {
+                $provider = new \App\Models\ShippingProvider();
+                $provider->name = $orderData['shipping_provider_name'];
+                $provider->pancake_id = $providerId;
+                $provider->save();
+
+                Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake', [
+                    'provider_id' => $provider->id,
+                    'pancake_id' => $providerId,
+                    'name' => $orderData['shipping_provider_name']
+                ]);
+            }
+
+            if ($provider) {
+                $order->shipping_provider_id = $provider->id;
+                $order->pancake_shipping_provider_id = $provider->pancake_id;
+            } else {
+                // Lưu pancake_shipping_provider_id ngay cả khi không tìm thấy provider
+                $order->pancake_shipping_provider_id = $providerId;
+            }
+        }
+
+        // Update order items and variant revenues
+        if (!empty($orderData['items']) && is_array($orderData['items'])) {
+            // First, mark all existing items for potential deletion
+            $existingItemIds = $order->items->pluck('id')->toArray();
+            $updatedItemIds = [];
+
+            foreach ($orderData['items'] as $itemData) {
+                // Find or create order item
+                $orderItem = $order->items()
+                    ->where('pancake_product_id', $itemData['product_id'])
+                    ->first();
+
+                if (!$orderItem) {
+                    $orderItem = new OrderItem();
+                    $orderItem->order_id = $order->id;
                 }
 
-                // Remove items that no longer exist in the updated data
-                $itemsToDelete = array_diff($existingItemIds, $updatedItemIds);
-                if (!empty($itemsToDelete)) {
-                    // Delete variant revenues for removed items
-                    DB::table('variant_revenues')
-                        ->whereIn('order_item_id', $itemsToDelete)
-                        ->where('order_id', $order->id)
-                        ->delete();
+                // Update order item fields and handle variant revenue
+                $orderItem = $this->setOrderItemFields($orderItem, $itemData);
+                $updatedItemIds[] = $orderItem->id;
+            }
 
-                    // Delete the items themselves
-                    OrderItem::whereIn('id', $itemsToDelete)->delete();
+            // Remove items that no longer exist in the updated data
+            $itemsToDelete = array_diff($existingItemIds, $updatedItemIds);
+            if (!empty($itemsToDelete)) {
+                // Delete variant revenues for removed items
+                DB::table('variant_revenues')
+                    ->whereIn('order_item_id', $itemsToDelete)
+                    ->where('order_id', $order->id)
+                    ->delete();
 
-                    Log::info('Removed deleted items and their variant revenues', [
-                        'order_id' => $order->id,
-                        'deleted_item_ids' => $itemsToDelete
-                    ]);
+                // Delete the items themselves
+                OrderItem::whereIn('id', $itemsToDelete)->delete();
+
+                Log::info('Removed deleted items and their variant revenues', [
+                    'order_id' => $order->id,
+                    'deleted_item_ids' => $itemsToDelete
+                ]);
             }
         }
 
         // Update customer information if provided
-        if (!empty($orderData['customer'])) {
-            $customerData = $orderData['customer'];
-            $order->customer_name = $customerData['name'] ?? $order->customer_name;
+        // Phần 1 sẽ bị xóa và gộp các trường vào phần 2
 
-            // Handle phone numbers
-            if (!empty($customerData['phone'])) {
-                $order->customer_phone = $customerData['phone'];
-            } elseif (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
-                $order->customer_phone = $customerData['phone_numbers'][0];
+// Update customer information if provided
+if (!empty($orderData['customer'])) {
+    $customerData = $orderData['customer'];
+    $order->customer_name = $customerData['name'] ?? $order->customer_name;
+
+    // Update the associated customer if we can find them
+    if ($order->customer_id) {
+        $customer = Customer::find($order->customer_id);
+        if ($customer) {
+            // Update pancake_id if not already set
+            if (empty($customer->pancake_id) && !empty($customerData['id'])) {
+                $customer->pancake_id = $customerData['id'];
             }
 
-            // Handle email
-            if (!empty($customerData['email'])) {
-                $order->customer_email = $customerData['email'];
-            } elseif (!empty($customerData['emails']) && is_array($customerData['emails'])) {
+            // Basic information
+            $customer->name = $customerData['bill_full_name'] ?? '';
+            $customer->phone = $customerData['bill_phone_number'] ?? '';
+            $customer->email = $customerData['customer_email'] ?? '';
+
+            // Address information from shipping_address
+            if (!empty($orderData['shipping_address'])) {
+                $shippingAddress = $orderData['shipping_address'];
+                $customer->full_address = $shippingAddress['full_address'] ?? '';
+                $customer->province = $shippingAddress['province_id'] ?? $shippingAddress['province_code'] ?? null;
+                $customer->district = $shippingAddress['district_id'] ?? $shippingAddress['district_code'] ?? null;
+                $customer->ward = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
+                $customer->street_address = $shippingAddress['address'] ?? '';
+            }
+
+            // Handle multiple phone numbers
+            if (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
+                if (empty($customer->phone)) {
+                    $customer->phone = $customerData['phone_numbers'][0];
+                }
+                if (Schema::hasColumn('customers', 'phone_numbers')) {
+                    $customer->phone_numbers = json_encode($customerData['phone_numbers']);
+                }
+            }
+
+            // Handle multiple emails
+            if (!empty($customerData['emails']) && is_array($customerData['emails']) && empty($customer->email)) {
                 if (!empty($customerData['emails'][0])) {
-                    $order->customer_email = $customerData['emails'][0];
+                    $customer->email = $customerData['emails'][0];
+                }
+                if (Schema::hasColumn('customers', 'emails')) {
+                    $customer->emails = json_encode($customerData['emails']);
                 }
             }
 
-            // Update the associated customer if we can find them
-            if ($order->customer_id) {
-                $customer = Customer::find($order->customer_id);
-                if ($customer) {
-                    // Update pancake_id if not already set
-                    if (empty($customer->pancake_id) && !empty($customerData['id'])) {
-                        $customer->pancake_id = $customerData['id'];
-                    }
+            // Update other customer fields
+            $customer->gender = $customerData['gender'] ?? $customer->gender;
+            $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
 
-                    $customer->name = $customerData['name'] ?? $customer->name;
-
-                    // Handle phone
-                    if (!empty($customerData['phone'])) {
-                        $customer->phone = $customerData['phone'];
-                    } elseif (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
-                        // Keep existing phone as primary
-                        if (empty($customer->phone)) {
-                            $customer->phone = $customerData['phone_numbers'][0];
-                        }
-
-                        // Store all phone numbers
-                        if (Schema::hasColumn('customers', 'phone_numbers')) {
-                            $customer->phone_numbers = json_encode($customerData['phone_numbers']);
-                        }
-                    }
-
-                    // Handle email
-                    if (!empty($customerData['email'])) {
-                        $customer->email = $customerData['email'];
-                    } elseif (!empty($customerData['emails']) && is_array($customerData['emails']) && empty($customer->email)) {
-                        if (!empty($customerData['emails'][0])) {
-                            $customer->email = $customerData['emails'][0];
-                        }
-
-                        // Store all emails
-                        if (Schema::hasColumn('customers', 'emails')) {
-                            $customer->emails = json_encode($customerData['emails']);
-                        }
-                    }
-
-                    // Update other customer fields
-                    $customer->gender = $customerData['gender'] ?? $customer->gender;
-                    $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
-
-                    if (Schema::hasColumn('customers', 'fb_id')) {
-                        $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
-                    }
-
-                    if (Schema::hasColumn('customers', 'order_count')) {
-                        $customer->order_count = $customerData['order_count'] ?? $customer->order_count;
-                    }
-
-                    if (Schema::hasColumn('customers', 'succeeded_order_count')) {
-                        $customer->succeeded_order_count = $customerData['succeed_order_count'] ?? $customer->succeeded_order_count;
-                    }
-
-                    if (Schema::hasColumn('customers', 'returned_order_count')) {
-                        $customer->returned_order_count = $customerData['returned_order_count'] ?? $customer->returned_order_count;
-                    }
-
-                    if (Schema::hasColumn('customers', 'purchased_amount')) {
-                        $customer->purchased_amount = $customerData['purchased_amount'] ?? $customer->purchased_amount;
-                    }
-
-                    if (Schema::hasColumn('customers', 'customer_level')) {
-                        $customer->customer_level = $customerData['level'] ?? $customer->customer_level;
-                    }
-
-                    if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
-                        $customer->tags = json_encode($customerData['tags']);
-                    }
-
-                    if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
-                        $customer->conversation_tags = json_encode($customerData['conversation_tags']);
-                    }
-
-                    if (Schema::hasColumn('customers', 'reward_points')) {
-                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
-                    }
-
-                        // Update addresses if available - REMOVED address column that was causing errors
-                    if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
-                        $customer->addresses = json_encode($customerData['shop_customer_addresses']);
-                    }
-
-                    $customer->save();
-
-                    Log::info('Updated associated customer record', [
-                        'customer_id' => $customer->id,
-                        'order_id' => $order->id
-                    ]);
-                }
+            // Additional fields with schema check
+            if (Schema::hasColumn('customers', 'fb_id')) {
+                $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
             }
+            if (Schema::hasColumn('customers', 'order_count')) {
+                $customer->order_count = $customerData['order_count'] ?? $customer->order_count;
+            }
+            if (Schema::hasColumn('customers', 'succeeded_order_count')) {
+                $customer->succeeded_order_count = $customerData['succeed_order_count'] ?? $customer->succeeded_order_count;
+            }
+            if (Schema::hasColumn('customers', 'returned_order_count')) {
+                $customer->returned_order_count = $customerData['returned_order_count'] ?? $customer->returned_order_count;
+            }
+            if (Schema::hasColumn('customers', 'purchased_amount')) {
+                $customer->purchased_amount = $customerData['purchased_amount'] ?? $customer->purchased_amount;
+            }
+            if (Schema::hasColumn('customers', 'customer_level')) {
+                $customer->customer_level = $customerData['level'] ?? $customer->customer_level;
+            }
+            if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
+                $customer->tags = json_encode($customerData['tags']);
+            }
+            if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
+                $customer->conversation_tags = json_encode($customerData['conversation_tags']);
+            }
+            if (Schema::hasColumn('customers', 'reward_points')) {
+                $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
+            }
+            if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
+                $customer->addresses = json_encode($customerData['shop_customer_addresses']);
+            }
+
+            $customer->save();
+
+            Log::info('Updated associated customer record', [
+                'customer_id' => $customer->id,
+                'order_id' => $order->id
+            ]);
         }
+    }
+}
          if (isset($orderData['bill_full_name']) || isset($orderData['bill_phone_number']) || isset($orderData['customer_name']) || isset($orderData['customer_phone']) || isset($orderData['customer_email'])) {
             // Handle flat customer data structure
             $order->bill_full_name = $orderData['bill_full_name'] ?? ($orderData['customer_name'] ?? $order->customer_name);
@@ -1327,6 +1360,40 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         }
 
         $order->save();
+
+        // Cập nhật tổng số đơn và tổng chi tiêu của khách hàng
+        if ($order->customer_phone || $order->bill_phone_number) {
+            $phoneNumber = $order->customer_phone ?? $order->bill_phone_number;
+            $customer = \App\Models\Customer::where('phone', $phoneNumber)->first();
+
+            if ($customer) {
+                // Chỉ tính các đơn hàng có trạng thái thành công (status = completed hoặc pancake_status = 3)
+                $aggregates = \App\Models\Order::where(function($query) use ($customer) {
+                        $query->where('customer_phone', $customer->phone)
+                              ->orWhere('bill_phone_number', $customer->phone);
+                    })
+                    ->where(function($query) {
+                        $query->where('status', 'completed')
+                              ->orWhere('pancake_status', 3);
+                    })
+                    ->selectRaw('COUNT(*) as total_orders, COALESCE(SUM(total_value), 0) as total_spent')
+                    ->first();
+
+                $customer->total_orders_count = $aggregates->total_orders;
+                $customer->total_spent = $aggregates->total_spent;
+                $customer->save();
+
+                Log::info('Đã cập nhật thông tin khách hàng trong updateOrderFromPancake', [
+                    'customer_id' => $customer->id,
+                    'phone' => $customer->phone,
+                    'total_orders' => $customer->total_orders_count,
+                    'total_spent' => $customer->total_spent
+                ]);
+            }
+        }
+
+        $order->save();
+        DB::commit();
 
         return [
             'success' => true,
@@ -1724,8 +1791,8 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
 
 
-            $startTimestamp = strtotime('2025-05-01 00:00:00');
-            $endTimestamp = strtotime('2025-05-31 23:59:59');
+            // $startTimestamp = strtotime('2025-05-01 00:00:00');
+            // $endTimestamp = strtotime('2025-05-31 23:59:59');
 
             if ($startTimestamp) {
                 $apiParams['startDateTime'] = (string) $startTimestamp;
@@ -3669,4 +3736,4 @@ public function syncCategories(Request $request)
         }
     }
 
-}
+                    }

@@ -49,43 +49,19 @@ class CustomerController extends Controller
 
         $query = Customer::query();
 
-        // Apply quick filters
-        if ($request->has('quick_filter')) {
-            switch ($request->input('quick_filter')) {
-                case 'new':
-                    // Khách hàng mới (trong 30 ngày gần đây)
-                    $query->whereDate('created_at', '>=', now()->subDays(30));
-                    break;
-                case 'repeat':
-                    // Khách hàng mua lại (có nhiều hơn 1 đơn hàng)
-                    $query->where('total_orders_count', '>', 1);
-                    break;
-                case 'vip':
-                    // Khách VIP (căn cứ vào tag hoặc tổng chi tiêu)
-                    $query->where(function($q) {
-                        $q->whereJsonContains('tags', 'VIP')
-                          ->orWhere('total_spent', '>=', 5000000); // 5 triệu đồng
-                    });
-                    break;
-                case 'inactive':
-                    // Khách không hoạt động (không mua hàng trong 90 ngày)
-                    $query->whereDate('last_order_date', '<=', now()->subDays(90))
-                          ->orWhereNull('last_order_date');
-                    break;
-            }
-        }
-
+        // Apply search filter
         if ($request->filled('search')) {
-            $searchTerm = strtolower($request->input('search'));
-            $query->where(function($q) use ($searchTerm) {
-                $q->where('name', 'like', "%{$searchTerm}%")
-                  ->orWhereHas('phones', function($q) use ($searchTerm) {
-                      $q->where('phone_number', 'like', "%{$searchTerm}%");
-                  })
-                  ->orWhere('email', 'like', "%{$searchTerm}%");
+            $search = $request->input('search');
+            $query->where(function($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('email', 'like', "%{$search}%")
+                  ->orWhereHas('phones', function($q2) use ($search) {
+                      $q2->where('phone_number', 'like', "%{$search}%");
+                  });
             });
         }
 
+        // Apply date filters
         if ($request->filled('date_from')) {
             $query->whereDate('created_at', '>=', $request->input('date_from'));
         }
@@ -126,9 +102,10 @@ class CustomerController extends Controller
         $customers = $query->orderBy('created_at', 'desc')->paginate(15);
 
         if ($request->ajax()) {
+            $view = view('customers._table_body', compact('customers'))->render();
             return response()->json([
-                'table_html' => view('customers._customers_table_body', compact('customers'))->render(),
-                'pagination_html' => $customers->appends(request()->query())->links()->toHtml()
+                'html' => $view,
+                'pagination' => $customers->appends(request()->query())->links()->toHtml()
             ]);
         }
 
@@ -425,7 +402,7 @@ class CustomerController extends Controller
 
     public function syncFromOrders(Request $request)
     {
-        dd(1);
+
         // Increase execution time limit to 2 hours and memory limit to 1GB
         set_time_limit(7200);
         ini_set('memory_limit', '1024M');

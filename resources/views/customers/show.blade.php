@@ -30,22 +30,31 @@
                         <dd class="col-sm-7">{{ $customer->name }}</dd>
 
                         <dt class="col-sm-5">Số điện thoại</dt>
-                        <dd class="col-sm-7">{{ $customer->primary_phone }}</dd>
+                        <dd class="col-sm-7">{{ $customer->phone }}</dd>
 
                         <dt class="col-sm-5">Email</dt>
                         <dd class="col-sm-7">{{ $customer->email ?? 'N/A' }}</dd>
 
                         <dt class="col-sm-5">Địa chỉ đầy đủ</dt>
-                        <dd class="col-sm-7">{{ $customer->full_address }}</dd>
+                        <dd class="col-sm-7">
+                            @php
+                                $addressParts = [];
+                                if ($customer->street_address) $addressParts[] = $customer->street_address;
+                                if ($customer->ward) $addressParts[] = \App\Models\Ward::where('code', $customer->ward)->value('name') ?? $customer->ward;
+                                if ($customer->district) $addressParts[] = \App\Models\District::where('code', $customer->district)->value('name') ?? $customer->district;
+                                if ($customer->province) $addressParts[] = \App\Models\Province::where('code', $customer->province)->value('name') ?? $customer->province;
+                                echo !empty($addressParts) ? implode(', ', $addressParts) : 'N/A';
+                            @endphp
+                        </dd>
 
                         <dt class="col-sm-5">Tỉnh/Thành</dt>
-                        <dd class="col-sm-7">{{ $customer->province ?? 'N/A' }}</dd>
+                        <dd class="col-sm-7">{{ \App\Models\Province::where('code', $customer->province)->value('name') ?? 'N/A' }}</dd>
 
                         <dt class="col-sm-5">Quận/Huyện</dt>
-                        <dd class="col-sm-7">{{ $customer->district ?? 'N/A' }}</dd>
+                        <dd class="col-sm-7">{{ \App\Models\District::where('code', $customer->district)->value('name') ?? 'N/A' }}</dd>
 
                         <dt class="col-sm-5">Phường/Xã</dt>
-                        <dd class="col-sm-7">{{ $customer->ward ?? 'N/A' }}</dd>
+                        <dd class="col-sm-7">{{ \App\Models\Ward::where('code', $customer->ward)->value('name') ?? 'N/A' }}</dd>
 
                         <dt class="col-sm-5">Địa chỉ cụ thể</dt>
                         <dd class="col-sm-7">{{ $customer->street_address ?? 'N/A' }}</dd>
@@ -53,10 +62,21 @@
                         <hr class="my-2">
 
                         <dt class="col-sm-5">Đơn hàng đầu tiên</dt>
-                        <dd class="col-sm-7">{{ $customer->formatted_first_order_date }}</dd>
+                        <dd class="col-sm-7">
+                            @php
+                                $firstOrder = $customer->orders()->orderBy('pancake_inserted_at', 'asc')->first();
+                                echo isset($firstOrder->pancake_inserted_at) ? $firstOrder->pancake_inserted_at : 'N/A';
+
+                            @endphp
+                        </dd>
 
                         <dt class="col-sm-5">Đơn hàng cuối cùng</dt>
-                        <dd class="col-sm-7">{{ $customer->formatted_last_order_date }}</dd>
+                        <dd class="col-sm-7">
+                            @php
+                                $lastOrder = $customer->orders()->orderBy('pancake_inserted_at', 'desc')->first();
+                                echo isset($lastOrder->pancake_inserted_at) ? $lastOrder->pancake_inserted_at : 'N/A';
+                            @endphp
+                        </dd>
 
                         <dt class="col-sm-5">Tổng số đơn hàng</dt>
                         <dd class="col-sm-7">{{ $customer->total_orders_count }}</dd>
@@ -86,8 +106,6 @@
                 <strong>Tỉ lệ nhận đơn thành công:</strong>
                 {{ $customer->success_rate }}%
             </div>
-
-
         </div>
 
         <div class="col-md-7">
@@ -101,29 +119,60 @@
                                     <tr>
                                         <th>Mã ĐH</th>
                                         <th>Ngày tạo</th>
-                                        <th>Sản phẩm chính</th>
+                                        <th>Sản phẩm</th>
                                         <th>Tổng tiền</th>
                                         <th>Trạng thái</th>
                                         <th>Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach($customer->orders as $order)
+                                    @forelse($customer->orders as $order)
                                         <tr>
                                             <td>
-                                                <a href="{{ route('orders.show', $order) }}">{{ $order->order_code }}</a>
+                                                <a href="{{ route('orders.show', $order) }}">{{ $order->pancake_order_id ?? $order->order_code }}</a>
                                             </td>
-                                            <td>{{ $order->created_at->format('d/m/Y H:i') }}</td>
-                                            <td>{{ Str::limit($order->product_name ?? ($order->productVariation->product->name ?? 'N/A'), 30) }}</td>
-                                            <td>{{ number_format($order->total_value, 0, '.', ',') }}đ</td>
-                                            <td><span class="badge {{ $order->getStatusClass() }}">{{ $order->getStatusText() }}</span></td>
+                                            <td>{{ $order->pancake_inserted_at ? $order->pancake_inserted_at : $order->created_at }}</td>
                                             <td>
-                                                <button type="button" class="btn btn-xs btn-info view-order-btn" data-order-url="{{ route('orders.show', $order) }}" data-toggle="modal" data-target="#orderModal">
+                                                @if($order->products_data)
+                                                    @php
+                                                        $productsData = json_decode($order->products_data, true);
+                                                        if(is_array($productsData) && count($productsData) > 0) {
+                                                            $firstProduct = $productsData[0];
+                                                            echo $firstProduct['variation_info']['name'] ?? 'N/A';
+                                                            if (count($productsData) > 1) {
+                                                                echo ' (+' . (count($productsData) - 1) . ' SP khác)';
+                                                            }
+                                                        } else {
+                                                            echo 'N/A';
+                                                        }
+                                                    @endphp
+                                                @else
+                                                    N/A
+                                                @endif
+                                            </td>
+                                            <td>{{ number_format($order->total_value, 0, '.', ',') }}đ</td>
+                                            <td>
+                                                @if(is_numeric($order->pancake_status) && App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->exists())
+                                                    @php $pancakeStatus = App\Models\PancakeOrderStatus::where('status_code', $order->pancake_status)->first(); @endphp
+                                                    <span class="badge badge-{{ $pancakeStatus->color }}">{{ $pancakeStatus->name }}</span>
+                                                @else
+                                                    <span class="badge {{ $order->getStatusClass() }}">{{ $order->getStatusText() }}</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <button type="button" class="btn btn-xs btn-info view-order-btn"
+                                                        data-order-url="{{ route('orders.show', $order) }}"
+                                                        data-toggle="modal"
+                                                        data-target="#orderModal">
                                                     Xem ĐH
                                                 </button>
                                             </td>
                                         </tr>
-                                    @endforeach
+                                    @empty
+                                        <tr>
+                                            <td colspan="6" class="text-center">Không có đơn hàng nào cho khách hàng này.</td>
+                                        </tr>
+                                    @endforelse
                                 </tbody>
                             </table>
                         </div>

@@ -701,6 +701,7 @@ class OrderController extends Controller
     {
         $this->authorize('orders.edit');
 
+
         // Ensure customer_phone is available for validation
         if ($request->filled('billing_phone') && !$request->filled('customer_phone')) {
             $request->merge(['customer_phone' => $request->input('billing_phone')]);
@@ -869,7 +870,10 @@ class OrderController extends Controller
             $order->total_value = $totalValue;
             $order->products_data = json_encode($pancakeItemsPayload);
             $order->save();
-
+            if ($order->pancake_order_id) {
+                $pancakeSyncController = app(\App\Http\Controllers\PancakeSyncController::class);
+                $pancakeSyncController->updatePancakeOrder($order, $order->pancake_order_id);
+            }
             // Log the changes
             LogHelper::log('update', $order, $oldData, $order->fresh()->toArray());
 
