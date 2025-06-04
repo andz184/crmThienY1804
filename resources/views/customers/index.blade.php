@@ -126,7 +126,7 @@
                                 <td>
                                     <input type="checkbox" class="customer-checkbox" value="{{ $customer->id }}">
                                 </td>
-                                <td>{{ $customer->customer_code }}</td>
+                                <td>{{ $customer->pancake_id }}</td>
                                 <td>
                                     <a href="{{ route('customers.show', $customer->id) }}">{{ $customer->name }}</a>
                                 </td>

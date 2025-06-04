@@ -132,7 +132,7 @@
 
                 <div class="form-group">
                     <label for="full_address">Địa chỉ đầy đủ</label>
-                    <textarea name="full_address" id="full_address" class="form-control @error('full_address') is-invalid @enderror" rows="2" readonly></textarea>
+                    <textarea name="full_address" id="full_address" class="form-control @error('full_address') is-invalid @enderror" rows="2" readonly>{{ old('full_address') }}</textarea>
                     @error('full_address')
                         <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
                     @enderror
@@ -150,9 +150,12 @@
                 <div class="form-group">
                     <label for="tags">Tags</label>
                     <select name="tags[]" id="tags" class="form-control select2 @error('tags') is-invalid @enderror" multiple>
-                        <option value="VIP" {{ in_array('VIP', old('tags', [])) ? 'selected' : '' }}>VIP</option>
-                        <option value="Khách quen" {{ in_array('Khách quen', old('tags', [])) ? 'selected' : '' }}>Khách quen</option>
-                        <option value="Khách mới" {{ in_array('Khách mới', old('tags', [])) ? 'selected' : '' }}>Khách mới</option>
+                        @php
+                            $oldTags = old('tags', []);
+                        @endphp
+                        <option value="VIP" {{ in_array('VIP', $oldTags) ? 'selected' : '' }}>VIP</option>
+                        <option value="Khách quen" {{ in_array('Khách quen', $oldTags) ? 'selected' : '' }}>Khách quen</option>
+                        <option value="Khách mới" {{ in_array('Khách mới', $oldTags) ? 'selected' : '' }}>Khách mới</option>
                     </select>
                     @error('tags')
                         <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
@@ -168,52 +171,81 @@
     </div>
 </div>
 
+@push('css')
+<style>
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background-color: #007bff;
+    border-color: #006fe6;
+    color: #fff;
+    padding: 0 10px;
+    margin-top: 0.31rem;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: #fff;
+    margin-right: 5px;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: #fff;
+}
+</style>
+@endpush
+
 @push('js')
 <script>
 $(document).ready(function() {
-    // Initialize Select2
-    $('.select2').select2();
+    // Initialize Select2 with configurations
+    $('.select2').select2({
+        theme: 'bootstrap4',
+        width: '100%'
+    });
+
+    // Special configuration for tags
+    $('#tags').select2({
+        theme: 'bootstrap4',
+        width: '100%',
+        placeholder: 'Chọn tags',
+        allowClear: true,
+        tags: false
+    });
 
     // Load provinces
     $.get('/api/geo/provinces', function(response) {
         const provinces = response.data;
         let options = '<option value="">-- Chọn Tỉnh/Thành phố --</option>';
         provinces.forEach(function(province) {
-            options += `<option value="${province.id}">${province.name}</option>`;
+            const selected = province.code == '{{ old('province') }}' ? 'selected' : '';
+            options += `<option value="${province.code}" ${selected}>${province.name}</option>`;
         });
         $('#province').html(options);
+        
+        // If province is selected from old input, load districts
+        if ('{{ old('province') }}') {
+            loadDistricts('{{ old('province') }}');
+        }
     });
 
     // Province change event
     $('#province').on('change', function() {
-        const provinceId = $(this).val();
-        if (provinceId) {
-            $.get(`/api/geo/districts?province_id=${provinceId}`, function(response) {
-                const districts = response.data;
-                let options = '<option value="">-- Chọn Quận/Huyện --</option>';
-                districts.forEach(function(district) {
-                    options += `<option value="${district.id}">${district.name}</option>`;
-                });
-                $('#district').html(options);
-                $('#ward').html('<option value="">-- Chọn Phường/Xã --</option>');
-                updateFullAddress();
-            });
+        const provinceCode = $(this).val();
+        if (provinceCode) {
+            loadDistricts(provinceCode);
+        } else {
+            resetDistrict();
+            resetWard();
+            updateFullAddress();
         }
     });
 
     // District change event
     $('#district').on('change', function() {
-        const districtId = $(this).val();
-        if (districtId) {
-            $.get(`/api/geo/wards?district_id=${districtId}`, function(response) {
-                const wards = response.data;
-                let options = '<option value="">-- Chọn Phường/Xã --</option>';
-                wards.forEach(function(ward) {
-                    options += `<option value="${ward.id}">${ward.name}</option>`;
-                });
-                $('#ward').html(options);
-                updateFullAddress();
-            });
+        const districtCode = $(this).val();
+        if (districtCode) {
+            loadWards(districtCode);
+        } else {
+            resetWard();
+            updateFullAddress();
         }
     });
 
@@ -222,6 +254,46 @@ $(document).ready(function() {
         updateFullAddress();
     });
 
+    function loadDistricts(provinceCode) {
+        $('#district').prop('disabled', true).html('<option value="">Đang tải...</option>');
+        $.get(`/api/geo/districts?province_code=${provinceCode}`, function(response) {
+            const districts = response.data;
+            let options = '<option value="">-- Chọn Quận/Huyện --</option>';
+            districts.forEach(function(district) {
+                const selected = district.code == '{{ old('district') }}' ? 'selected' : '';
+                options += `<option value="${district.code}" ${selected}>${district.name}</option>`;
+            });
+            $('#district').prop('disabled', false).html(options);
+            
+            // If district is selected from old input, load wards
+            if ('{{ old('district') }}') {
+                loadWards('{{ old('district') }}');
+            }
+        });
+    }
+
+    function loadWards(districtCode) {
+        $('#ward').prop('disabled', true).html('<option value="">Đang tải...</option>');
+        $.get(`/api/geo/wards?district_code=${districtCode}`, function(response) {
+            const wards = response.data;
+            let options = '<option value="">-- Chọn Phường/Xã --</option>';
+            wards.forEach(function(ward) {
+                const selected = ward.code == '{{ old('ward') }}' ? 'selected' : '';
+                options += `<option value="${ward.code}" ${selected}>${ward.name}</option>`;
+            });
+            $('#ward').prop('disabled', false).html(options);
+            updateFullAddress();
+        });
+    }
+
+    function resetDistrict() {
+        $('#district').prop('disabled', false).html('<option value="">-- Chọn Quận/Huyện --</option>');
+    }
+
+    function resetWard() {
+        $('#ward').prop('disabled', false).html('<option value="">-- Chọn Phường/Xã --</option>');
+    }
+
     function updateFullAddress() {
         const street = $('#street_address').val();
         const ward = $('#ward option:selected').text();
@@ -229,7 +301,7 @@ $(document).ready(function() {
         const province = $('#province option:selected').text();
 
         let parts = [street, ward, district, province].filter(part =>
-            part && !['-- Chọn Phường/Xã --', '-- Chọn Quận/Huyện --', '-- Chọn Tỉnh/Thành phố --'].includes(part)
+            part && !['-- Chọn Phường/Xã --', '-- Chọn Quận/Huyện --', '-- Chọn Tỉnh/Thành phố --', 'Đang tải...'].includes(part)
         );
 
         $('#full_address').val(parts.join(', '));

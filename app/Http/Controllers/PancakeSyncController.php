@@ -322,49 +322,56 @@ class PancakeSyncController extends Controller
         if (!empty($orderData['customer'])) {
             $customerData = $orderData['customer'];
 
-            // Tìm khách hàng theo Pancake ID
+            // Tìm khách hàng theo Pancake ID hoặc số điện thoại
             if (!empty($customerData['id'])) {
                 $customer = \App\Models\Customer::where('pancake_id', $customerData['id'])->first();
             }
-
-            // Nếu không tìm thấy, thử tìm theo số điện thoại
             if (!$customer && !empty($customerData['phone'])) {
                 $customer = \App\Models\Customer::where('phone', $customerData['phone'])->first();
             }
 
-            // Nếu vẫn không tìm thấy, tạo khách hàng mới
-                if (!$customer) {
+            // Nếu không tìm thấy, tạo khách hàng mới
+            if (!$customer) {
                 $customer = new \App\Models\Customer();
-                $customer->name = $customerData['bill_full_name'] ?? '';
-                $customer->phone = $customerData['bill_phone_number'] ?? '';
-                $customer->email = $customerData['customer_email'] ?? '';
-                $customer->pancake_id = $customerData['id'] ?? null;
-                // Xóa dòng này gây lỗi, column 'address' không tồn tại
-                // $customer->address = $customerData['address'] ?? '';
+            }
+
+            // Cập nhật thông tin khách hàng
+            $customer->name = $customerData['bill_full_name'] ?? '';
+            $customer->phone = $customerData['bill_phone_number'] ?? '';
+            $customer->email = $customerData['customer_email'] ?? '';
+            $customer->pancake_id = $customerData['id'] ?? null;
+
+            if (!empty($orderData['shipping_address'])) {
                 $shippingAddress = $orderData['shipping_address'];
-            $customer->full_address = $shippingAddress['full_address'] ?? '';
-            $customer->province = $shippingAddress['province_id'] ?? $shippingAddress['province_code'] ?? null;
-            $customer->district = $shippingAddress['district_id'] ?? $shippingAddress['district_code'] ?? null;
-            $customer->ward = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
-            $customer->street_address = $shippingAddress['address'] ?? '';
-                    $customer->save();
-
-            // Cập nhật tổng số đơn và tổng chi tiêu
-            $aggregates = \App\Models\Order::where('customer_phone', $customer->phone)
-                ->selectRaw('COUNT(*) as total_orders, COALESCE(SUM(total_value), 0) as total_spent')
-                ->first();
-
-            $customer->total_orders_count = $aggregates->total_orders;
-            $customer->total_spent = $aggregates->total_spent;
+                $customer->full_address = $shippingAddress['full_address'] ?? '';
+                $customer->province = $shippingAddress['province_id'] ?? $shippingAddress['province_code'] ?? null;
+                $customer->district = $shippingAddress['district_id'] ?? $shippingAddress['district_code'] ?? null;
+                $customer->ward = $shippingAddress['commune_id'] ?? $shippingAddress['ward_code'] ?? null;
+                $customer->street_address = $shippingAddress['address'] ?? '';
+            }
 
             $customer->save();
 
-            Log::info('Đã cập nhật thông tin khách hàng từ Pancake', [
+            // Tính toán lại tổng đơn và tổng chi tiêu
+            $customerOrders = \App\Models\Order::where('bill_phone_number', $customer->phone)
+                ->where('bill_full_name', $customer->name)
+                ->where('pancake_status', 3) // Chỉ tính đơn thành công
+                ->get();
+
+            $totalOrders = $customerOrders->count();
+            $totalSpent = $customerOrders->sum('total_value');
+
+            $customer->total_orders_count = $totalOrders;
+            $customer->total_spent = $totalSpent;
+            $customer->save();
+
+            Log::info('Đã tạo/cập nhật thông tin khách hàng từ Pancake', [
                 'customer_id' => $customer->id,
-                'total_orders' => $customer->total_orders_count,
-                'total_spent' => $customer->total_spent
+                'phone' => $customer->phone,
+                'name' => $customer->name,
+                'total_orders' => $totalOrders,
+                'total_spent' => $totalSpent
             ]);
-            }
         }
 
         // Tìm hoặc tạo shop và page
@@ -798,7 +805,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
 
 
-
+        // dd($orderData);
         // Update basic order info
         $order->order_code = $orderData['code'] ?? $order->order_code;
         $order->status = $this->mapPancakeStatus($orderData['status'] ?? $order->status);
@@ -1094,12 +1101,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
 // Update customer information if provided
 if (!empty($orderData['customer'])) {
+   
     $customerData = $orderData['customer'];
     $order->customer_name = $customerData['name'] ?? $order->customer_name;
 
     // Update the associated customer if we can find them
     if ($order->customer_id) {
         $customer = Customer::find($order->customer_id);
+       
         if ($customer) {
             // Update pancake_id if not already set
             if (empty($customer->pancake_id) && !empty($customerData['id'])) {
@@ -1144,6 +1153,56 @@ if (!empty($orderData['customer'])) {
             // Update other customer fields
             $customer->gender = $customerData['gender'] ?? $customer->gender;
             $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
+
+
+
+                $phoneNumber = $order->bill_phone_number;
+                $customerName = $order->bill_full_name;
+           
+                $customer = \App\Models\Customer::where('phone', $phoneNumber)
+                                              ->where('name', $customerName)
+                                              ->first();
+                                            
+
+                if ($customer) {
+                    // Reset totals first
+                    $customer->total_orders_count = 0;
+                    $customer->total_spent = 0;
+                    $customer->save();
+                   
+                    $aggregates = \App\Models\Order::where('bill_phone_number', $phoneNumber)->where('bill_full_name', $customerName)->get();
+                   
+                    $totalOrders = 0;
+                    foreach ($aggregates as $item) {
+                        $totalOrders++;
+                    }
+                    
+                    $totalSpent = 0;
+                    foreach ($aggregates as $item) {
+                        $totalSpent += $item->total_value;
+                    }
+
+
+                    // if ($aggregates) {
+                        $customer->total_orders_count = $totalOrders;
+                        $customer->total_spent = $totalSpent;
+                        $customer->save();
+                        // if($customer->total_orders_count !== 0){
+                        //    dd($customer);
+                        // }
+
+                        Log::info('Đã cập nhật thông tin khách hàng trong updateOrderFromPancake', [
+                            'customer_id' => $customer->id,
+                            'phone' => $customer->phone,
+                            'name' => $customer->name,
+                            'order_id' => $order->id,
+                            'total_orders' => $customer->total_orders_count,
+                            'total_spent' => $customer->total_spent
+                        ]);
+                    // }
+                }
+
+
 
             // Additional fields with schema check
             if (Schema::hasColumn('customers', 'fb_id')) {
@@ -1362,35 +1421,7 @@ if (!empty($orderData['customer'])) {
         $order->save();
 
         // Cập nhật tổng số đơn và tổng chi tiêu của khách hàng
-        if ($order->customer_phone || $order->bill_phone_number) {
-            $phoneNumber = $order->customer_phone ?? $order->bill_phone_number;
-            $customer = \App\Models\Customer::where('phone', $phoneNumber)->first();
 
-            if ($customer) {
-                // Chỉ tính các đơn hàng có trạng thái thành công (status = completed hoặc pancake_status = 3)
-                $aggregates = \App\Models\Order::where(function($query) use ($customer) {
-                        $query->where('customer_phone', $customer->phone)
-                              ->orWhere('bill_phone_number', $customer->phone);
-                    })
-                    ->where(function($query) {
-                        $query->where('status', 'completed')
-                              ->orWhere('pancake_status', 3);
-                    })
-                    ->selectRaw('COUNT(*) as total_orders, COALESCE(SUM(total_value), 0) as total_spent')
-                    ->first();
-
-                $customer->total_orders_count = $aggregates->total_orders;
-                $customer->total_spent = $aggregates->total_spent;
-                $customer->save();
-
-                Log::info('Đã cập nhật thông tin khách hàng trong updateOrderFromPancake', [
-                    'customer_id' => $customer->id,
-                    'phone' => $customer->phone,
-                    'total_orders' => $customer->total_orders_count,
-                    'total_spent' => $customer->total_spent
-                ]);
-            }
-        }
 
         $order->save();
         DB::commit();

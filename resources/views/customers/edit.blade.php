@@ -31,7 +31,7 @@
                     <div class="col-md-6">
                         <div class="form-group">
                             <label for="phone">Số điện thoại <span class="text-danger">*</span></label>
-                            <input type="text" name="phone" id="phone" class="form-control @error('phone') is-invalid @enderror" value="{{ old('phone', $customer->primary_phone) }}" required>
+                            <input type="text" name="phone" id="phone" class="form-control @error('phone') is-invalid @enderror" value="{{ old('phone', $customer->phone) }}" required>
                             @error('phone')
                                 <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
                             @enderror
@@ -95,11 +95,6 @@
                             <label for="province">Tỉnh/Thành phố</label>
                             <select name="province" id="province" class="form-control select2 @error('province') is-invalid @enderror">
                                 <option value="">-- Chọn Tỉnh/Thành phố --</option>
-                                @foreach(\App\Models\Province::orderBy('name')->get() as $province)
-                                    <option value="{{ $province->code }}" {{ old('province', $customer->province) == $province->code ? 'selected' : '' }}>
-                                        {{ $province->name }}
-                                    </option>
-                                @endforeach
                             </select>
                             @error('province')
                                 <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
@@ -158,9 +153,12 @@
                 <div class="form-group">
                     <label for="tags">Tags</label>
                     <select name="tags[]" id="tags" class="form-control select2 @error('tags') is-invalid @enderror" multiple>
-                        <option value="VIP" {{ in_array('VIP', old('tags', $customer->tags ?? [])) ? 'selected' : '' }}>VIP</option>
-                        <option value="Khách quen" {{ in_array('Khách quen', old('tags', $customer->tags ?? [])) ? 'selected' : '' }}>Khách quen</option>
-                        <option value="Khách mới" {{ in_array('Khách mới', old('tags', $customer->tags ?? [])) ? 'selected' : '' }}>Khách mới</option>
+                        @php
+                            $customerTags = old('tags', is_array($customer->tags) ? $customer->tags : json_decode($customer->tags ?? '[]'));
+                        @endphp
+                        <option value="VIP" {{ in_array('VIP', $customerTags) ? 'selected' : '' }}>VIP</option>
+                        <option value="Khách quen" {{ in_array('Khách quen', $customerTags) ? 'selected' : '' }}>Khách quen</option>
+                        <option value="Khách mới" {{ in_array('Khách mới', $customerTags) ? 'selected' : '' }}>Khách mới</option>
                     </select>
                     @error('tags')
                         <span class="invalid-feedback" role="alert"><strong>{{ $message }}</strong></span>
@@ -176,83 +174,127 @@
     </div>
 </div>
 
+@push('css')
+<style>
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background-color: #007bff;
+    border-color: #006fe6;
+    color: #fff;
+    padding: 0 10px;
+    margin-top: 0.31rem;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: #fff;
+    margin-right: 5px;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: #fff;
+}
+</style>
+@endpush
+
 @push('js')
 <script>
 $(document).ready(function() {
-    // Initialize Select2
-    $('.select2').select2();
+    // Initialize Select2 with configurations
+    $('.select2').select2({
+        theme: 'bootstrap4',
+        width: '100%'
+    });
 
-    // Load districts when province changes
+    // Special configuration for tags
+    $('#tags').select2({
+        theme: 'bootstrap4',
+        width: '100%',
+        placeholder: 'Chọn tags',
+        allowClear: true,
+        tags: false
+    });
+
+    // Load provinces
+    $.get('/api/geo/provinces', function(response) {
+        const provinces = response.data;
+        let options = '<option value="">-- Chọn Tỉnh/Thành phố --</option>';
+        provinces.forEach(function(province) {
+            const selected = province.code == '{{ old('province', $customer->province) }}' ? 'selected' : '';
+            options += `<option value="${province.code}" ${selected}>${province.name}</option>`;
+        });
+        $('#province').html(options);
+        
+        // If province is selected, load districts
+        if ('{{ old('province', $customer->province) }}') {
+            loadDistricts('{{ old('province', $customer->province) }}');
+        }
+    });
+
+    // Province change event
     $('#province').on('change', function() {
         const provinceCode = $(this).val();
         if (provinceCode) {
             loadDistricts(provinceCode);
         } else {
-            resetLocationSelects('province');
+            resetDistrict();
+            resetWard();
+            updateFullAddress();
         }
     });
 
-    // Load wards when district changes
+    // District change event
     $('#district').on('change', function() {
         const districtCode = $(this).val();
         if (districtCode) {
             loadWards(districtCode);
         } else {
-            resetLocationSelects('district');
+            resetWard();
+            updateFullAddress();
         }
     });
 
-    // Update full address when any address component changes
+    // Ward and street_address change events
     $('#ward, #street_address').on('change', function() {
         updateFullAddress();
     });
 
-    // Initial load of districts if province is selected
-    if ($('#province').val()) {
-        loadDistricts($('#province').val(), function() {
-            // After districts are loaded, set the selected district if it exists
-            if ('{{ $customer->district }}') {
-                $('#district').val('{{ $customer->district }}').trigger('change');
-            }
-        });
-    }
-
-    function loadDistricts(provinceCode, callback) {
-        $.get('/api/districts?province_code=' + provinceCode, function(districts) {
+    function loadDistricts(provinceCode) {
+        $('#district').prop('disabled', true).html('<option value="">Đang tải...</option>');
+        $.get(`/api/geo/districts?province_code=${provinceCode}`, function(response) {
+            const districts = response.data;
             let options = '<option value="">-- Chọn Quận/Huyện --</option>';
-            $.each(districts, function(code, name) {
-                options += `<option value="${code}">${name}</option>`;
+            districts.forEach(function(district) {
+                const selected = district.code == '{{ old('district', $customer->district) }}' ? 'selected' : '';
+                options += `<option value="${district.code}" ${selected}>${district.name}</option>`;
             });
-            $('#district').html(options).prop('disabled', false);
-            if (typeof callback === 'function') callback();
+            $('#district').prop('disabled', false).html(options);
+            
+            // If district is selected, load wards
+            if ('{{ old('district', $customer->district) }}') {
+                loadWards('{{ old('district', $customer->district) }}');
+            }
         });
     }
 
-    function loadWards(districtCode, callback) {
-        $.get('/api/wards?district_code=' + districtCode, function(wards) {
+    function loadWards(districtCode) {
+        $('#ward').prop('disabled', true).html('<option value="">Đang tải...</option>');
+        $.get(`/api/geo/wards?district_code=${districtCode}`, function(response) {
+            const wards = response.data;
             let options = '<option value="">-- Chọn Phường/Xã --</option>';
-            $.each(wards, function(code, name) {
-                options += `<option value="${code}">${name}</option>`;
+            wards.forEach(function(ward) {
+                const selected = ward.code == '{{ old('ward', $customer->ward) }}' ? 'selected' : '';
+                options += `<option value="${ward.code}" ${selected}>${ward.name}</option>`;
             });
-            $('#ward').html(options).prop('disabled', false);
-            if (typeof callback === 'function') callback();
-
-            // Set the selected ward if it exists
-            if ('{{ $customer->ward }}') {
-                $('#ward').val('{{ $customer->ward }}');
-            }
+            $('#ward').prop('disabled', false).html(options);
             updateFullAddress();
         });
     }
 
-    function resetLocationSelects(fromLevel) {
-        if (fromLevel === 'province') {
-            $('#district').html('<option value="">-- Chọn Quận/Huyện --</option>').prop('disabled', true);
-            $('#ward').html('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', true);
-        } else if (fromLevel === 'district') {
-            $('#ward').html('<option value="">-- Chọn Phường/Xã --</option>').prop('disabled', true);
-        }
-        updateFullAddress();
+    function resetDistrict() {
+        $('#district').prop('disabled', false).html('<option value="">-- Chọn Quận/Huyện --</option>');
+    }
+
+    function resetWard() {
+        $('#ward').prop('disabled', false).html('<option value="">-- Chọn Phường/Xã --</option>');
     }
 
     function updateFullAddress() {
@@ -262,7 +304,7 @@ $(document).ready(function() {
         const province = $('#province option:selected').text();
 
         let parts = [street, ward, district, province].filter(part =>
-            part && !['-- Chọn Phường/Xã --', '-- Chọn Quận/Huyện --', '-- Chọn Tỉnh/Thành phố --'].includes(part)
+            part && !['-- Chọn Phường/Xã --', '-- Chọn Quận/Huyện --', '-- Chọn Tỉnh/Thành phố --', 'Đang tải...'].includes(part)
         );
 
         $('#full_address').val(parts.join(', '));
