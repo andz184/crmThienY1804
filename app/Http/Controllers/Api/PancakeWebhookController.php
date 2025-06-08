@@ -483,7 +483,7 @@ class PancakeWebhookController extends Controller
 
                     // Cập nhật điểm thưởng
                     if (Schema::hasColumn('customers', 'reward_points')) {
-                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
+                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points ?? 0;
                     }
 
                     // Cập nhật danh sách địa chỉ
@@ -570,7 +570,7 @@ class PancakeWebhookController extends Controller
 
                     // Cập nhật điểm thưởng
                     if (Schema::hasColumn('customers', 'reward_points')) {
-                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
+                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points ?? 0;
                     }
 
                     // Cập nhật danh sách địa chỉ

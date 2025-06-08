@@ -38,7 +38,7 @@
                             </div>
                             <div class="card-body">
                                 <div class="input-group mb-3">
-                                    <input type="text" class="form-control" id="webhookUrl" value="{{ $webhookUrl }}" readonly>
+                                    <input type="text" class="form-control" id="webhookUrl" value="{{ env('APP_URL').'/api/webhooks/pancake' }}" readonly>
                                     <div class="input-group-append">
                                         <button class="btn btn-outline-secondary copy-btn" type="button" data-clipboard-target="#webhookUrl">
                                             <i class="fas fa-copy"></i> Sao chép
