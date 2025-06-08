@@ -35,6 +35,7 @@ body {
     padding: 0;
     height: calc(100% - 60px);
     overflow-y: auto;
+    background-color: transparent !important;
 }
 
 .sidebar::-webkit-scrollbar {
@@ -57,6 +58,7 @@ body {
     height: 70px;
     display: flex;
     align-items: center;
+    background-color: transparent !important;
 }
 
 .brand-link .brand-image {
@@ -98,6 +100,7 @@ body {
     margin: 0;
     display: flex;
     flex-direction: column;
+    background-color: transparent !important;
 }
 
 .nav-sidebar .nav-treeview .nav-item {
@@ -406,4 +409,17 @@ body {
     margin-right: 0.75rem;
     text-align: center;
     width: 1.25rem;
+}
+
+[data-widget="treeview"] .nav-treeview {
+    background-color: transparent !important;
+}
+
+.brand-link {
+    background-color: transparent !important;
+    border-bottom: none !important;
+}
+
+.sidebar {
+    background-color: transparent !important;
 }
