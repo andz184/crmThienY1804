@@ -64,7 +64,7 @@ return [
     */
 
     'logo' => 'AnSha',
-    'logo_img' => 'vendor/adminlte/dist/img/AdminLTELogo.png',
+   'logo_img' => 'vendor/adminlte/dist/img/AdminLTELogo.png',
     'logo_img_class' => 'brand-image',
     'logo_img_xl' => null,
     'logo_img_xl_class' => 'brand-image-xs',
@@ -102,7 +102,7 @@ return [
     'auth_logo' => [
         'enabled' => false,
         'img' => [
-            'path' => 'vendor/adminlte/dist/img/AdminLTELogo.png',
+            'path' => 'images/logo.png',
             'alt' => 'Auth Logo',
             'class' => '',
             'width' => 50,
