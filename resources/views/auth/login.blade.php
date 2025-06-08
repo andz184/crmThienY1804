@@ -54,13 +54,13 @@
                 ĐĂNG NHẬP
             </button>
 
-            <div class="auth-links">
+            {{-- <div class="auth-links">
                 @if($password_reset_url)
                     <a href="{{ $password_reset_url }}">
                         {{ __('QUÊN MẬT KHẨU?') }}
                     </a>
                 @endif
-            </div>
+            </div> --}}
         </form>
     </div>
 
