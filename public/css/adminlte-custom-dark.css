@@ -52,7 +52,6 @@ body {
 
 /* Brand Logo */
 .brand-link {
-    background-color: transparent !important;
     border-bottom: none !important;
     padding: 1.25rem 1.5rem !important;
     height: 70px;
