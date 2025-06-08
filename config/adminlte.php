@@ -538,6 +538,11 @@ return [
                     'asset' => true,
                     'location' => 'css/adminlte-custom-dark.css',
                 ],
+                [
+                    'type' => 'js',
+                    'asset' => true,
+                    'location' => 'js/adminlte-custom.js',
+                ],
             ],
         ],
         'Select2' => [
