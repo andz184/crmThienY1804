@@ -78,13 +78,13 @@ return [
     | Tệp CSS tùy chỉnh này sẽ được tải trên tất cả các trang AdminLTE.
     |
     */
-    'files' => [
-        [
-            'type' => 'css',
-            'asset' => true, // true nếu tệp nằm trong thư mục public
-            'location' => 'css/adminlte-custom-dark.css',
-        ],
-    ],
+    // 'files' => [
+    //     [
+    //         'type' => 'css',
+    //         'asset' => true, // true nếu tệp nằm trong thư mục public
+    //         'location' => 'css/adminlte-custom-dark.css',
+    //     ],
+    // ],
 
     /*
     |--------------------------------------------------------------------------
@@ -212,7 +212,7 @@ return [
     'classes_content_wrapper' => '',
     'classes_content_header' => '',
     'classes_content' => '',
-    'classes_sidebar' => 'sidebar-dark-primary elevation-4',
+    'classes_sidebar' => 'elevation-4',
     'classes_sidebar_nav' => '',
     'classes_topnav' => 'navbar-dark navbar-light',
     'classes_topnav_nav' => 'navbar-expand',
@@ -517,6 +517,16 @@ return [
                     'type' => 'css',
                     'asset' => false,
                     'location' => '//cdn.datatables.net/1.10.19/css/dataTables.bootstrap4.min.css',
+                ],
+            ],
+        ],
+        'CustomCSS' => [
+            'active' => true,
+            'files' => [
+                [
+                    'type' => 'css',
+                    'asset' => true,
+                    'location' => 'css/adminlte-custom-dark.css',
                 ],
             ],
         ],
