@@ -122,7 +122,10 @@
                                 </h3>
                                 <!-- Filter Form -->
                                 <div class="card-tools">
-                                    <form method="GET" class="form-inline">
+                                    <a href="{{ route('admin.pancake.webhook-logs.index') }}" class="btn btn-sm btn-outline-primary mr-2" title="Xem tất cả log với bộ lọc chi tiết">
+                                        <i class="fas fa-list-ul"></i> Xem log chi tiết
+                                    </a>
+                                    <form method="GET" class="form-inline d-inline-block">
                                         <select name="status" class="form-control form-control-sm mr-2">
                                             <option value="">Tất cả trạng thái</option>
                                             <option value="success" {{ request('status') == 'success' ? 'selected' : '' }}>Thành công</option>

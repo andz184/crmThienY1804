@@ -400,6 +400,7 @@ class PancakeWebhookController extends Controller
             }
 
             // Map financial info
+            $order->pancake_inserted_at = $orderData['inserted_at'] ?? null;
             $order->shipping_fee = (float)($orderData['shipping_fee'] ?? 0);
             $order->transfer_money = (float)($orderData['transfer_money'] ?? 0);
             $order->total_value = $this->calculateOrderTotal($orderData);
@@ -650,6 +651,7 @@ class PancakeWebhookController extends Controller
                 }
             }
 
+            $order->pancake_inserted_at = $orderData['inserted_at'] ?? null;
             $order->campaign_id = $orderData['campaign_id'] ?? $order->campaign_id;
             $order->campaign_name = $orderData['campaign_name'] ?? $order->campaign_name;
 

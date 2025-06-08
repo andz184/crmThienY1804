@@ -65,7 +65,70 @@
             <div class="card-body">
                 <form method="GET" action="{{ Request::url() }}">
                     <div class="row">
-                        <!-- Form fields -->
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="form-group">
+                                <label for="search">Tìm kiếm</label>
+                                <input type="text" name="search" id="search" class="form-control" placeholder="Mã đơn, Tên, SĐT..." value="{{ request('search') }}">
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="form-group">
+                                <label for="status">Trạng thái đơn hàng</label>
+                                <select name="status" id="status" class="form-control select2">
+                                    <option value="">-- Tất cả trạng thái --</option>
+                                    @foreach($statuses as $status)
+                                        <option value="{{ $status }}" {{ request('status') == $status ? 'selected' : '' }}>
+                                            {{ ucfirst(str_replace('_', ' ', $status)) }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-lg-3 col-md-6 mb-3">
+                            <div class="form-group">
+                                <label for="system_status">Trạng thái hệ thống</label>
+                                <select name="system_status" id="system_status" class="form-control select2">
+                                     <option value="">-- Tất cả --</option>
+                                     <option value="PANCAKE_PUSH_OK" {{ request('system_status') == 'PANCAKE_PUSH_OK' ? 'selected' : '' }}>Đã đẩy Pancake OK</option>
+                                     <option value="PANCAKE_PUSH_FAILED_OUT_OF_STOCK" {{ request('system_status') == 'PANCAKE_PUSH_FAILED_OUT_OF_STOCK' ? 'selected' : '' }}>Lỗi Stock Pancake</option>
+                                     <option value="PANCAKE_PUSH_FAILED_OTHER" {{ request('system_status') == 'PANCAKE_PUSH_FAILED_OTHER' ? 'selected' : '' }}>Lỗi Đẩy Pancake Khác</option>
+                                     <option value="NOT_PUSHED_TO_PANCAKE" {{ request('system_status') == 'NOT_PUSHED_TO_PANCAKE' ? 'selected' : '' }}>Chưa đẩy Pancake</option>
+                                </select>
+                            </div>
+                        </div>
+                         @canany(['view orders', 'view team orders'])
+                         <div class="col-lg-3 col-md-6 mb-3">
+                             <div class="form-group">
+                                 <label for="user_id">Nhân viên Sale</label>
+                                 {{-- Để dropdown này hoạt động, bạn cần truyền biến $salesUsers (collection của User) từ Controller --}}
+                                 @if(isset($salesUsers))
+                                 <select name="user_id" id="user_id" class="form-control select2">
+                                     <option value="">-- Tất cả Sale --</option>
+                                     @foreach($salesUsers as $user)
+                                         <option value="{{ $user->id }}" {{ request('user_id') == $user->id ? 'selected' : '' }}>
+                                             {{ $user->name }}
+                                         </option>
+                                     @endforeach
+                                 </select>
+                                 @else
+                                  <input type="text" name="user_id" id="user_id" class="form-control" placeholder="Nhập ID nhân viên Sale" value="{{ request('user_id') }}">
+                                  <small class="form-text text-muted">Controller chưa cung cấp danh sách sales.</small>
+                                 @endif
+                             </div>
+                         </div>
+                         @endcanany
+                         <div class="col-lg-3 col-md-6 mb-3">
+                             <div class="form-group">
+                                 <label for="date_from">Từ ngày</label>
+                                 <input type="date" name="date_from" id="date_from" class="form-control" value="{{ request('date_from') }}">
+                             </div>
+                         </div>
+                         <div class="col-lg-3 col-md-6 mb-3">
+                             <div class="form-group">
+                                 <label for="date_to">Đến ngày</label>
+                                 <input type="date" name="date_to" id="date_to" class="form-control" value="{{ request('date_to') }}">
+                             </div>
+                         </div>
                     </div>
                     <div class="row">
                         <div class="col-12 mt-3 d-flex justify-content-end">
