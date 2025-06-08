@@ -1,5 +1,5 @@
 /* Sneat Dark Theme Variables */
-:root {
+.dark-mode {
     --primary: #696cff;
     --primary-hover: #5f61e6;
     --bs-body-bg: #232333;
@@ -17,42 +17,42 @@
 }
 
 /* Body Styles */
-body {
+.dark-mode {
     background-color: var(--bs-body-bg);
     color: var(--bs-body-color);
     font-family: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
 }
 
 /* Sidebar Styles */
-.main-sidebar {
+.dark-mode .main-sidebar {
     background-color: var(--sidebar-bg) !important;
     width: var(--sidebar-width) !important;
     box-shadow: 0 0.125rem 0.375rem 0 rgba(0, 0, 0, 0.12);
     border-right: none !important;
 }
 
-.sidebar {
+.dark-mode .sidebar {
     padding: 0;
     height: calc(100% - 60px);
     overflow-y: auto;
     background-color: transparent !important;
 }
 
-.sidebar::-webkit-scrollbar {
+.dark-mode .sidebar::-webkit-scrollbar {
     width: 5px;
 }
 
-.sidebar::-webkit-scrollbar-thumb {
+.dark-mode .sidebar::-webkit-scrollbar-thumb {
     background-color: rgba(255, 255, 255, 0.2);
     border-radius: 10px;
 }
 
-.sidebar::-webkit-scrollbar-track {
+.dark-mode .sidebar::-webkit-scrollbar-track {
     background-color: transparent;
 }
 
 /* Brand Logo */
-.brand-link {
+.dark-mode .brand-link {
     border-bottom: none !important;
     padding: 1.25rem 1.5rem !important;
     height: 70px;
@@ -61,13 +61,13 @@ body {
     background-color: transparent !important;
 }
 
-.brand-link .brand-image {
+.dark-mode .brand-link .brand-image {
     float: none;
     max-height: 36px;
     margin: 10px !important;
 }
 
-.brand-link .brand-text {
+.dark-mode .brand-link .brand-text {
     color: #fff;
     font-weight: 600;
     font-size: 1.375rem;
@@ -75,18 +75,18 @@ body {
 }
 
 /* Nav Items */
-.nav-sidebar {
+.dark-mode .nav-sidebar {
     padding: 0 0.75rem;
 }
 
-.nav-sidebar > .nav-item > .nav-link {
+.dark-mode .nav-sidebar > .nav-item > .nav-link {
     padding: 0.625rem 1rem;
     margin: 0.125rem 0;
     border-radius: 0.375rem;
 }
 
 /* Nav Icons */
-.nav-sidebar .nav-link i {
+.dark-mode .nav-sidebar .nav-link i {
     font-size: 1.25rem;
     margin-right: 0.75rem;
     width: 1.25rem;
@@ -95,7 +95,7 @@ body {
 }
 
 /* Nav Treeview */
-.nav-sidebar .nav-treeview {
+.dark-mode .nav-sidebar .nav-treeview {
     padding: 0;
     margin: 0;
     display: flex;
@@ -103,12 +103,12 @@ body {
     background-color: transparent !important;
 }
 
-.nav-sidebar .nav-treeview .nav-item {
+.dark-mode .nav-sidebar .nav-treeview .nav-item {
     margin: 0;
     padding: 0;
 }
 
-.nav-sidebar .nav-treeview .nav-link {
+.dark-mode .nav-sidebar .nav-treeview .nav-link {
     display: flex;
     align-items: center;
     height: 2.5rem;
@@ -120,7 +120,7 @@ body {
     transition: 0.2s;
 }
 
-.nav-sidebar .nav-treeview .nav-link::before {
+.dark-mode .nav-sidebar .nav-treeview .nav-link::before {
     content: "";
     position: absolute;
     left: 2.35rem;
@@ -134,37 +134,37 @@ body {
     transition: 0.2s;
 }
 
-.nav-sidebar .nav-treeview .nav-link:hover,
-.nav-sidebar .nav-treeview .nav-link.active {
+.dark-mode .nav-sidebar .nav-treeview .nav-link:hover,
+.dark-mode .nav-sidebar .nav-treeview .nav-link.active {
     color: var(--primary);
     background: transparent;
 }
 
-.nav-sidebar .nav-treeview .nav-link:hover::before,
-.nav-sidebar .nav-treeview .nav-link.active::before {
+.dark-mode .nav-sidebar .nav-treeview .nav-link:hover::before,
+.dark-mode .nav-sidebar .nav-treeview .nav-link.active::before {
     opacity: 1;
     background-color: var(--primary);
 }
 
 /* Parent Menu Item */
-.nav-sidebar > .nav-item {
+.dark-mode .nav-sidebar > .nav-item {
     margin-bottom: 0.25rem;
 }
 
-.nav-sidebar > .nav-item > .nav-link {
+.dark-mode .nav-sidebar > .nav-item > .nav-link {
     margin: 0;
     position: relative;
 }
 
 /* Menu Open/Active States */
-.nav-sidebar .nav-item.menu-open > .nav-link,
-.nav-sidebar .nav-item > .nav-link.active {
+.dark-mode .nav-sidebar .nav-item.menu-open > .nav-link,
+.dark-mode .nav-sidebar .nav-item > .nav-link.active {
     color: var(--primary);
     background-color: var(--sidebar-item-active-bg);
 }
 
 /* Arrow Indicator */
-.nav-sidebar .nav-link > .right {
+.dark-mode .nav-sidebar .nav-link > .right {
     position: absolute;
     right: 1rem;
     top: 50%;
@@ -173,16 +173,16 @@ body {
     font-size: 0.875rem;
 }
 
-.nav-sidebar .nav-item.menu-open > .nav-link > .right {
+.dark-mode .nav-sidebar .nav-item.menu-open > .nav-link > .right {
     transform: translateY(-50%) rotate(90deg);
 }
 
 /* Active Background */
-.nav-treeview .nav-link.active {
+.dark-mode .nav-treeview .nav-link.active {
     position: relative;
 }
 
-.nav-treeview .nav-link.active::after {
+.dark-mode .nav-treeview .nav-link.active::after {
     content: '';
     position: absolute;
     left: 0;
@@ -196,7 +196,7 @@ body {
 }
 
 /* Menu Headers */
-.nav-header {
+.dark-mode .nav-header {
     padding: 1.5rem 0 0.5rem 1.5rem;
     font-size: 0.75rem;
     text-transform: uppercase;
@@ -207,12 +207,12 @@ body {
 }
 
 /* Content Wrapper */
-.content-wrapper {
+.dark-mode .content-wrapper {
     background-color: var(--bs-body-bg) !important;
 }
 
 /* Cards */
-.card {
+.dark-mode .card {
     background-color: var(--card-bg);
     border: 1px solid var(--bs-border-color);
     border-radius: 0.5rem;
@@ -220,69 +220,69 @@ body {
 }
 
 /* Buttons */
-.btn-primary {
+.dark-mode .btn-primary {
     background-color: var(--primary);
     border-color: var(--primary);
     box-shadow: 0 0.125rem 0.25rem 0 rgba(105, 108, 255, 0.4);
 }
 
-.btn-primary:hover {
+.dark-mode .btn-primary:hover {
     background-color: var(--primary-hover);
     border-color: var(--primary-hover);
     transform: translateY(-1px);
 }
 
 /* Navbar */
-.main-header {
+.dark-mode .main-header {
     background-color: var(--sidebar-bg);
     border-bottom: 1px solid var(--bs-border-color);
 }
 
-.navbar-dark {
+.dark-mode .navbar-dark {
     background-color: var(--sidebar-bg) !important;
 }
 
-.navbar-nav .nav-link {
+.dark-mode .navbar-nav .nav-link {
     color: var(--bs-body-color) !important;
 }
 
-.navbar-nav .nav-link:hover {
+.dark-mode .navbar-nav .nav-link:hover {
     color: var(--sidebar-item-hover-color) !important;
 }
 
 /* Dropdown Menus */
-.dropdown-menu {
+.dark-mode .dropdown-menu {
     background-color: var(--card-bg);
     border-color: var(--bs-border-color);
     box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.2);
 }
 
-.dropdown-item {
+.dark-mode .dropdown-item {
     color: var(--bs-body-color);
 }
 
-.dropdown-item:hover {
+.dark-mode .dropdown-item:hover {
     background-color: var(--sidebar-item-hover-bg);
     color: var(--sidebar-item-hover-color);
 }
 
-.dropdown-divider {
+.dark-mode .dropdown-divider {
     border-color: var(--bs-border-color);
 }
 
 /* Footer */
-.main-footer {
+.dark-mode .main-footer {
     background-color: var(--card-bg);
     border-top: 1px solid var(--bs-border-color);
     color: var(--bs-body-color);
 }
 
-.main-footer a {
+.dark-mode .main-footer a {
     color: var(--primary);
 }
 
 /* Boxicons Integration */
-.bx {
+.dark-mode .bx {
     font-family: boxicons !important;
     font-weight: normal;
     font-style: normal;
@@ -296,97 +296,97 @@ body {
 }
 
 /* Sidebar Collapse & Hover Behavior */
-.sidebar-collapse .main-sidebar {
+.dark-mode .sidebar-collapse .main-sidebar {
     transition: width 0.3s ease-in-out, margin-left 0.3s ease-in-out !important;
 }
 
-.sidebar-collapse .main-sidebar:hover {
+.dark-mode .sidebar-collapse .main-sidebar:hover {
     width: var(--sidebar-width) !important;
 }
 
-.sidebar-collapse .main-sidebar .nav-sidebar {
+.dark-mode .sidebar-collapse .main-sidebar .nav-sidebar {
     transition: padding 0.3s ease-in-out, margin 0.3s ease-in-out !important;
 }
 
-.sidebar-collapse .main-sidebar .nav-sidebar .nav-link {
+.dark-mode .sidebar-collapse .main-sidebar .nav-sidebar .nav-link {
     transition: padding 0.3s ease-in-out, margin 0.3s ease-in-out, background-color 0.3s ease-in-out !important;
 }
 
-.sidebar-collapse .main-sidebar .nav-sidebar .nav-link p {
+.dark-mode .sidebar-collapse .main-sidebar .nav-sidebar .nav-link p {
     transition: opacity 0.15s ease-in-out, margin-left 0.3s ease-in-out !important;
 }
 
-.sidebar-collapse .main-sidebar:not(:hover) {
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) {
     width: 4.5rem !important;
 }
 
-.sidebar-collapse .main-sidebar:not(:hover) .brand-text,
-.sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar .nav-link p,
-.sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar .nav-header {
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .brand-text,
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar .nav-link p,
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar .nav-header {
     opacity: 0;
     margin-left: -10px;
     visibility: hidden;
 }
 
-.sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar > .nav-item .nav-icon {
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar > .nav-item .nav-icon {
     margin-right: 0;
 }
 
-.sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar > .nav-item > .nav-link {
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar > .nav-item > .nav-link {
     padding-left: 1rem;
     padding-right: 1rem;
     margin: 0 0.5rem;
 }
 
-.sidebar-collapse .main-sidebar:hover .nav-sidebar > .nav-item .nav-icon {
+.dark-mode .sidebar-collapse .main-sidebar:hover .nav-sidebar > .nav-item .nav-icon {
     margin-right: 0.75rem;
 }
 
 /* Fix for background transition */
-.sidebar-collapse .main-sidebar .nav-sidebar {
+.dark-mode .sidebar-collapse .main-sidebar .nav-sidebar {
     transition: all 0.3s ease-in-out !important;
 }
 
-.sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar {
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .nav-sidebar {
     padding: 0 0.5rem;
 }
 
-.sidebar-collapse .main-sidebar:hover .nav-sidebar {
+.dark-mode .sidebar-collapse .main-sidebar:hover .nav-sidebar {
     padding: 0 1rem;
 }
 
 /* Fix for brand logo */
-.sidebar-collapse .main-sidebar:not(:hover) .brand-link {
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .brand-link {
     justify-content: center;
 }
 
-.sidebar-collapse .main-sidebar:not(:hover) .brand-image {
+.dark-mode .sidebar-collapse .main-sidebar:not(:hover) .brand-image {
     margin-right: 33px !important;
 }
 
 /* Ensure smooth transition for all elements */
-.main-sidebar * {
+.dark-mode .main-sidebar * {
     transition: all 0.3s ease-in-out;
 }
 
 /* Override any conflicting transitions */
-.nav-sidebar .nav-item,
-.nav-sidebar .nav-link,
-.nav-sidebar .nav-treeview,
-.nav-sidebar .nav-icon,
-.brand-link,
-.brand-image,
-.brand-text {
+.dark-mode .nav-sidebar .nav-item,
+.dark-mode .nav-sidebar .nav-link,
+.dark-mode .nav-sidebar .nav-treeview,
+.dark-mode .nav-sidebar .nav-icon,
+.dark-mode .brand-link,
+.dark-mode .brand-image,
+.dark-mode .brand-text {
     transition: all 0.3s ease-in-out !important;
 }
 
 /* Fix for content wrapper */
-.content-wrapper {
+.dark-mode .content-wrapper {
     transition: margin-left 0.3s ease-in-out !important;
 }
 
 /* Ensure sidebar background transitions smoothly */
-.main-sidebar {
+.dark-mode .main-sidebar {
     transition: width 0.3s ease-in-out, background-color 0.3s ease-in-out !important;
     will-change: width;
     z-index: 1038; /* Ensure sidebar stays above content */
@@ -394,32 +394,32 @@ body {
 }
 
 /* Fix for hover state background */
-.nav-sidebar .nav-item > .nav-link {
+.dark-mode .nav-sidebar .nav-item > .nav-link {
     position: relative;
     z-index: 1;
 }
 
-.nav-sidebar .nav-link:hover {
+.dark-mode .nav-sidebar .nav-link:hover {
     background-color: var(--sidebar-item-hover-bg);
 }
 
 /* Fix for nav-icon alignment */
-.nav-sidebar .nav-link > .nav-icon {
+.dark-mode .nav-sidebar .nav-link > .nav-icon {
     font-size: 1.25rem;
     margin-right: 0.75rem;
     text-align: center;
     width: 1.25rem;
 }
 
-[data-widget="treeview"] .nav-treeview {
+.dark-mode [data-widget="treeview"] .nav-treeview {
     background-color: transparent !important;
 }
 
-.brand-link {
+.dark-mode .brand-link {
     background-color: transparent !important;
     border-bottom: none !important;
 }
 
-.sidebar {
+.dark-mode .sidebar {
     background-color: transparent !important;
 }

@@ -84,11 +84,6 @@ return [
             'asset' => true, // true nếu tệp nằm trong thư mục public
             'location' => 'css/adminlte-custom-dark.css',
         ],
-        [
-            'type' => 'css',
-            'asset' => false,
-            'location' => 'https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css',
-        ],
     ],
 
     /*
