@@ -87,7 +87,7 @@
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
         <h5 class="card-title mb-0">Danh sách Đơn hàng</h5>
-        @can('sync-pancake')
+        {{-- @can('sync-pancake')
         <div class="sync-controls d-flex gap-2 mt-3 mt-md-0">
             <div class="btn-group">
                 <button type="button" class="btn btn-primary btn-sync" id="sync-today-btn" title="Đồng bộ đơn hàng hôm nay">
@@ -117,7 +117,7 @@
                 </button>
             </div>
         </div>
-        @endcan
+        @endcan --}}
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
