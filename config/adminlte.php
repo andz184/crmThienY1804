@@ -520,6 +520,16 @@ return [
                 ],
             ],
         ],
+        'Boxicons' => [
+            'active' => true,
+            'files' => [
+                [
+                    'type' => 'css',
+                    'asset' => false,
+                    'location' => '//unpkg.com/boxicons@2.1.4/css/boxicons.min.css',
+                ],
+            ],
+        ],
         'CustomCSS' => [
             'active' => true,
             'files' => [
