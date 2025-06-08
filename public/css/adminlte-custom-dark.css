@@ -318,6 +318,7 @@
 
 .dark-mode .sidebar-collapse .main-sidebar:not(:hover) {
     width: 4.5rem !important;
+    overflow-x: hidden;
 }
 
 .dark-mode .sidebar-collapse .main-sidebar:not(:hover) .brand-text,
@@ -494,4 +495,53 @@
 .dark-mode.sidebar-collapse .main-sidebar:not(:hover) {
     width: 4.5rem !important;
     overflow-x: hidden;
+}
+
+/* Custom Action Buttons for Tables */
+.dark-mode .btn-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 0.375rem;
+    margin-right: 4px;
+    padding: 0;
+    border: none;
+    color: #fff !important; /* Ensure icons are white */
+    font-size: 1.1rem;
+    transition: all 0.2s ease-in-out;
+}
+
+.dark-mode .btn-action:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.1);
+}
+
+/* Custom Colors */
+.dark-mode .btn-info-custom {
+    background-color: #03c3ec; /* Blue */
+}
+.dark-mode .btn-success-custom {
+    background-color: #71dd37; /* Green */
+}
+.dark-mode .btn-warning-custom {
+    background-color: #ffab00; /* Yellow */
+}
+.dark-mode .btn-secondary-custom {
+    background-color: #8592a3; /* Gray */
+}
+.dark-mode .btn-dark-custom {
+    background-color: #444564; /* Dark Gray */
+}
+
+/* Alert styles to match dark theme */
+.dark-mode .alert-success {
+    background-color: rgba(113, 221, 55, 0.1);
+    color: #71dd37;
+}
+
+.dark-mode .alert-danger {
+    background-color: rgba(255, 62, 29, 0.1);
+    color: #ff3e1d;
 }

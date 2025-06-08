@@ -4,11 +4,11 @@
             {{ $order->order_code }}
             @if($order->pancake_order_id)
                 <span class="badge badge-primary ml-1" title="ID Pancake: {{ $order->pancake_order_id }}">
-                    <i class="fas fa-arrow-down"></i> P{{ $order->pancake_order_id }}
+                    <i class='bx bxs-down-arrow-alt'></i> P{{ $order->pancake_order_id }}
                 </span>
             @elseif($order->pancake_push_status === 'success' || $order->internal_status === 'Pushed to Pancake successfully.')
                 <span class="badge badge-success ml-1" title="Đơn hàng đã đẩy lên Pancake">
-                    <i class="fas fa-arrow-up"></i> P
+                    <i class='bx bxs-up-arrow-alt'></i> P
                 </span>
             @endif
         </td>
@@ -104,31 +104,31 @@
         </td>
         <td>{{($order->pancake_inserted_at) }}</td>
         <td>
-            <a href="{{ route('orders.show', $order) }}" class="btn btn-info btn-xs" title="Xem chi tiết"><i class="fas fa-eye fa-fw"></i></a>
-            @can('calls.manage')
-                <button class="btn btn-success btn-xs btn-call"
-                        data-order-id="{{ $order->id }}"
-                        data-phone="{{ $order->customer_phone }}"
-                        {{-- data-action removed as it seems unused in current JS, keeping other attributes --}}
-                        title="Gọi điện">
-                    <i class="fas fa-phone-alt fa-fw"></i>
-                </button>
-            @endcan
-            @can('orders.edit')
-                 <a href="{{ route('orders.edit', $order) }}" class="btn btn-warning btn-xs" title="Sửa"><i class="fas fa-edit fa-fw"></i></a>
-            @endcan
-            @can('teams.assign')
-                 <a href="{{ route('orders.assign', $order) }}" class="btn btn-secondary btn-xs" title="Gán đơn"><i class="fas fa-user-plus fa-fw"></i></a>
-            @endcan
-            @can('orders.push_to_pancake')
-                <button class="btn btn-{{ $order->pancake_order_id ? 'secondary' : 'info' }} btn-xs btn-push-pancake"
-                        data-order-id="{{ $order->id }}"
-                        data-url="{{ route('orders.pushToPancake', $order->id) }}"
-                        title="{{ $order->pancake_order_id ? 'Cập nhật lên Pancake' : 'Đẩy đơn lên Pancake' }}">
-                    <i class="fas fa-{{ $order->pancake_order_id ? 'sync' : 'rocket' }} fa-fw"></i>
-                </button>
-            @endcan
-            {{-- Actions from original index.blade.php are preferred here --}}
+            <div class="d-flex">
+                <a href="{{ route('orders.show', $order) }}" class="btn btn-action btn-info-custom" title="Xem chi tiết"><i class='bx bx-show-alt'></i></a>
+                @can('calls.manage')
+                    <button class="btn btn-action btn-success-custom btn-call"
+                            data-order-id="{{ $order->id }}"
+                            data-phone="{{ $order->customer_phone }}"
+                            title="Gọi điện">
+                        <i class='bx bxs-phone-call'></i>
+                    </button>
+                @endcan
+                @can('orders.edit')
+                     <a href="{{ route('orders.edit', $order) }}" class="btn btn-action btn-warning-custom" title="Sửa"><i class='bx bxs-edit-alt'></i></a>
+                @endcan
+                @can('teams.assign')
+                     <a href="{{ route('orders.assign', $order) }}" class="btn btn-action btn-secondary-custom" title="Gán đơn"><i class='bx bxs-user-plus'></i></a>
+                @endcan
+                @can('orders.push_to_pancake')
+                    <button class="btn btn-action btn-dark-custom btn-push-pancake"
+                            data-order-id="{{ $order->id }}"
+                            data-url="{{ route('orders.pushToPancake', $order->id) }}"
+                            title="{{ $order->pancake_order_id ? 'Cập nhật lên Pancake' : 'Đẩy đơn lên Pancake' }}">
+                        <i class="bx bx-revision"></i>
+                    </button>
+                @endcan
+            </div>
         </td>
     </tr>
 @empty

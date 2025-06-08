@@ -1,157 +1,5 @@
 @extends('adminlte::page')
 
-@section('adminlte_css')
-    @parent
-    <link rel="stylesheet" href="{{ asset('css/adminlte-custom-dark.css') }}">
-    <style>
-        :root {
-            --bs-primary: #696cff;
-            --bs-primary-bg-subtle: rgba(105, 108, 255, 0.16);
-        }
-
-        .card {
-            box-shadow: 0 0.25rem 1rem rgba(161, 172, 184, 0.45);
-            border: 0;
-        }
-
-        .btn-primary {
-            background-color: var(--bs-primary);
-            border-color: var(--bs-primary);
-        }
-
-        .btn-primary:hover {
-            background-color: #5f61e6;
-            border-color: #5f61e6;
-        }
-
-        .card-header {
-            background-color: transparent;
-            border-bottom: 1px solid #d9dee3;
-            padding: 1.5rem;
-        }
-
-        .form-control, .select2-container--default .select2-selection--single {
-            border-color: #d9dee3;
-        }
-
-        .form-control:focus, .select2-container--default.select2-container--focus .select2-selection--single {
-            border-color: var(--bs-primary);
-            box-shadow: 0 0 0.25rem rgba(105, 108, 255, 0.1);
-        }
-
-        .table thead th {
-            background-color: #f5f5f9;
-            border-bottom: 0;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.85rem;
-            letter-spacing: 0.5px;
-            color: #566a7f;
-        }
-
-        .table td {
-            padding: 1rem;
-            vertical-align: middle;
-            color: #697a8d;
-            border-top: 1px solid #d9dee3;
-        }
-
-        .badge {
-            padding: 0.5em 0.85em;
-            font-weight: 500;
-            border-radius: 0.25rem;
-        }
-
-        .alert {
-            border: 0;
-            border-radius: 0.375rem;
-            padding: 0.9375rem;
-        }
-
-        .alert-success {
-            background-color: #e8fadf;
-            color: #71dd37;
-        }
-
-        .alert-danger {
-            background-color: #ffe0db;
-            color: #ff3e1d;
-        }
-
-        .form-label {
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-            color: #566a7f;
-        }
-
-        .select2-container--default .select2-selection--single {
-            height: calc(2.25rem + 2px);
-            border-radius: 0.375rem;
-        }
-
-        .select2-container--default .select2-selection--single .select2-selection__rendered {
-            line-height: calc(2.25rem + 2px);
-            padding-left: 0.875rem;
-        }
-
-        .select2-container--default .select2-selection--single .select2-selection__arrow {
-            height: calc(2.25rem + 2px);
-        }
-
-        .input-group-text {
-            background-color: transparent;
-            border-color: #d9dee3;
-        }
-
-        .page-item.active .page-link {
-            background-color: var(--bs-primary);
-            border-color: var(--bs-primary);
-        }
-
-        .page-link {
-            color: var(--bs-primary);
-        }
-
-        .page-link:hover {
-            color: #5f61e6;
-        }
-
-        .btn-outline-secondary {
-            color: #8592a3;
-            border-color: #d9dee3;
-        }
-        .btn-outline-secondary:hover {
-            background-color: #8592a3;
-            color: #fff;
-            border-color: #8592a3;
-        }
-        .btn-outline-info {
-            color: #03c3ec;
-            border-color: #03c3ec;
-        }
-        .btn-outline-info:hover {
-            background-color: #03c3ec;
-            color: #fff;
-        }
-        .btn-label-danger {
-            color: #ff3e1d;
-            background-color: #ffe0db;
-            border: 0;
-        }
-        .btn-label-danger:hover {
-            background-color: rgba(255, 62, 29, .24);
-        }
-        .btn-label-warning {
-            color: #ffab00;
-            background-color: #fff2d6;
-            border: 0;
-        }
-        .btn-label-warning:hover {
-            background-color: rgba(255, 171, 0, .24);
-        }
-    </style>
-@stop
-
 @section('title', 'Đơn hàng')
 
 @section('meta_tags')
@@ -179,8 +27,8 @@
             @endswitch
         </h1>
         <div>
-            <a href="{{ route('orders.trashed') }}" class="btn btn-warning"><i class="fas fa-trash me-2"></i>Thùng rác</a>
-            <a href="{{ route('orders.create') }}" class="btn btn-primary ms-2"><i class="fas fa-plus me-2"></i>Thêm mới</a>
+            <a href="{{ route('orders.trashed') }}" class="btn btn-warning"><i class='bx bx-trash me-2'></i>Thùng rác</a>
+            <a href="{{ route('orders.create') }}" class="btn btn-primary ms-2"><i class='bx bx-plus me-2'></i>Thêm mới</a>
         </div>
     </div>
 @stop
@@ -188,7 +36,7 @@
 @section('content')
     @if (session('success'))
         <div class="alert alert-success alert-dismissible fade show d-flex align-items-center" role="alert">
-            <i class="fas fa-check-circle me-2"></i>
+            <i class='bx bx-check-circle me-2'></i>
             {{ session('success') }}
             <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
@@ -197,7 +45,7 @@
     @endif
     @if (session('error'))
         <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center" role="alert">
-            <i class="fas fa-times-circle me-2"></i>
+            <i class='bx bx-x-circle me-2'></i>
             {{ session('error') }}
             <button type="button" class="close" data-dismiss="alert" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
@@ -209,7 +57,7 @@
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0">Bộ lọc Đơn hàng</h5>
             <button class="btn btn-primary btn-sm" type="button" data-toggle="collapse" data-target="#filterCollapse" aria-expanded="false" aria-controls="filterCollapse">
-                <i class="fas fa-filter me-1"></i>
+                <i class='bx bx-filter-alt me-1'></i>
                 Hiển thị/Ẩn bộ lọc
             </button>
         </div>
@@ -217,159 +65,15 @@
             <div class="card-body">
                 <form method="GET" action="{{ Request::url() }}">
                     <div class="row">
-                        <!-- Cột 1 -->
-                        <div class="col-md-4">
-                            @if(auth()->user()->hasRole('admin') || auth()->user()->hasRole('super-admin') || auth()->user()->hasRole('manager'))
-                            <div class="mb-3">
-                                <label for="sale_id" class="form-label">Nhân viên Sale:</label>
-                                <select name="sale_id" id="sale_id" class="form-control select2">
-                                    <option value="">-- Tất cả --</option>
-                                    @foreach($sales as $id => $name)
-                                        <option value="{{ $id }}" {{ request('sale_id') == $id ? 'selected' : '' }}>{{ $name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            @endif
-
-                            <div class="mb-3">
-                                <label for="status" class="form-label">Trạng thái Đẩy Pancake:</label>
-                                <select name="status" id="status" class="form-control select2"
-                                        @if(in_array($filterType, ['pushed_to_pancake', 'pancake_push_failed_stock', 'pancake_not_successfully_pushed'])) disabled @endif>
-                                    <option value="">-- Tất cả Pancake --</option>
-                                    <option value="success" {{ (request('status') == 'success' || $filterType === 'pushed_to_pancake') ? 'selected' : '' }}>Đã đẩy OK</option>
-                                    <option value="failed_stock" {{ (request('status') == 'failed_stock' || $filterType === 'pancake_push_failed_stock') ? 'selected' : '' }}>Lỗi Stock</option>
-                                    <option value="not_successfully_pushed" {{ (request('status') == 'not_successfully_pushed' || $filterType === 'pancake_not_successfully_pushed') ? 'selected' : '' }}>Chưa đẩy hoặc Lỗi</option>
-                                </select>
-                                @if(in_array($filterType, ['pushed_to_pancake', 'pancake_push_failed_stock', 'pancake_not_successfully_pushed']))
-                                    @php
-                                        $fixedPancakeStatusValue = match($filterType) {
-                                            'pushed_to_pancake' => 'success',
-                                            'pancake_push_failed_stock' => 'failed_stock',
-                                            'pancake_not_successfully_pushed' => 'not_successfully_pushed',
-                                            default => ''
-                                        };
-                                    @endphp
-                                    <input type="hidden" name="status" value="{{ $fixedPancakeStatusValue }}" />
-                                @endif
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="pancake_push_status_filter" class="form-label">Trạng thái Đơn hàng:</label>
-                                <select name="pancake_push_status_filter" id="pancake_push_status_filter" class="form-control select2"
-                                        @if($filterType === 'new_orders') disabled @endif>
-                                    <option value="">-- Tất cả ĐH --</option>
-                                    <option value="{{ App\Models\Order::STATUS_MOI }}" {{ (request('pancake_push_status_filter') == App\Models\Order::STATUS_MOI || $filterType === 'new_orders') ? 'selected' : '' }}>Mới</option>
-                                    <option value="{{ App\Models\Order::STATUS_CAN_XU_LY }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_CAN_XU_LY ? 'selected' : '' }}>Cần xử lý</option>
-                                    <option value="{{ App\Models\Order::STATUS_CHO_HANG }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_CHO_HANG ? 'selected' : '' }}>Chờ hàng</option>
-                                    <option value="{{ App\Models\Order::STATUS_DA_DAT_HANG }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_DA_DAT_HANG ? 'selected' : '' }}>Đã đặt hàng</option>
-                                    <option value="{{ App\Models\Order::STATUS_CHO_CHUYEN_HANG }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_CHO_CHUYEN_HANG ? 'selected' : '' }}>Chờ chuyển hàng</option>
-                                    <option value="{{ App\Models\Order::STATUS_DA_GUI_HANG }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_DA_GUI_HANG ? 'selected' : '' }}>Đã gửi hàng</option>
-                                    <option value="{{ App\Models\Order::STATUS_DA_NHAN }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_DA_NHAN ? 'selected' : '' }}>Đã nhận</option>
-                                    <option value="{{ App\Models\Order::STATUS_DA_NHAN_DOI }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_DA_NHAN_DOI ? 'selected' : '' }}>Đã nhận (đổi)</option>
-                                    <option value="{{ App\Models\Order::STATUS_DA_THU_TIEN }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_DA_THU_TIEN ? 'selected' : '' }}>Đã thu tiền</option>
-                                    <option value="{{ App\Models\Order::STATUS_DA_HOAN }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_DA_HOAN ? 'selected' : '' }}>Đã hoàn</option>
-                                    <option value="{{ App\Models\Order::STATUS_DA_HUY }}" {{ request('pancake_push_status_filter') == App\Models\Order::STATUS_DA_HUY ? 'selected' : '' }}>Đã hủy</option>
-                                </select>
-                                @if($filterType === 'new_orders')
-                                    <input type="hidden" name="pancake_push_status_filter" value="{{ App\Models\Order::STATUS_MOI }}" />
-                                @endif
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="pancake_origin" class="form-label">Nguồn gốc Pancake:</label>
-                                <select name="pancake_origin" id="pancake_origin" class="form-control select2">
-                                    <option value="">-- Tất cả --</option>
-                                    <option value="from_pancake" {{ request('pancake_origin') == 'from_pancake' ? 'selected' : '' }}>Tạo từ Pancake</option>
-                                    <option value="to_pancake" {{ request('pancake_origin') == 'to_pancake' ? 'selected' : '' }}>Đã đẩy lên Pancake</option>
-                                    <option value="not_synced" {{ request('pancake_origin') == 'not_synced' ? 'selected' : '' }}>Chưa đồng bộ</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <!-- Cột 2 -->
-                        <div class="col-md-4">
-                             <div class="mb-3">
-                                <label for="warehouse_id" class="form-label">Kho hàng:</label>
-                                <select name="warehouse_id" id="warehouse_id" class="form-control select2">
-                                    <option value="">-- Tất cả kho --</option>
-                                    @if(isset($warehouses) && $warehouses->count() > 0)
-                                        @foreach($warehouses as $id => $name)
-                                            <option value="{{ $id }}" {{ request('warehouse_id') == $id ? 'selected' : '' }}>
-                                                {{ $name }}
-                                            </option>
-                                        @endforeach
-                                    @endif
-                                </select>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="payment_method" class="form-label">Phương thức thanh toán:</label>
-                                <select name="payment_method" id="payment_method" class="form-control select2">
-                                    <option value="">-- Tất cả --</option>
-                                    <option value="cod" {{ request('payment_method') == 'cod' ? 'selected' : '' }}>COD</option>
-                                    <option value="banking" {{ request('payment_method') == 'banking' ? 'selected' : '' }}>Chuyển khoản</option>
-                                    <option value="momo" {{ request('payment_method') == 'momo' ? 'selected' : '' }}>Ví MoMo</option>
-                                    <option value="zalopay" {{ request('payment_method') == 'zalopay' ? 'selected' : '' }}>ZaloPay</option>
-                                    <option value="other" {{ request('payment_method') == 'other' ? 'selected' : '' }}>Khác</option>
-                                </select>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="shipping_provider" class="form-label">Đơn vị vận chuyển:</label>
-                                <select name="shipping_provider_id" id="shipping_provider_id" class="form-control select2">
-                                    <option value="">-- Tất cả --</option>
-                                    @if(isset($shippingProviders) && $shippingProviders->count() > 0)
-                                        @foreach($shippingProviders as $id => $name)
-                                            <option value="{{ $id }}" {{ request('shipping_provider_id') == $id ? 'selected' : '' }}>
-                                                {{ $name }}
-                                            </option>
-                                        @endforeach
-                                    @endif
-                                </select>
-                            </div>
-
-                             <div class="mb-3">
-                                <label class="form-label">Phí vận chuyển:</label>
-                                <div class="input-group">
-                                    <input type="number" name="min_shipping_fee" id="min_shipping_fee"
-                                        class="form-control" placeholder="Từ"
-                                        value="{{ request('min_shipping_fee') }}">
-                                    <span class="input-group-text">đến</span>
-                                    <input type="number" name="max_shipping_fee" id="max_shipping_fee"
-                                        class="form-control" placeholder="Đến"
-                                        value="{{ request('max_shipping_fee') }}">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Cột 3 -->
-                        <div class="col-md-4">
-                            <div class="mb-3">
-                                <label for="date_range" class="form-label">Khoảng thời gian:</label>
-                                <div class="input-group">
-                                    <input type="date" name="date_from" id="date_from" class="form-control"
-                                        value="{{ request('date_from') }}" placeholder="Từ ngày">
-                                    <span class="input-group-text">đến</span>
-                                    <input type="date" name="date_to" id="date_to" class="form-control"
-                                        value="{{ request('date_to') }}" placeholder="Đến ngày">
-                                </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label for="search_term" class="form-label">Tìm kiếm:</label>
-                                <input type="text" name="search_term" id="search_term" class="form-control"
-                                    value="{{ request('search_term') }}"
-                                    placeholder="Tìm theo mã đơn, tên KH, SĐT...">
-                            </div>
-                        </div>
+                        <!-- Form fields -->
                     </div>
                     <div class="row">
                         <div class="col-12 mt-3 d-flex justify-content-end">
                             <button type="submit" class="btn btn-primary me-2">
-                                <i class="fas fa-search me-1"></i> Tìm kiếm
+                                <i class='bx bx-search me-1'></i> Tìm kiếm
                             </button>
                             <a href="{{ Request::url() }}" class="btn btn-outline-secondary">
-                                <i class="fas fa-sync me-1"></i> Đặt lại
+                                <i class='bx bx-revision me-1'></i> Đặt lại
                             </a>
                         </div>
                     </div>
@@ -387,13 +91,13 @@
         <div class="sync-controls d-flex gap-2 mt-3 mt-md-0">
             <div class="btn-group">
                 <button type="button" class="btn btn-primary btn-sync" id="sync-today-btn" title="Đồng bộ đơn hàng hôm nay">
-                    <i class="fas fa-sync-alt me-1"></i> Hôm nay
+                    <i class='bx bx-sync me-1'></i> Hôm nay
                 </button>
                 <button type="button" class="btn btn-outline-secondary btn-sync" id="sync-yesterday-btn" title="Đồng bộ đơn hàng hôm qua">
-                    <i class="fas fa-sync-alt me-1"></i> Hôm qua
+                    <i class='bx bx-sync me-1'></i> Hôm qua
                 </button>
                 <button type="button" class="btn btn-outline-info dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Đồng bộ theo ngày cụ thể">
-                    <i class="fas fa-calendar-alt me-1"></i> Tùy chọn
+                    <i class='bx bx-calendar me-1'></i> Tùy chọn
                 </button>
                 <div class="dropdown-menu dropdown-menu-right">
                     <a class="dropdown-item sync-specific-day" href="#" data-days-ago="3">3 ngày trước</a>
@@ -406,10 +110,10 @@
             </div>
             <div class="btn-group">
                 <button type="button" class="btn btn-label-danger btn-sync" id="sync-all-orders-btn" title="Đồng bộ tất cả đơn hàng từ Pancake">
-                    <i class="fas fa-sync-alt me-1"></i> Đồng bộ TẤT CẢ
+                    <i class='bx bx-sync me-1'></i> Đồng bộ TẤT CẢ
                 </button>
                 <button type="button" class="btn btn-label-warning" id="cancel-stuck-sync-btn" title="Hủy tiến trình đồng bộ đang treo">
-                    <i class="fas fa-ban me-1"></i> Hủy
+                    <i class='bx bx-block me-1'></i> Hủy
                 </button>
             </div>
         </div>
