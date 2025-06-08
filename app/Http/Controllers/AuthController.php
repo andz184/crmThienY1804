@@ -55,7 +55,7 @@ class AuthController extends Controller
             );
 
             // Redirect to intended page or dashboard
-            return redirect()->intended(route('dashboard'));
+            return redirect()->intended(route('reports.overall_revenue_summary'));
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             return back()

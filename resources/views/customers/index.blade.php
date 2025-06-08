@@ -130,7 +130,7 @@
                                 <td>
                                     <a href="{{ route('customers.show', $customer->id) }}">{{ $customer->name }}</a>
                                 </td>
-                                <td>{{ optional($customer->primaryPhone)->phone_number }}</td>
+                                <td>{{ $customer->phone }}</td>
                                 <td>
                                     @php
                                         $addressParts = [];

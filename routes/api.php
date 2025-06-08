@@ -103,3 +103,5 @@ Route::get('/wards', function (Request $request) {
         ->pluck('name', 'code');
     return response()->json($wards);
 });
+
+Route::post('/pancake/webhook', [PancakeWebhookController::class, 'handleWebhook']);

@@ -86,7 +86,7 @@ class PancakeService
             $params = [
                 'api_key' => $this->apiKey,
                 'page_size' => 1000,
-               
+
             ];
 
             // If we have last sync time, only get customers updated after that
@@ -209,9 +209,9 @@ class PancakeService
                                 'fb_id' => $customerData['fb_id'] ?? null,
                                 'referral_code' => $customerData['referral_code'] ?? null,
                                 'reward_point' => $customerData['reward_point'] ?? 0,
-                                'total_orders_count' => $customerData['order_count'] ?? 0,
-                                'succeed_order_count' => $customerData['succeed_order_count'] ?? 0,
-                                'total_spent' => $customerData['purchased_amount'] ?? 0,
+                                // 'total_orders_count' => $customerData['order_count'] ?? 0,
+                                // 'succeed_order_count' => $customerData['succeed_order_count'] ?? 0,
+                                // 'total_spent' => $customerData['purchased_amount'] ?? 0,
                                 'last_order_at' => $customerData['last_order_at'] ?? null,
                                 'tags' => $customerData['tags'] ?? [],
                                 'addresses' => $customerData['shop_customer_addresses'] ?? []

@@ -64,33 +64,7 @@
                             <input type="text" name="date_range" id="date_range_campaign" class="form-control" value="{{ $startDate->format('m/d/Y') }} - {{ $endDate->format('m/d/Y') }}"/>
                         </div>
                     </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="pancake_shop_id_campaign">Cửa hàng</label>
-                            <select class="form-control select2" id="pancake_shop_id_campaign" name="pancake_shop_id">
-                                <option value="">Tất cả cửa hàng</option>
-                                @foreach($shops as $shop)
-                                    <option value="{{ $shop->id }}" {{ request('pancake_shop_id') == $shop->id ? 'selected' : '' }}>{{ $shop->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="form-group">
-                            <label for="pancake_page_id_campaign">Trang Facebook</label>
-                            <select class="form-control select2" id="pancake_page_id_campaign" name="pancake_page_id">
-                                <option value="">Tất cả trang</option>
-                                @foreach($pages as $page) {{-- Populated if a shop is selected --}}
-                                    <option value="{{ $page->id }}" {{ request('pancake_page_id') == $page->id ? 'selected' : '' }}>{{ $page->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                    <div class="col-md-2 align-self-end">
-                        <div class="form-group">
-                            <button type="submit" class="btn btn-primary btn-block"><i class="fas fa-search"></i> Lọc</button>
-                        </div>
-                    </div>
+
                 </div>
             </form>
         </div>

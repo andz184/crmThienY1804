@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'title' => 'AdminLTE 3',
+    'title' => 'AnSha',
     'title_prefix' => '',
     'title_postfix' => '',
 
@@ -31,7 +31,7 @@ return [
     */
 
     'use_ico_only' => false,
-    'use_full_favicon' => false,
+    'use_full_favicon' => true,
 
     /*
     |--------------------------------------------------------------------------
@@ -63,12 +63,28 @@ return [
     |
     */
 
-    'logo' => '<b>Admin</b>LTE',
+    'logo' => 'AnSha',
     'logo_img' => 'vendor/adminlte/dist/img/AdminLTELogo.png',
-    'logo_img_class' => 'brand-image img-circle elevation-3',
+    'logo_img_class' => 'brand-image',
     'logo_img_xl' => null,
     'logo_img_xl_class' => 'brand-image-xs',
-    'logo_img_alt' => 'Admin Logo',
+    'logo_img_alt' => 'AnSha',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Global Assets
+    |--------------------------------------------------------------------------
+    |
+    | Tệp CSS tùy chỉnh này sẽ được tải trên tất cả các trang AdminLTE.
+    |
+    */
+    'files' => [
+        [
+            'type' => 'css',
+            'asset' => true, // true nếu tệp nằm trong thư mục public
+            'location' => 'css/adminlte-custom-dark.css',
+        ],
+    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -134,11 +150,11 @@ return [
     */
 
     'usermenu_enabled' => true,
-    'usermenu_header' => false,
+    'usermenu_header' => true,
     'usermenu_header_class' => 'bg-primary',
-    'usermenu_image' => false,
-    'usermenu_desc' => false,
-    'usermenu_profile_url' => false,
+    'usermenu_image' => true,
+    'usermenu_desc' => true,
+    'usermenu_profile_url' => true,
 
     /*
     |--------------------------------------------------------------------------
@@ -154,10 +170,10 @@ return [
 
     'layout_topnav' => null,
     'layout_boxed' => null,
-    'layout_fixed_sidebar' => null,
-    'layout_fixed_navbar' => null,
+    'layout_fixed_sidebar' => true,
+    'layout_fixed_navbar' => true,
     'layout_fixed_footer' => null,
-    'layout_dark_mode' => null,
+    'layout_dark_mode' => true,
 
     /*
     |--------------------------------------------------------------------------
@@ -198,7 +214,7 @@ return [
     'classes_content' => '',
     'classes_sidebar' => 'sidebar-dark-primary elevation-4',
     'classes_sidebar_nav' => '',
-    'classes_topnav' => 'navbar-white navbar-light',
+    'classes_topnav' => 'navbar-dark navbar-light',
     'classes_topnav_nav' => 'navbar-expand',
     'classes_topnav_container' => 'container',
 
@@ -220,9 +236,12 @@ return [
     'sidebar_collapse_remember' => false,
     'sidebar_collapse_remember_no_transition' => true,
     'sidebar_scrollbar_theme' => 'os-theme-light',
-    'sidebar_scrollbar_auto_hide' => 'l',
-    'sidebar_nav_accordion' => true,
-    'sidebar_nav_animation_speed' => 300,
+    'sidebar_custom_css_class' => '',
+    'sidebar_nav_legacy_style' => false,
+    'sidebar_nav_compact_style' => false,
+    'sidebar_nav_child_indent' => true,
+    'sidebar_nav_child_hide_on_collapse' => false,
+    'sidebar_nav_flat_style' => false,
 
     /*
     |--------------------------------------------------------------------------
@@ -299,201 +318,149 @@ return [
     */
 
     'menu' => [
-        // Navbar items:
         [
-            'type' => 'navbar-search',
-            'text' => 'search',
-            'topnav_right' => true,
+            'text' => 'Trang chủ',
+            'route'  => 'reports.overall_revenue_summary',
+            'icon' => 'bx bx-home-circle',
         ],
-        [
-            'type' => 'fullscreen-widget',
-            'topnav_right' => true,
-        ],
-
-        // Sidebar items:
-        // [
-        //     'text'        => 'Trang chủ',
-        //     'url'         => 'dashboard',
-        //     'icon'        => 'fas fa-fw fa-tachometer-alt',
-        // ],
         [
             'text'    => 'Sản phẩm',
-            'icon'    => 'fas fa-box',
+            'icon'    => 'bx bx-package',
             'can'     => ['products.view', 'categories.view'],
             'submenu' => [
                 [
                     'text' => 'Danh sách sản phẩm',
                     'route'  => 'admin.products.index',
-                    'icon' => 'fas fa-list',
+                    'icon' => 'bx bx-list-ul',
                     'can'  => 'products.view',
                     'active' => ['admin/products*'],
                 ],
-                [
-                    'text' => 'Thêm sản phẩm mới',
-                    'route'  => 'admin.products.create',
-                    'icon' => 'fas fa-plus',
-                    'can'  => 'products.create',
-                ],
+
                 [
                     'text' => 'Danh mục sản phẩm',
                     'route'  => 'admin.categories.index',
-                    'icon' => 'fas fa-tags',
+                    'icon' => 'bx bx-tag',
                     'can'  => 'categories.view',
                     'active' => ['admin/categories*'],
                 ],
-                [
-                    'text' => 'Thêm danh mục mới',
-                    'route'  => 'admin.categories.create',
-                    'icon' => 'fas fa-plus',
-                    'can'  => 'categories.create',
-                ],
+
             ],
         ],
         [
             'text' => 'Tất cả Đơn hàng',
             'route'  => 'orders.index',
-            'icon' => 'fas fa-fw fa-list-ul',
+            'icon' => 'bx bx-shopping-bag',
             'can'  => 'orders.view',
             'active' => ['orders.index', 'orders.show', 'orders.edit'],
         ],
         [
             'text' => 'Đơn hàng Mới (CRM)',
             'route'  => 'orders.index.new_orders',
-            'icon' => 'fas fa-fw fa-bell',
+            'icon' => 'bx bx-bell',
             'can'  => 'orders.view',
             'active' => ['orders.index.new_orders'],
         ],
-        // [
-        //     'text' => 'ĐH đẩy Pancake OK',
-        //     'route'  => 'orders.index.pushed_to_pancake',
-        //     'icon' => 'fas fa-fw fa-check-circle',
-        //     'can'  => 'orders.view',
-        //     'active' => ['orders.index.pushed_to_pancake'],
-        // ],
-        // [
-        //     'text' => 'ĐH Pancake Lỗi Stock',
-        //     'route'  => 'orders.index.pancake_push_failed_stock',
-        //     'icon' => 'fas fa-fw fa-exclamation-triangle',
-        //     'can'  => 'orders.view',
-        //     'active' => ['orders.index.pancake_push_failed_stock'],
-        // ],
         [
             'text'    => 'Hồ sơ cá nhân',
             'route'   => 'profile.edit',
-            'icon'    => 'fas fa-fw fa-user',
+            'icon'    => 'bx bx-user',
         ],
         [
-            'header' => 'ACCESS MANAGEMENT',
+            'header' => 'QUẢN LÝ TRUY CẬP',
             'can' => ['roles.view', 'users.view', 'teams.view']
         ],
         [
-            'text' => 'Roles',
+            'text' => 'Phân quyền',
             'url' => 'admin/roles',
-            'icon' => 'fas fa-fw fa-user-shield',
+            'icon' => 'bx bx-shield',
             'can' => 'roles.view',
         ],
         [
-            'text' => 'Users',
+            'text' => 'Người dùng',
             'url' => 'admin/users',
-            'icon' => 'fas fa-fw fa-users',
+            'icon' => 'bx bx-group',
             'can' => 'users.view',
         ],
-        // Thêm mục Sơ đồ Team
         [
             'text' => 'Sơ đồ Team',
-            'url'  => 'admin/team-structure', // Hoặc route('admin.teams.structure')
-            'icon' => 'fas fa-fw fa-sitemap',
+            'url'  => 'admin/team-structure',
+            'icon' => 'bx bx-sitemap',
             'can'  => 'teams.view',
         ],
-        // Reports Menu
         [
             'text'    => 'Báo Cáo',
             'route'   => 'reports.index',
-            'icon'    => 'fas fa-fw fa-chart-bar',
+            'icon'    => 'bx bx-bar-chart-alt-2',
             'can'     => 'reports.view',
             'submenu' => [
                 [
-                    'text' => 'Báo cáo theo Nhóm Hàng Hoá',
+                    'text' => 'Nhóm Hàng Hoá',
                     'route' => 'reports.product_groups',
-                    'icon' => 'fas fa-fw fa-cubes',
+                    // 'icon' => 'bx bx-cube',
                     'can' => 'reports.product_groups',
                 ],
                 [
-                    'text' => 'Báo cáo theo Chiến dịch (Bài Post)',
+                    'text' => 'Chiến dịch',
                     'route' => 'reports.campaigns',
-                    'icon' => 'fas fa-fw fa-bullhorn',
+                    // 'icon' => 'bx bx-bullhorn',
                     'can' => 'reports.campaigns',
                 ],
                 [
-                    'text' => 'Báo cáo Phiên Live',
+                    'text' => 'Phiên Live',
                     'route' => 'reports.live-sessions',
-                    'icon' => 'fas fa-fw fa-broadcast-tower',
+                    // 'icon' => 'bx bx-broadcast',
                     'can' => 'reports.live-sessions',
                 ],
-                [
-                    'text' => 'Báo cáo Doanh thu tổng quan',
-                    'route' => 'reports.overall_revenue_summary',
-                    'icon' => 'fas fa-fw fa-chart-line',
-                    'can'  => 'dashboard.view',
-                ],
-                // [
-                //     'text'    => 'Báo cáo Tổng hợp (Mới)',
-                //     'route'   => 'reports.general_report',
-                //     'icon'    => 'fas fa-fw fa-globe',
-                //     'can'     => 'reports.view',
-                // ],
+
             ],
         ],
-        // Settings Link
-        ['header' => 'CÀI ĐẶT TÀI KHOẢN'],
+        ['header' => 'CÀI ĐẶT HỆ THỐNG'],
         [
             'text' => 'Cài đặt Website',
             'route' => 'admin.settings.index',
-            'icon' => 'fas fa-fw fa-cogs',
+            'icon' => 'bx bx-cog',
             'can' => 'settings.view'
         ],
         [
             'text' => 'Phân phối đơn hàng',
             'route' => 'admin.settings.order-distribution',
-            'icon' => 'fas fa-fw fa-random',
+            'icon' => 'bx bx-transfer',
             'can' => 'settings.manage'
         ],
         [
             'text' => 'Quản lý nhân viên Sale',
             'route' => 'admin.sales-staff.index',
-            'icon' => 'fas fa-fw fa-users',
+            'icon' => 'bx bx-user-pin',
             'can' => 'settings.manage'
         ],
         [
             'text'    => 'Bảng Xếp Hạng',
             'url'  => 'leaderboard',
-            'icon' => 'fas fa-fw fa-trophy',
+            'icon' => 'bx bx-trophy',
             'can'  => 'leaderboard.view',
         ],
         [
             'text'    => 'System Logs',
             'route'   => 'admin.logs.index',
-            'icon'    => 'fas fa-fw fa-history',
+            'icon'    => 'bx bx-history',
             'can'     => 'logs.view',
         ],
         [
             'text' => 'Khách hàng',
             'route' => 'customers.index',
-            'icon' => 'fas fa-user-friends',
+            'icon' => 'bx bx-user-voice',
             'can' => 'customers.view',
         ],
-        // Add the new Pancake Sync menu item here
         [
             'text' => 'Đồng bộ Pancake',
             'route'  => 'admin.sync.index',
-            'icon' => 'fas fa-fw fa-sync-alt',
-            'can'  => 'settings.manage', // Or your new pancake.sync permission
+            'icon' => 'bx bx-sync',
+            'can'  => 'settings.manage',
         ],
-        // Add the Pancake Webhook Configuration menu item
         [
             'text' => 'Cấu hình Webhook Pancake',
             'route'  => 'admin.pancake.webhooks',
-            'icon' => 'fas fa-fw fa-link',
+            'icon' => 'bx bx-link',
             'can'  => 'settings.manage',
         ],
     ],

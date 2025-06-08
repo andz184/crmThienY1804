@@ -315,8 +315,9 @@ class PancakeSyncController extends Controller
      * @param array $orderData Dữ liệu đơn hàng từ Pancake API
      * @return \App\Models\Order
      */
-    protected function createOrderFromPancakeData(array $orderData)
+    public function createOrderFromPancakeData(array $orderData)
     {
+        // dd($orderData);
         // Tìm hoặc tạo khách hàng
             $customer = null;
         if (!empty($orderData['customer'])) {
@@ -352,26 +353,7 @@ class PancakeSyncController extends Controller
 
             $customer->save();
 
-            // Tính toán lại tổng đơn và tổng chi tiêu
-            $customerOrders = \App\Models\Order::where('bill_phone_number', $customer->phone)
-                ->where('bill_full_name', $customer->name)
-                ->where('pancake_status', 3) // Chỉ tính đơn thành công
-                ->get();
 
-            $totalOrders = $customerOrders->count();
-            $totalSpent = $customerOrders->sum('total_value');
-
-            $customer->total_orders_count = $totalOrders;
-            $customer->total_spent = $totalSpent;
-            $customer->save();
-
-            Log::info('Đã tạo/cập nhật thông tin khách hàng từ Pancake', [
-                'customer_id' => $customer->id,
-                'phone' => $customer->phone,
-                'name' => $customer->name,
-                'total_orders' => $totalOrders,
-                'total_spent' => $totalSpent
-            ]);
         }
 
         // Tìm hoặc tạo shop và page
@@ -610,6 +592,27 @@ class PancakeSyncController extends Controller
                 Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
             }
         }
+        $order->save();
+        // $customer = \App\Models\Customer::where('phone', $order->bill_phone_number)
+        //     ->where('name', $order->bill_full_name)
+        //     ->first();
+
+        // if($orderData['customer']){
+
+
+
+            // Then update customer stats
+            $customer->total_orders_count = \App\Models\Order::where('customer_id', $order->customer_id)
+            ->count();
+            if($customer->total_orders_count == 0){
+               dd("lỗi");
+            }
+            $customer->total_spent = \App\Models\Order::where('bill_phone_number', $order->bill_phone_number)
+                ->where('bill_full_name', $order->bill_full_name)
+                ->where('pancake_status', 3)
+                ->sum('total_value');
+
+            $customer->save();
 
         // Parse live session information from notes
         if (!empty($orderData['note'])) {
@@ -749,6 +752,17 @@ class PancakeSyncController extends Controller
             }
         }
 
+        // }else {
+        //     $customer->total_orders_count = \App\Models\Customer::where('phone', $order->bill_phone_number)
+        //     ->count();
+        // $customer->total_spent = \App\Models\Order::where('bill_phone_number', $order->bill_phone_number)
+
+        //     ->where('pancake_status', 3)
+        //     ->sum('total_value');
+
+        // $customer->save();
+        // }
+
         return $order;
     }
 
@@ -838,6 +852,20 @@ private function updateOrderFromPancake(Order $order, array $orderData)
         $product_data = $orderData['items'] ?? null;
         $order->products_data = json_encode($product_data);
 
+        // Update customer stats
+        if ($order->customer_id) {
+            $customer = \App\Models\Customer::find($order->customer_id);
+            if ($customer) {
+                $customer->total_orders_count = \App\Models\Order::where('customer_id', $order->customer_id)
+                    ->count();
+                $customer->total_spent = \App\Models\Order::where('bill_phone_number', $order->bill_phone_number)
+                    ->where('bill_full_name', $order->bill_full_name)
+                    ->where('pancake_status', 3)
+                    ->sum('total_value');
+                $customer->save();
+            }
+        }
+
         $order->source = $orderData['order_sources'] ?? ($orderData['order_sources'] ?? $order->source);
 
         // Update tracking info if available
@@ -909,6 +937,7 @@ private function updateOrderFromPancake(Order $order, array $orderData)
                     Log::warning("Could not parse inserted_at date for order {$order->order_code}: " . $e->getMessage());
                 }
             }
+
 
             // Store the full shipping address info if the column exists
             if (Schema::hasColumn('orders', 'shipping_address_info')) {
@@ -1101,14 +1130,14 @@ private function updateOrderFromPancake(Order $order, array $orderData)
 
 // Update customer information if provided
 if (!empty($orderData['customer'])) {
-   
+
     $customerData = $orderData['customer'];
     $order->customer_name = $customerData['name'] ?? $order->customer_name;
 
     // Update the associated customer if we can find them
     if ($order->customer_id) {
         $customer = Customer::find($order->customer_id);
-       
+
         if ($customer) {
             // Update pancake_id if not already set
             if (empty($customer->pancake_id) && !empty($customerData['id'])) {
@@ -1155,52 +1184,52 @@ if (!empty($orderData['customer'])) {
             $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
 
 
-
+if(!$order->customer_id){
                 $phoneNumber = $order->bill_phone_number;
                 $customerName = $order->bill_full_name;
-           
+
                 $customer = \App\Models\Customer::where('phone', $phoneNumber)
                                               ->where('name', $customerName)
                                               ->first();
-                                            
-
-                if ($customer) {
-                    // Reset totals first
-                    $customer->total_orders_count = 0;
-                    $customer->total_spent = 0;
-                    $customer->save();
-                   
-                    $aggregates = \App\Models\Order::where('bill_phone_number', $phoneNumber)->where('bill_full_name', $customerName)->get();
-                   
-                    $totalOrders = 0;
-                    foreach ($aggregates as $item) {
-                        $totalOrders++;
-                    }
-                    
-                    $totalSpent = 0;
-                    foreach ($aggregates as $item) {
-                        $totalSpent += $item->total_value;
-                    }
 
 
-                    // if ($aggregates) {
-                        $customer->total_orders_count = $totalOrders;
-                        $customer->total_spent = $totalSpent;
-                        $customer->save();
-                        // if($customer->total_orders_count !== 0){
-                        //    dd($customer);
-                        // }
+                // if ($customer) {
+                //     // Reset totals first
+                //     $customer->total_orders_count = 0;
+                //     $customer->total_spent = 0;
+                //     $customer->save();
 
-                        Log::info('Đã cập nhật thông tin khách hàng trong updateOrderFromPancake', [
-                            'customer_id' => $customer->id,
-                            'phone' => $customer->phone,
-                            'name' => $customer->name,
-                            'order_id' => $order->id,
-                            'total_orders' => $customer->total_orders_count,
-                            'total_spent' => $customer->total_spent
-                        ]);
-                    // }
-                }
+                //     $aggregates = \App\Models\Order::where('bill_phone_number', $phoneNumber)->where('bill_full_name', $customerName)->get();
+
+                //     $totalOrders = 0;
+                //     foreach ($aggregates as $item) {
+                //         $totalOrders++;
+                //     }
+
+                //     $totalSpent = 0;
+                //     foreach ($aggregates as $item) {
+                //         $totalSpent += $item->total_value;
+                //     }
+
+
+                //     // if ($aggregates) {
+                //         $customer->total_orders_count = $totalOrders;
+                //         $customer->total_spent = $totalSpent;
+                //         $customer->save();
+                //         // if($customer->total_orders_count !== 0){
+                //         //    dd($customer);
+                //         // }
+
+                //         Log::info('Đã cập nhật thông tin khách hàng trong updateOrderFromPancake', [
+                //             'customer_id' => $customer->id,
+                //             'phone' => $customer->phone,
+                //             'name' => $customer->name,
+                //             'order_id' => $order->id,
+                //             'total_orders' => $customer->total_orders_count,
+                //             'total_spent' => $customer->total_spent
+                //         ]);
+                //     // }
+                // }
 
 
 
@@ -1273,7 +1302,7 @@ if (!empty($orderData['customer'])) {
                 }
             }
         }
-
+    }
         // Update items if provided
         if (!empty($orderData['items'])) {
             // Get existing items to compare and update

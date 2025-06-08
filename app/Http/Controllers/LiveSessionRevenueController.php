@@ -193,6 +193,28 @@ class LiveSessionRevenueController extends Controller
             ];
         });
 
+        // New logic for new/returning customers based on their entire order history
+        $customerIdsInPeriod = DB::table('orders')
+            ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
+            ->whereNotNull('customer_id')
+            ->distinct()
+            ->pluck('customer_id');
+
+        $newCustomersCount = 0;
+        $returningCustomersCount = 0;
+
+        if ($customerIdsInPeriod->isNotEmpty()) {
+            // Find customers who had an order before the current reporting period
+            $previousCustomerIds = DB::table('orders')
+                ->whereIn('customer_id', $customerIdsInPeriod)
+                ->where('pancake_inserted_at', '<', $startDate)
+                ->distinct()
+                ->pluck('customer_id');
+
+            $returningCustomersCount = $previousCustomerIds->count();
+            $newCustomersCount = $customerIdsInPeriod->count() - $returningCustomersCount;
+        }
+
         // Calculate summary with updated metrics
         $summary = [
             'total_sessions' => $dailyStats->sum('total_sessions'),
@@ -204,9 +226,9 @@ class LiveSessionRevenueController extends Controller
             'canceled_orders' => $dailyStats->sum('canceled_orders'),
             'delivering_orders' => $dailyStats->sum('delivering_orders'),
             'pending_orders' => $dailyStats->sum('pending_orders'),
-            'new_customers' => $dailyStats->sum('new_customers'),
-            'returning_customers' => $dailyStats->sum('returning_customers'),
-            'total_customers' => $dailyStats->sum('total_customers')
+            'new_customers' => $newCustomersCount,
+            'returning_customers' => $returningCustomersCount,
+            'total_customers' => $newCustomersCount + $returningCustomersCount
         ];
 
         // Calculate overall rates

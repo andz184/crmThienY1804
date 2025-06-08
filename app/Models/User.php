@@ -116,4 +116,28 @@ class User extends Authenticatable implements JWTSubject
     {
         return [];
     }
+
+    /**
+     * Get the URL to the user's profile photo.
+     */
+    public function adminlte_image()
+    {
+        return 'https://picsum.photos/300/300';
+    }
+
+    /**
+     * Get the URL to the user's profile page.
+     */
+    public function adminlte_profile_url()
+    {
+        return 'profile/edit';
+    }
+
+    /**
+     * Get the user's description to display in the AdminLTE sidebar.
+     */
+    public function adminlte_desc()
+    {
+        return 'That\'s a nice guy';
+    }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\PancakeSyncController;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Customer;
@@ -26,6 +27,13 @@ use App\Models\PancakeWebhookLog;
 
 class PancakeWebhookController extends Controller
 {
+    protected $pancakeSyncController;
+
+    public function __construct(PancakeSyncController $pancakeSyncController)
+    {
+        $this->pancakeSyncController = $pancakeSyncController;
+    }
+
     /**
      * Handle all incoming webhooks from Pancake (orders, customers, inventory, warehouse)
      *
@@ -34,151 +42,143 @@ class PancakeWebhookController extends Controller
      */
     public function handleWebhook(Request $request)
     {
-        // Create webhook log entry
-        $webhookLog = new PancakeWebhookLog([
-            'event_type' => $request->input('type') . '.' . $request->input('event'),
-            'source_ip' => $request->ip(),
-            'request_data' => $request->all(),
-            'status' => 'processing'
-        ]);
-        $webhookLog->save();
-
         // Log the incoming webhook
         Log::info('Received Pancake webhook', [
-            'data_size' => strlen($request->getContent()),
-            'ip' => $request->ip(),
-            'data_type' => $request->input('type'),
-            'event' => $request->input('event')
+            'data' => $request->all()
         ]);
 
         try {
-            // Begin transaction
             DB::beginTransaction();
 
-            // Process based on the type of data received
-            $results = [];
-            $processedData = [];
+            $webhookData = $request->all();
 
-            // Check for order data
-            $orderData = $request->input('data.order');
-            if (!empty($orderData)) {
-                // Check if order already exists
-                $existingOrder = Order::where('pancake_order_id', $orderData['id'] ?? null)->first();
+            // Format data theo cấu trúc của PancakeSyncController
+            $formattedData = $this->formatWebhookData($webhookData);
+
+            // Check if order exists by pancake_order_id
+            $existingOrder = Order::where('pancake_order_id', $webhookData['id'])->first();
 
                 if ($existingOrder) {
-                    // Update existing order
-                    $order = $this->updateOrder($existingOrder, $orderData);
-                    $results['order'] = 'Đơn hàng đã được cập nhật';
-                    $processedData['order'] = [
-                        'id' => $order->id,
-                        'pancake_order_id' => $order->pancake_order_id,
-                        'status' => 'updated'
-                    ];
-                    $webhookLog->order_id = $order->pancake_order_id;
+                $order = $this->updateOrderFromPancake($existingOrder, $formattedData);
+                $message = 'Order updated successfully';
                 } else {
-                    // Create new order
-                    $order = $this->createOrder($orderData);
-                    $results['order'] = 'Đơn hàng đã được tạo';
-                    $processedData['order'] = [
-                        'id' => $order->id,
-                        'pancake_order_id' => $order->pancake_order_id,
-                        'status' => 'created'
-                    ];
-                    $webhookLog->order_id = $order->pancake_order_id;
-                }
-
-                // Process live session revenue if notes contain live session info
-                if (!empty($orderData['notes'])) {
-                    $this->processLiveSessionRevenue($order, $orderData['notes']);
-                }
+                $order = $this->createOrderFromPancake($formattedData);
+                $message = 'Order created successfully';
             }
 
-            // Check for customer data
-            $customerData = $request->input('data.customer');
-            if (!empty($customerData)) {
-                // Find or create customer
-                $customer = $this->findOrCreateCustomer($customerData);
-                $results['customer'] = 'Customer processed successfully';
-                $processedData['customer'] = [
-                    'id' => $customer->id,
-                    'pancake_id' => $customer->pancake_id,
-                    'status' => 'processed'
-                ];
-                $webhookLog->customer_id = $customer->pancake_id;
-            }
-
-            // Check for inventory/stock updates
-            $inventoryData = $request->input('data.inventory');
-            if (!empty($inventoryData)) {
-                $this->processInventoryUpdate($inventoryData);
-                $results['inventory'] = 'Inventory updated successfully';
-                $processedData['inventory'] = [
-                    'items_count' => count($inventoryData),
-                    'status' => 'processed'
-                ];
-            }
-
-            // Check for warehouse updates
-            $warehouseData = $request->input('data.warehouse');
-            if (!empty($warehouseData)) {
-                $this->processWarehouseUpdate($warehouseData);
-                $results['warehouse'] = 'Warehouse updated successfully';
-                $processedData['warehouse'] = [
-                    'id' => $warehouseData['id'] ?? null,
-                    'status' => 'processed'
-                ];
-            }
-
-            // If we didn't process anything, log a warning
-            if (empty($results)) {
-                Log::warning('Received webhook with no recognizable data', [
-                    'data_keys' => array_keys($request->all())
-                ]);
-
-                $webhookLog->status = 'error';
-                $webhookLog->error_message = 'No recognizable data found in webhook';
-                $webhookLog->processed_data = ['error' => 'No recognizable data'];
-                $webhookLog->save();
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No recognizable data found in webhook'
-                ], 400);
-            }
-
-            // Update webhook log with processed data
-            $webhookLog->status = 'success';
-            $webhookLog->processed_data = $processedData;
-            $webhookLog->save();
-
-            // Commit transaction
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'processed' => $results,
+                'message' => $message,
+                'order_id' => $order->id
             ]);
 
         } catch (\Exception $e) {
-            // Rollback on error
             DB::rollBack();
-
             Log::error('Error processing Pancake webhook', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
+                'data' => $request->all()
             ]);
-
-            // Update webhook log with error
-            $webhookLog->status = 'error';
-            $webhookLog->error_message = $e->getMessage();
-            $webhookLog->processed_data = ['error' => $e->getMessage()];
-            $webhookLog->save();
 
             return response()->json([
                 'success' => false,
-                'message' => 'Error processing webhook: ' . $e->getMessage(),
+                'message' => 'Error processing webhook: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Format webhook data to match PancakeSyncController structure
+     */
+    private function formatWebhookData(array $webhookData): array
+    {
+        // Format data according to PancakeSyncController structure
+        $formattedData = [
+            'id' => $webhookData['id'], // Sử dụng id trực tiếp làm pancake_order_id
+            'code' => $webhookData['id'], // Sử dụng id làm code
+            'status' => $webhookData['status'] ?? 0,
+            'status_name' => $webhookData['status_name'] ?? '',
+            'order_sources' => $webhookData['order_sources'] ?? '-1',
+            'order_sources_name' => $webhookData['order_sources_name'] ?? '',
+            'warehouse_id' => $webhookData['warehouse_id'] ?? null,
+            'page_id' => $webhookData['page_id'] ?? null,
+            'total_price' => $webhookData['total_price'] ?? 0,
+            'shipping_fee' => $webhookData['shipping_fee'] ?? 0,
+            'total_quantity' => $webhookData['total_quantity'] ?? 0,
+            'note' => $webhookData['note'] ?? '',
+            'transfer_money' => $webhookData['transfer_money'] ?? 0,
+            'prepaid' => $webhookData['prepaid'] ?? 0,
+            'cod' => $webhookData['cod'] ?? 0,
+            'items' => [],
+            'customer' => [
+                'id' => $webhookData['customer']['id'] ?? null,
+                'name' => $webhookData['customer']['name'] ?? $webhookData['bill_full_name'] ?? '',
+                'phone' => $webhookData['customer']['phone_numbers'][0] ?? $webhookData['bill_phone_number'] ?? null,
+                'email' => $webhookData['customer']['emails'][0] ?? null,
+                'gender' => $webhookData['customer']['gender'] ?? null,
+                'fb_id' => $webhookData['customer']['fb_id'] ?? null
+            ],
+            'shipping_address' => [
+                'full_name' => $webhookData['shipping_address']['full_name'] ?? $webhookData['bill_full_name'] ?? '',
+                'phone_number' => $webhookData['shipping_address']['phone_number'] ?? $webhookData['bill_phone_number'] ?? '',
+                'address' => $webhookData['shipping_address']['address'] ?? '',
+                'province_id' => $webhookData['shipping_address']['province_id'] ?? null,
+                'district_id' => $webhookData['shipping_address']['district_id'] ?? null,
+                'commune_id' => $webhookData['shipping_address']['commune_id'] ?? null,
+                'full_address' => $webhookData['shipping_address']['full_address'] ?? ''
+            ],
+            // Thêm thông tin nhân viên seller và care
+            'assigning_seller' => [
+                'id' => $webhookData['assigning_seller']['id'] ?? null,
+                'email' => $webhookData['assigning_seller']['email'] ?? null,
+                'fb_id' => $webhookData['assigning_seller']['fb_id'] ?? null,
+                'name' => $webhookData['assigning_seller']['name'] ?? null,
+                'phone_number' => $webhookData['assigning_seller']['phone_number'] ?? null,
+                'avatar_url' => $webhookData['assigning_seller']['avatar_url'] ?? null
+            ],
+            'assigning_care' => [
+                'id' => $webhookData['assigning_care']['id'] ?? null,
+                'email' => $webhookData['assigning_care']['email'] ?? null,
+                'fb_id' => $webhookData['assigning_care']['fb_id'] ?? null,
+                'name' => $webhookData['assigning_care']['name'] ?? null,
+                'phone_number' => $webhookData['assigning_care']['phone_number'] ?? null,
+                'avatar_url' => $webhookData['assigning_care']['avatar_url'] ?? null
+            ]
+        ];
+
+        // Format items data
+        if (!empty($webhookData['items'])) {
+            $formattedData['items'] = array_map(function($item) {
+                return [
+                    'product_id' => $item['product_id'] ?? null,
+                    'variation_id' => $item['variation_id'] ?? null,
+                    'quantity' => $item['quantity'] ?? 1,
+                    'variation_info' => [
+                        'name' => $item['variation_info']['name'] ?? '',
+                        'retail_price' => $item['variation_info']['retail_price'] ?? 0,
+                        'barcode' => $item['variation_info']['barcode'] ?? null,
+                        'weight' => $item['variation_info']['weight'] ?? 0
+                    ]
+                ];
+            }, $webhookData['items']);
+        }
+
+        // Add partner info if exists
+        if (!empty($webhookData['partner'])) {
+            $formattedData['partner'] = [
+                'partner_id' => $webhookData['partner']['partner_id'] ?? null,
+                'partner_name' => $webhookData['partner']['partner_name'] ?? null
+            ];
+        }
+
+        // Add warehouse info if exists
+        if (!empty($webhookData['warehouse_info'])) {
+            $formattedData['warehouse_info'] = $webhookData['warehouse_info'];
+        }
+
+        return $formattedData;
     }
 
     /**
@@ -259,16 +259,13 @@ class PancakeWebhookController extends Controller
 
     /**
      * Create a new order from Pancake data
-     *
-     * @param array $orderData
-     * @return Order
      */
-    private function createOrder(array $orderData)
+    protected function createOrderFromPancake(array $orderData)
     {
         try {
             DB::beginTransaction();
 
-            // 1. Map thông tin khách hàng
+            // Create customer first
             $customer = $this->findOrCreateCustomer([
                 'name' => $orderData['bill_full_name'] ?? $orderData['customer']['name'] ?? null,
                 'phone' => $orderData['bill_phone_number'] ?? $orderData['customer']['phone'] ?? null,
@@ -278,128 +275,232 @@ class PancakeWebhookController extends Controller
                 'code' => $orderData['customer']['code'] ?? null
             ]);
 
-            // 2. Tạo đơn hàng mới
-        $order = new Order();
+            // Create new order
+            $order = new Order();
 
-            // Map thông tin cơ bản
+            // Map basic info
             $order->pancake_order_id = $orderData['id'];
-        $order->order_code = $orderData['code'] ?? ('PCK-' . Str::random(8));
+            $order->order_code = $orderData['code'] ?? ('PCK-' . Str::random(8));
+
+            // Set source from order_sources
             $order->source = $orderData['order_sources'] ?? -1;
 
-            // Map thông tin kho và trang
-            $order->warehouse_id = $this->findOrCreateWarehouse($orderData['warehouse_id']);
+            // Get page info
+            if (!empty($orderData['page_id'])) {
+                $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
+                if ($page) {
+                    $order->page_name = $page->name;
+                }
+            }
+
+            // Map warehouse info
+            if (!empty($orderData['warehouse_id'])) {
+                $warehouse = Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
+
+                if (!$warehouse) {
+                    // Thử tìm theo code
+                    $warehouse = Warehouse::where('code', $orderData['warehouse_id'])->first();
+                }
+
+                // Nếu không tìm thấy và có thông tin kho, tạo kho mới
+                if (!$warehouse && !empty($orderData['warehouse_name'])) {
+                    $warehouse = new Warehouse();
+                    $warehouse->name = $orderData['warehouse_name'];
+                    $warehouse->code = 'WH-' . $orderData['warehouse_id'];
+                    $warehouse->pancake_id = $orderData['warehouse_id'];
+                    $warehouse->save();
+
+                    Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake', [
+                        'warehouse_id' => $warehouse->id,
+                        'pancake_id' => $orderData['warehouse_id'],
+                        'name' => $orderData['warehouse_name']
+                    ]);
+                }
+
+                if ($warehouse) {
+                    $order->warehouse_id = $warehouse->id;
+                    $order->warehouse_code = $warehouse->code;
+                    $order->pancake_warehouse_id = $warehouse->pancake_id;
+                } else {
+                    // Lưu pancake_warehouse_id ngay cả khi không tìm thấy warehouse
+                    $order->pancake_warehouse_id = $orderData['warehouse_id'];
+                }
+            }
             $order->pancake_page_id = $orderData['page_id'] ?? null;
 
-            // Map thông tin khách hàng
-        $order->customer_id = $customer->id;
+            // Map customer info
+            $order->customer_id = $customer->id;
             $order->customer_name = $customer->name;
             $order->customer_phone = $customer->phone;
             $order->customer_email = $customer->email;
 
-            // Map thông tin vận chuyển
-        if (!empty($orderData['shipping_address'])) {
-            $shipping = $orderData['shipping_address'];
-                $order->shipping_province = $shipping['province_id'] ?? null;
-                $order->shipping_district = $shipping['district_id'] ?? null;
-                $order->shipping_ward = $shipping['commune_id'] ?? null;
-            $order->street_address = $shipping['address'] ?? null;
-            $order->full_address = $shipping['full_address'] ?? null;
+            // Map shipping info
+            if (!empty($orderData['shipping_address'])) {
+                $shipping = $orderData['shipping_address'];
+
+                $addressParts = [];
+                if (!empty($shipping['address'])) {
+                    $addressParts[] = $shipping['address'];
+                }
+                if (!empty($shipping['ward_name'])) $addressParts[] = $shipping['ward_name'];
+                if (!empty($shipping['district_name'])) $addressParts[] = $shipping['district_name'];
+                if (!empty($shipping['province_name'])) $addressParts[] = $shipping['province_name'];
+
+                $fullAddress = implode(', ', $addressParts);
+                $order->full_address = !empty($fullAddress) ? $fullAddress : ($shipping['full_address'] ?? '');
+                $order->province_code = $shipping['province_id'] ?? null;
+                $order->district_code = $shipping['district_id'] ?? null;
+                $order->ward_code = $shipping['ward_id'] ?? null;
+                $order->street_address = $shipping['address'] ?? '';
+
+                // Update related names if available
+                $order->province_name = $shipping['province_name'] ?? null;
+                $order->district_name = $shipping['district_name'] ?? null;
+                $order->ward_name = $shipping['ward_name'] ?? null;
+
+                // Cập nhật địa chỉ cho khách hàng
+                if ($customer) {
+                    $customer->full_address = $order->full_address;
+                    $customer->province = $order->province_code;
+                    $customer->district = $order->district_code;
+                    $customer->ward = $order->ward_code;
+                    $customer->street_address = $order->street_address;
+                    $customer->save();
+                }
             }
 
-            // Map thông tin đơn vị vận chuyển
-            if (!empty($orderData['partner'])) {
-                $order->shipping_provider_id = $orderData['partner']['partner_id'] ?? null;
+            // Map shipping provider
+            if (!empty($orderData['partner']['partner_id'])) {
+                $providerId = $orderData['partner']['partner_id'];
+                $provider = ShippingProvider::where('pancake_id', $providerId)
+                    ->orWhere('pancake_partner_id', $providerId)
+                    ->first();
+
+                // Nếu không tìm thấy và có tên đơn vị vận chuyển, tạo mới
+                if (!$provider && !empty($orderData['shipping_provider_name'])) {
+                    $provider = new ShippingProvider();
+                    $provider->name = $orderData['shipping_provider_name'];
+                    $provider->pancake_id = $providerId;
+                    $provider->save();
+
+                    Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake', [
+                        'provider_id' => $provider->id,
+                        'pancake_id' => $providerId,
+                        'name' => $orderData['shipping_provider_name']
+                    ]);
+                }
+
+                if ($provider) {
+                    $order->shipping_provider_id = $provider->id;
+                    $order->pancake_shipping_provider_id = $provider->pancake_id;
+                } else {
+                    // Lưu pancake_shipping_provider_id ngay cả khi không tìm thấy provider
+                    $order->pancake_shipping_provider_id = $providerId;
+                }
             }
 
-            // Map thông tin tài chính
+            // Map financial info
             $order->shipping_fee = (float)($orderData['shipping_fee'] ?? 0);
             $order->transfer_money = (float)($orderData['transfer_money'] ?? 0);
             $order->total_value = $this->calculateOrderTotal($orderData);
 
-            // Map ghi chú
+            // Map notes
             $order->notes = $orderData['note'] ?? null;
             $order->additional_notes = $orderData['additional_notes'] ?? null;
 
-            // Map trạng thái
-            $order->status = $this->mapPancakeStatus($orderData['status'] ?? 'new');
-
-            // Prepare products_data in the same format as OrderController
-            $pancakeItemsPayload = [];
-            if (!empty($orderData['items'])) {
-                foreach ($orderData['items'] as $item) {
-                    $pancakeItemsPayload[] = [
-                        'id' => null,
-                        'product_id' => $item['product_id'] ?? null,
-                        'variation_id' => $item['variation_id'] ?? ($item['code'] ?? null),
-                        'quantity' => (int)($item['quantity'] ?? 1),
-                        'added_to_cart_quantity' => (int)($item['quantity'] ?? 1),
-                        'components' => null,
-                        'composite_item_id' => null,
-                        'discount_each_product' => 0,
-                        'exchange_count' => 0,
-                        'is_bonus_product' => false,
-                        'is_composite' => null,
-                        'is_discount_percent' => false,
-                        'is_wholesale' => false,
-                        'measure_group_id' => null,
-                        'note' => null,
-                        'one_time_product' => false,
-                        'return_quantity' => 0,
-                        'returned_count' => 0,
-                        'returning_quantity' => 0,
-                        'total_discount' => 0,
-                        'variation_info' => [
-                            'barcode' => $item['variation_info']['barcode'] ?? ($item['code'] ?? null),
-                            'brand_id' => null,
-                            'category_ids' => [],
-                            'detail' => null,
-                            'display_id' => $item['variation_info']['display_id'] ?? ($item['code'] ?? null),
-                            'exact_price' => 0,
-                            'fields' => null,
-                            'last_imported_price' => 0,
-                            'measure_info' => null,
-                            'name' => $item['variation_info']['name'] ?? ($item['name'] ?? 'N/A'),
-                            'product_display_id' => $item['variation_info']['product_display_id'] ?? ($item['code'] ?? null),
-                            'retail_price' => (float)($item['variation_info']['retail_price'] ?? ($item['price'] ?? 0)),
-                            'weight' => (int)($item['variation_info']['weight'] ?? ($item['weight'] ?? 0)),
-                        ]
-                    ];
-                }
+            // Process live session if notes contain live session info
+            if ($order->notes) {
+                $this->processLiveSessionRevenue($order, $order->notes);
             }
 
-            // Save products_data as JSON
-            $order->products_data = json_encode($pancakeItemsPayload);
-        $order->save();
+            // Map status
+            $order->status = $this->mapPancakeStatus($orderData['status'] ?? 'new');
 
-            // 3. Xử lý các sản phẩm trong đơn
-        if (!empty($orderData['items'])) {
-            foreach ($orderData['items'] as $itemData) {
-                $orderItem = new OrderItem();
-                $orderItem->order_id = $order->id;
-                    $orderItem->code = $itemData['variation_id'] ?? null;
-                    $orderItem->quantity = $itemData['quantity'] ?? 1;
+            // Save products data
+            if (!empty($orderData['items'])) {
+                $order->products_data = json_encode($orderData['items']);
+            }
 
-                    // Map thông tin sản phẩm
-                    if (!empty($itemData['variation_info'])) {
-                        $orderItem->price = $itemData['variation_info']['retail_price'] ?? 0;
-                        // Tính tổng tiền cho item
-                        $orderItem->total = $orderItem->price * $orderItem->quantity;
+            // Lưu thông tin nhân viên seller và care
+            $order->assigning_seller_id = $orderData['assigning_seller']['id'] ?? null;
+            $order->assigning_care_id = $orderData['assigning_care']['id'] ?? null;
+
+            // Save order
+            $order->save();
+
+            // Cập nhật thông tin khách hàng
+            if ($customer) {
+                // Cập nhật số đơn hàng
+                $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
+
+                // Cập nhật tổng chi tiêu - chỉ tính các đơn đã nhận (pancake_status = 3)
+                $customer->total_spent = Order::where('customer_id', $customer->id)
+                    ->where('pancake_status', 3)
+                    ->sum('total_value');
+
+                // Cập nhật số đơn thành công (đã nhận)
+                $customer->succeeded_order_count = Order::where('customer_id', $customer->id)
+                    ->where('pancake_status', 3)
+                    ->count();
+
+                // Cập nhật số đơn trả hàng (status_code = 4 hoặc 5 hoặc 15)
+                $customer->returned_order_count = Order::where('customer_id', $customer->id)
+                    ->whereIn('pancake_status', [4, 5, 15])
+                    ->count();
+
+                // Cập nhật thông tin từ Pancake nếu có
+                if (!empty($orderData['customer'])) {
+                    $customerData = $orderData['customer'];
+
+                    // Cập nhật thông tin cơ bản
+                    $customer->gender = $customerData['gender'] ?? $customer->gender;
+                    $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
+                    $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
+
+                    // Xử lý nhiều số điện thoại
+                    if (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
+                        if (Schema::hasColumn('customers', 'phone_numbers')) {
+                            $customer->phone_numbers = json_encode($customerData['phone_numbers']);
+                        }
                     }
 
-                    // Lưu thông tin chi tiết vào additional_data
-                    $orderItem->additional_data = json_encode($itemData);
+                    // Xử lý nhiều email
+                    if (!empty($customerData['emails']) && is_array($customerData['emails'])) {
+                        if (Schema::hasColumn('customers', 'emails')) {
+                            $customer->emails = json_encode($customerData['emails']);
+                        }
+                    }
 
-                $orderItem->save();
+                    // Cập nhật tags
+                    if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
+                        $customer->tags = json_encode($customerData['tags']);
+                    }
 
-                    // Log thông tin
-                Log::info('Created order item', [
-                    'order_id' => $order->id,
-                        'code' => $orderItem->code,
-                    'quantity' => $orderItem->quantity,
-                        'price' => $orderItem->price,
-                        'total' => $orderItem->total
-                    ]);
+                    // Cập nhật conversation tags
+                    if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
+                        $customer->conversation_tags = json_encode($customerData['conversation_tags']);
+                    }
+
+                    // Cập nhật điểm thưởng
+                    if (Schema::hasColumn('customers', 'reward_points')) {
+                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
+                    }
+
+                    // Cập nhật danh sách địa chỉ
+                    if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
+                        $customer->addresses = json_encode($customerData['shop_customer_addresses']);
+                    }
                 }
+
+                $customer->save();
+
+                Log::info('Đã cập nhật thông tin khách hàng', [
+                    'customer_id' => $customer->id,
+                    'total_orders' => $customer->total_orders_count,
+                    'total_spent' => $customer->total_spent,
+                    'succeeded_orders' => $customer->succeeded_order_count,
+                    'returned_orders' => $customer->returned_order_count
+                ]);
             }
 
             DB::commit();
@@ -416,35 +517,243 @@ class PancakeWebhookController extends Controller
     }
 
     /**
-     * Calculate order total from items and fees
-     *
-     * @param array $orderData
-     * @return float
+     * Update existing order with Pancake data
      */
-    private function calculateOrderTotal(array $orderData): float
+    protected function updateOrderFromPancake(Order $order, array $orderData)
     {
-        $total = 0;
+        try {
+            DB::beginTransaction();
 
-        // Tính tổng giá trị sản phẩm
-        if (!empty($orderData['items'])) {
-            foreach ($orderData['items'] as $item) {
-                $price = $item['variation_info']['retail_price'] ?? 0;
-                $quantity = $item['quantity'] ?? 1;
-                $total += $price * $quantity;
+            // Update customer if needed
+            if (!empty($orderData['customer'])) {
+                $customer = $this->findOrCreateCustomer($orderData['customer']);
+                $order->customer_id = $customer->id;
+                $order->customer_name = $orderData['customer']['name'] ?? $customer->name;
+                $order->customer_phone = $orderData['customer']['phone'] ?? $customer->phone;
+                $order->customer_email = $orderData['customer']['email'] ?? $customer->email;
+
+                // Cập nhật thông tin khách hàng
+                if ($customer) {
+                    $customerData = $orderData['customer'];
+
+                    // Cập nhật thông tin cơ bản
+                    $customer->name = $customerData['name'] ?? $customer->name;
+                    $customer->phone = $customerData['phone'] ?? $customer->phone;
+                    $customer->email = $customerData['email'] ?? $customer->email;
+                    $customer->gender = $customerData['gender'] ?? $customer->gender;
+                    $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
+                    $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
+
+                    // Xử lý nhiều số điện thoại
+                    if (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
+                        if (Schema::hasColumn('customers', 'phone_numbers')) {
+                            $customer->phone_numbers = json_encode($customerData['phone_numbers']);
+                        }
+                    }
+
+                    // Xử lý nhiều email
+                    if (!empty($customerData['emails']) && is_array($customerData['emails'])) {
+                        if (Schema::hasColumn('customers', 'emails')) {
+                            $customer->emails = json_encode($customerData['emails']);
+                        }
+                    }
+
+                    // Cập nhật tags
+                    if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
+                        $customer->tags = json_encode($customerData['tags']);
+                    }
+
+                    // Cập nhật conversation tags
+                    if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
+                        $customer->conversation_tags = json_encode($customerData['conversation_tags']);
+                    }
+
+                    // Cập nhật điểm thưởng
+                    if (Schema::hasColumn('customers', 'reward_points')) {
+                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points;
+                    }
+
+                    // Cập nhật danh sách địa chỉ
+                    if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
+                        $customer->addresses = json_encode($customerData['shop_customer_addresses']);
+                    }
+
+                    // Cập nhật số đơn hàng và doanh thu
+                    $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
+                    $customer->total_spent = Order::where('customer_id', $customer->id)
+                        ->where('pancake_status', 3)
+                        ->sum('total_value');
+                    $customer->succeeded_order_count = Order::where('customer_id', $customer->id)
+                        ->where('pancake_status', 3)
+                        ->count();
+                    $customer->returned_order_count = Order::where('customer_id', $customer->id)
+                        ->whereIn('pancake_status', [4, 5, 15])
+                        ->count();
+
+                    $customer->save();
+
+                    Log::info('Đã cập nhật thông tin khách hàng trong updateOrderFromPancake', [
+                        'customer_id' => $customer->id,
+                        'total_orders' => $customer->total_orders_count,
+                        'total_spent' => $customer->total_spent,
+                        'succeeded_orders' => $customer->succeeded_order_count,
+                        'returned_orders' => $customer->returned_order_count
+                    ]);
+                }
             }
+
+            // Update basic order information
+            // Set source from order_sources
+            if (!empty($orderData['order_sources'])) {
+                $order->source = $orderData['order_sources'];
+            }
+
+            // Update page info
+            if (!empty($orderData['page_id'])) {
+                $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
+                if ($page) {
+                    $order->page_name = $page->name;
+                }
+            }
+
+            // Update warehouse info
+            if (!empty($orderData['warehouse_id'])) {
+                $warehouse = Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
+
+                if (!$warehouse) {
+                    // Thử tìm theo code
+                    $warehouse = Warehouse::where('code', $orderData['warehouse_id'])->first();
+                }
+
+                // Nếu không tìm thấy và có thông tin kho, tạo kho mới
+                if (!$warehouse && !empty($orderData['warehouse_name'])) {
+                    $warehouse = new Warehouse();
+                    $warehouse->name = $orderData['warehouse_name'];
+                    $warehouse->code = 'WH-' . $orderData['warehouse_id'];
+                    $warehouse->pancake_id = $orderData['warehouse_id'];
+                    $warehouse->save();
+
+                    Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake', [
+                        'warehouse_id' => $warehouse->id,
+                        'pancake_id' => $orderData['warehouse_id'],
+                        'name' => $orderData['warehouse_name']
+                    ]);
+                }
+
+                if ($warehouse) {
+                    $order->warehouse_id = $warehouse->id;
+                    $order->warehouse_code = $warehouse->code;
+                    $order->pancake_warehouse_id = $warehouse->pancake_id;
+                } else {
+                    // Lưu pancake_warehouse_id ngay cả khi không tìm thấy warehouse
+                    $order->pancake_warehouse_id = $orderData['warehouse_id'];
+                }
+            }
+
+            $order->campaign_id = $orderData['campaign_id'] ?? $order->campaign_id;
+            $order->campaign_name = $orderData['campaign_name'] ?? $order->campaign_name;
+
+            // Update status and tracking
+            if (!empty($orderData['status'])) {
+                $order->status = $this->mapPancakeStatus($orderData['status']);
+                $order->pancake_status = is_numeric($orderData['status']) ?
+                    $orderData['status'] :
+                    ($orderData['status_name'] ?? $order->pancake_status);
+            }
+
+            // Update shipping info
+            if (!empty($orderData['shipping_address'])) {
+                $shipping = $orderData['shipping_address'];
+
+                $addressParts = [];
+                if (!empty($shipping['address'])) {
+                    $addressParts[] = $shipping['address'];
+                }
+                if (!empty($shipping['ward_name'])) $addressParts[] = $shipping['ward_name'];
+                if (!empty($shipping['district_name'])) $addressParts[] = $shipping['district_name'];
+                if (!empty($shipping['province_name'])) $addressParts[] = $shipping['province_name'];
+
+                $fullAddress = implode(', ', $addressParts);
+                $order->full_address = !empty($fullAddress) ? $fullAddress : ($shipping['full_address'] ?? $order->full_address);
+                $order->province_code = $shipping['province_id'] ?? $order->province_code;
+                $order->district_code = $shipping['district_id'] ?? $order->district_code;
+                $order->ward_code = $shipping['ward_id'] ?? $order->ward_code;
+                $order->street_address = $shipping['address'] ?? $order->street_address;
+
+                // Update related names if available
+                $order->province_name = $shipping['province_name'] ?? $order->province_name;
+                $order->district_name = $shipping['district_name'] ?? $order->district_name;
+                $order->ward_name = $shipping['ward_name'] ?? $order->ward_name;
+            }
+
+            // Update shipping provider
+            if (!empty($orderData['partner']['partner_id'])) {
+                $providerId = $orderData['partner']['partner_id'];
+                $provider = ShippingProvider::where('pancake_id', $providerId)
+                    ->orWhere('pancake_partner_id', $providerId)
+                    ->first();
+
+                // Nếu không tìm thấy và có tên đơn vị vận chuyển, tạo mới
+                if (!$provider && !empty($orderData['shipping_provider_name'])) {
+                    $provider = new ShippingProvider();
+                    $provider->name = $orderData['shipping_provider_name'];
+                    $provider->pancake_id = $providerId;
+                    $provider->save();
+
+                    Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake', [
+                        'provider_id' => $provider->id,
+                        'pancake_id' => $providerId,
+                        'name' => $orderData['shipping_provider_name']
+                    ]);
+                }
+
+                if ($provider) {
+                    $order->shipping_provider_id = $provider->id;
+                    $order->pancake_shipping_provider_id = $provider->pancake_id;
+                } else {
+                    // Lưu pancake_shipping_provider_id ngay cả khi không tìm thấy provider
+                    $order->pancake_shipping_provider_id = $providerId;
+                }
+            }
+
+            // Update financial information
+            $order->shipping_fee = $orderData['shipping_fee'] ?? $order->shipping_fee;
+            $order->transfer_money = $orderData['transfer_money'] ?? $order->transfer_money;
+            $order->total_value = $orderData['total_price'] ?? $order->total_value;
+            $order->notes = $orderData['note'] ?? $order->notes;
+
+            // Process live session if notes contain live session info
+            if ($order->notes) {
+                $this->processLiveSessionRevenue($order, $order->notes);
+            }
+
+            // Update products data
+            if (!empty($orderData['items'])) {
+                $order->products_data = json_encode($orderData['items']);
+            }
+
+            // Cập nhật thông tin nhân viên seller và care
+            $order->assigning_seller_id = $orderData['assigning_seller']['id'] ?? $order->assigning_seller_id;
+            $order->assigning_care_id = $orderData['assigning_care']['id'] ?? $order->assigning_care_id;
+
+            $order->save();
+
+            DB::commit();
+            return $order;
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error updating order from Pancake', [
+                'error' => $e->getMessage(),
+                'order_id' => $order->id,
+                'data' => $orderData
+            ]);
+            throw $e;
         }
-
-        // Cộng phí vận chuyển
-        $total += (float)($orderData['shipping_fee'] ?? 0);
-
-        return $total;
     }
 
     /**
      * Find or create warehouse by Pancake ID
-     *
-     * @param string|null $warehouseId
-     * @return int|null
      */
     private function findOrCreateWarehouse(?string $warehouseId): ?int
     {
@@ -467,191 +776,29 @@ class PancakeWebhookController extends Controller
     }
 
     /**
-     * Update an existing order with Pancake data
-     *
-     * @param Order $order
-     * @param array $orderData
-     * @return Order
+     * Calculate order total from items and fees
      */
-    private function updateOrder(Order $order, array $orderData)
+    private function calculateOrderTotal(array $orderData): float
     {
-        // Update customer if needed
-        if (!empty($orderData['customer'])) {
-            $customer = $this->findOrCreateCustomer($orderData['customer']);
-            $order->customer_id = $customer->id;
-            $order->customer_name = $orderData['customer']['name'] ?? $customer->name;
-            $order->customer_phone = $orderData['customer']['phone'] ?? $customer->phone;
-            $order->customer_email = $orderData['customer']['email'] ?? $customer->email;
-        }
+        $total = 0;
 
-        // Update basic order information
-        $order->source = $orderData['source'] ?? $orderData['order_sources_name'] ?? $order->source;
-        $order->campaign_id = $orderData['campaign_id'] ?? $order->campaign_id;
-        $order->campaign_name = $orderData['campaign_name'] ?? $order->campaign_name;
-
-        // Update status and tracking
-        if (!empty($orderData['status'])) {
-            $order->status = $this->mapPancakeStatus($orderData['status']);
-            $order->pancake_status = is_numeric($orderData['status']) ?
-                $orderData['status'] :
-                ($orderData['status_name'] ?? $order->pancake_status);
-        }
-        $order->tracking_code = $orderData['tracking_code'] ?? $order->tracking_code;
-        $order->tracking_url = $orderData['tracking_url'] ?? $order->tracking_url;
-
-        // Update financial information
-        $order->shipping_fee = $orderData['shipping_fee'] ?? $order->shipping_fee;
-        $order->cod_fee = $orderData['cod_fee'] ?? $order->cod_fee;
-        $order->insurance_fee = $orderData['insurance_fee'] ?? $order->insurance_fee;
-        $order->total_value = $orderData['total'] ?? ($orderData['total_price'] ?? $order->total_value);
-        $order->discount_amount = $orderData['discount_amount'] ?? $order->discount_amount;
-        $order->payment_method = $orderData['payment_method'] ?? $order->payment_method;
-        $order->payment_status = $orderData['payment_status'] ?? $order->payment_status;
-
-        // Update shipping information
-        if (!empty($orderData['shipping_address'])) {
-            $shipping = $orderData['shipping_address'];
-            $order->province_code = $shipping['province_code'] ?? $shipping['province_id'] ?? $order->province_code;
-            $order->district_code = $shipping['district_code'] ?? $shipping['district_id'] ?? $order->district_code;
-            $order->ward_code = $shipping['ward_code'] ?? $shipping['commune_id'] ?? $order->ward_code;
-            $order->street_address = $shipping['address'] ?? $order->street_address;
-            $order->full_address = $shipping['full_address'] ?? $order->full_address;
-            $order->shipping_provider = $shipping['provider'] ?? $order->shipping_provider;
-            $order->shipping_service = $shipping['service'] ?? $order->shipping_service;
-            $order->shipping_note = $shipping['note'] ?? $order->shipping_note;
-        }
-
-        // Update notes
-        $order->notes = $orderData['notes'] ?? $order->notes;
-        $order->internal_notes = $orderData['internal_notes'] ?? $order->internal_notes;
-        $order->additional_notes = $orderData['additional_notes'] ?? $order->additional_notes;
-
-        // Update products_data with the same format as OrderController
+        // Calculate total from items
         if (!empty($orderData['items'])) {
-            $pancakeItemsPayload = [];
             foreach ($orderData['items'] as $item) {
-                $pancakeItemsPayload[] = [
-                    'id' => null,
-                    'product_id' => $item['product_id'] ?? null,
-                    'variation_id' => $item['variation_id'] ?? ($item['code'] ?? null),
-                    'quantity' => (int)($item['quantity'] ?? 1),
-                    'added_to_cart_quantity' => (int)($item['quantity'] ?? 1),
-                    'components' => null,
-                    'composite_item_id' => null,
-                    'discount_each_product' => 0,
-                    'exchange_count' => 0,
-                    'is_bonus_product' => false,
-                    'is_composite' => null,
-                    'is_discount_percent' => false,
-                    'is_wholesale' => false,
-                    'measure_group_id' => null,
-                    'note' => null,
-                    'one_time_product' => false,
-                    'return_quantity' => 0,
-                    'returned_count' => 0,
-                    'returning_quantity' => 0,
-                    'total_discount' => 0,
-                    'variation_info' => [
-                        'barcode' => $item['variation_info']['barcode'] ?? ($item['code'] ?? null),
-                        'brand_id' => null,
-                        'category_ids' => [],
-                        'detail' => null,
-                        'display_id' => $item['variation_info']['display_id'] ?? ($item['code'] ?? null),
-                        'exact_price' => 0,
-                        'fields' => null,
-                        'last_imported_price' => 0,
-                        'measure_info' => null,
-                        'name' => $item['variation_info']['name'] ?? ($item['name'] ?? 'N/A'),
-                        'product_display_id' => $item['variation_info']['product_display_id'] ?? ($item['code'] ?? null),
-                        'retail_price' => (float)($item['variation_info']['retail_price'] ?? ($item['price'] ?? 0)),
-                        'weight' => (int)($item['variation_info']['weight'] ?? ($item['weight'] ?? 0)),
-                    ]
-                ];
-            }
-            $order->products_data = json_encode($pancakeItemsPayload);
-        }
-
-        // Update status
-        $order->internal_status = 'Updated from Pancake webhook';
-        $order->updated_at = now();
-        $order->updated_by = $order->updated_by;
-
-        $order->save();
-
-        // Update order items
-        if (!empty($orderData['items'])) {
-            // First, mark all existing items for potential deletion
-            $existingItemIds = $order->items->pluck('id')->toArray();
-            $updatedItemIds = [];
-
-            foreach ($orderData['items'] as $itemData) {
-                // Find or create order item
-                $orderItem = $order->items()
-                    ->where('pancake_product_id', $itemData['product_id'] ?? null)
-                    ->first();
-
-                if (!$orderItem) {
-                    $orderItem = new OrderItem();
-                    $orderItem->order_id = $order->id;
-                }
-
-                // Update order item fields
-                $this->setOrderItemFields($orderItem, $itemData);
-                $orderItem->save();
-
-                $updatedItemIds[] = $orderItem->id;
-
-                Log::info('Updated order item', [
-                    'order_id' => $order->id,
-                    'item_id' => $orderItem->id,
-                    'product_name' => $orderItem->product_name
-                ]);
-            }
-
-            // Remove items that no longer exist in the updated data
-            $itemsToDelete = array_diff($existingItemIds, $updatedItemIds);
-            if (!empty($itemsToDelete)) {
-                OrderItem::whereIn('id', $itemsToDelete)->delete();
-
-                Log::info('Removed deleted items', [
-                    'order_id' => $order->id,
-                    'deleted_item_ids' => $itemsToDelete
-                ]);
-            }
-
-            // Update total value based on new items
-            $newTotal = $order->items->sum(function($item) {
-                return ($item->price ?? 0) * ($item->quantity ?? 1);
-            });
-
-            // Add shipping fee
-            $newTotal += ($order->shipping_fee ?? 0);
-
-            // Update order total if different
-            if ($newTotal > 0 && $newTotal != $order->total_value) {
-                $order->total_value = $newTotal;
-                $order->save();
-
-                Log::info('Updated order total value based on new items', [
-                    'order_id' => $order->id,
-                    'new_total' => $newTotal
-                ]);
+                $price = $item['variation_info']['retail_price'] ?? 0;
+                $quantity = $item['quantity'] ?? 1;
+                $total += $price * $quantity;
             }
         }
 
-        // Process live session revenue if notes contain session info
-        if (!empty($orderData['notes'])) {
-            $this->processLiveSessionRevenue($order, $orderData['notes']);
-        }
+        // Add shipping fee
+        $total += (float)($orderData['shipping_fee'] ?? 0);
 
-        return $order;
+        return $total;
     }
 
     /**
-     * Find or create a customer based on Pancake data
-     *
-     * @param array $customerData
-     * @return Customer
+     * Find or create customer from Pancake data
      */
     private function findOrCreateCustomer(array $customerData)
     {
@@ -674,14 +821,6 @@ class PancakeWebhookController extends Controller
             $customer = Customer::where('email', $email)->first();
         }
 
-        // Chuẩn bị dữ liệu social
-        $socialData = [
-            'social_type' => $customerData['social_type'] ?? null,
-            'social_id' => $customerData['social_id'] ?? null,
-            'fb_id' => $customerData['fb_id'] ?? null,
-            'social_info' => !empty($customerData['social_info']) ? json_encode($customerData['social_info']) : null
-        ];
-
         if (!$customer) {
             // Create new customer
             $customer = new Customer();
@@ -691,7 +830,7 @@ class PancakeWebhookController extends Controller
             $customer->pancake_id = $customerData['id'] ?? null;
             $customer->pancake_customer_id = $customerData['code'] ?? null;
 
-            // Map địa chỉ
+            // Map address
             if (!empty($customerData['shipping_address'])) {
                 $shipping = $customerData['shipping_address'];
                 $customer->province = $shipping['province_id'] ?? null;
@@ -701,20 +840,13 @@ class PancakeWebhookController extends Controller
                 $customer->full_address = $shipping['full_address'] ?? null;
             }
 
-            // Map thông tin social
-            foreach ($socialData as $key => $value) {
-                if (Schema::hasColumn('customers', $key)) {
-                    $customer->$key = $value;
-                }
-            }
-
             $customer->save();
         } else {
-            // Update existing customer with any new data
+            // Update existing customer
             $customer->pancake_id = $customerData['id'] ?? $customer->pancake_id;
             $customer->pancake_customer_id = $customerData['code'] ?? $customer->pancake_customer_id;
 
-            // Cập nhật địa chỉ nếu có
+            // Update address if provided
             if (!empty($customerData['shipping_address'])) {
                 $shipping = $customerData['shipping_address'];
                 $customer->province = $shipping['province_id'] ?? $customer->province;
@@ -722,13 +854,6 @@ class PancakeWebhookController extends Controller
                 $customer->ward = $shipping['commune_id'] ?? $customer->ward;
                 $customer->street_address = $shipping['address'] ?? $customer->street_address;
                 $customer->full_address = $shipping['full_address'] ?? $customer->full_address;
-            }
-
-            // Cập nhật thông tin social
-            foreach ($socialData as $key => $value) {
-                if (Schema::hasColumn('customers', $key) && !empty($value)) {
-                    $customer->$key = $value;
-                }
             }
 
             $customer->save();
@@ -739,21 +864,26 @@ class PancakeWebhookController extends Controller
 
     /**
      * Map Pancake status to internal status
-     *
-     * @param string|int $pancakeStatus
-     * @return string
      */
     private function mapPancakeStatus($pancakeStatus): string
     {
         // If numeric status is provided
         if (is_numeric($pancakeStatus)) {
             return match ((int)$pancakeStatus) {
-                1 => 'moi',
-                2 => 'dang_xu_ly',
-                3 => 'dang_giao_hang',
-                4 => 'hoan_thanh',
-                5 => 'huy',
-                6 => 'tra_hang',
+                0 => 'moi', // Mới
+                1 => 'dang_xu_ly', // Đang xử lý
+                2 => 'dang_giao_hang', // Đang giao hàng
+                3 => 'hoan_thanh', // Hoàn thành
+                4 => 'huy', // Hủy
+                5 => 'tra_hang', // Trả hàng
+                6 => 'cho_lay_hang', // Chờ lấy hàng
+                7 => 'da_lay_hang', // Đã lấy hàng
+                8 => 'dang_giao', // Đang giao
+                9 => 'da_giao', // Đã giao
+                10 => 'khong_lay_duoc_hang', // Không lấy được hàng
+                11 => 'cho_xac_nhan', // Chờ xác nhận
+                12 => 'chuyen_hoan', // Chuyển hoàn
+                13 => 'da_chuyen_hoan', // Đã chuyển hoàn
                 default => 'moi',
             };
         }
@@ -766,154 +896,16 @@ class PancakeWebhookController extends Controller
             'completed' => 'hoan_thanh',
             'cancelled' => 'huy',
             'returned' => 'tra_hang',
+            'waiting_pickup' => 'cho_lay_hang',
+            'picked_up' => 'da_lay_hang',
+            'delivering' => 'dang_giao',
+            'delivered' => 'da_giao',
+            'pickup_failed' => 'khong_lay_duoc_hang',
+            'waiting' => 'cho_xac_nhan',
+            'returning' => 'chuyen_hoan',
+            'returned_to_seller' => 'da_chuyen_hoan',
             default => 'moi',
         };
-    }
-
-    /**
-     * Set order item fields safely based on available columns
-     *
-     * @param OrderItem $orderItem
-     * @param array $data
-     * @return OrderItem
-     */
-    private function setOrderItemFields(OrderItem $orderItem, array $data)
-    {
-        // Handle components structure first (new Pancake format)
-        if (!empty($data['components']) && is_array($data['components'])) {
-            foreach ($data['components'] as $component) {
-                if (!empty($component['variation_info'])) {
-                    $variationInfo = $component['variation_info'];
-
-                    // Get product name from variation_info
-                    $orderItem->product_name = $component['name'] ?? $data['name'] ?? 'Unknown Product';
-
-                    // Get product code from variation_id
-                    $orderItem->code = $component['variation_id'] ?? $data['code'] ?? null;
-
-                    // Get price from variation_info
-                    $orderItem->price = $component['retail_price'] ?? $data['price'] ?? 0;
-
-                    // Get quantity from component
-                    $orderItem->quantity = $component['quantity'] ?? $data['quantity'] ?? 1;
-
-                    // Store component_id and variation_id if columns exist
-                    if (Schema::hasColumn('order_items', 'pancake_component_id')) {
-                        $orderItem->pancake_component_id = $component['component_id'] ?? null;
-                    }
-
-                    if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
-                        $orderItem->pancake_variant_id = $component['variation_id'] ?? null;
-                    }
-
-                    if (Schema::hasColumn('order_items', 'pancake_product_id')) {
-                        $orderItem->pancake_product_id = $variationInfo['product_id'] ?? null;
-                    }
-
-                    // Store variation details
-                    if (Schema::hasColumn('order_items', 'variation_details')) {
-                        $orderItem->variation_details = $variationInfo['detail'] ?? null;
-                    }
-
-                    // Store the full variation_info in product_info
-                    $orderItem->product_info = array_merge($data, [
-                        'processed_component' => $component,
-                        'processed_variation_info' => $variationInfo
-                    ]);
-
-                    // Only process the first component for now
-                    break;
-                }
-            }
-        }
-        // Handle direct variation_info format without components (new Pancake format)
-        else if (!empty($data['variation_info'])) {
-            $variationInfo = $data['variation_info'];
-
-            // Get product name from variation_info
-            $orderItem->product_name = $variationInfo['name'] ?? $data['name'] ?? 'Unknown Product';
-
-            // Get product code from various possible sources
-            $orderItem->code = $variationInfo['display_id'] ?? $variationInfo['barcode'] ?? $data['variation_id'] ?? null;
-
-            // Set price from variation_info
-            $orderItem->price = $variationInfo['retail_price'] ?? $data['price'] ?? 0;
-
-            // Set quantity
-            $orderItem->quantity = $data['quantity'] ?? 1;
-
-            // Set weight if available
-            $orderItem->weight = $variationInfo['weight'] ?? $data['weight'] ?? 0;
-
-            // Set name field
-            $orderItem->name = $variationInfo['name'] ?? $data['name'] ?? null;
-
-            // Store IDs if columns exist
-            if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
-                $orderItem->pancake_variant_id = $data['variation_id'] ?? $data['id'] ?? null;
-            }
-
-            if (Schema::hasColumn('order_items', 'pancake_product_id')) {
-                $orderItem->pancake_product_id = $data['product_id'] ?? null;
-            }
-
-            // Set barcode if column exists
-            if (Schema::hasColumn('order_items', 'barcode')) {
-                $orderItem->barcode = $variationInfo['barcode'] ?? null;
-            }
-
-            // Store variation details
-            if (Schema::hasColumn('order_items', 'variation_details')) {
-                $orderItem->variation_details = $variationInfo['detail'] ?? null;
-            }
-
-            // Store the complete item data in product_info field
-            $orderItem->product_info = $data;
-        }
-        else {
-            // Handle traditional item format or direct format without variation_info or components
-
-            // Set product name
-            $orderItem->product_name = $data['name'] ?? 'Unknown Product';
-
-            // Set product code/sku based on available columns
-            if (Schema::hasColumn('order_items', 'product_code')) {
-                $orderItem->product_code = $data['sku'] ?? $data['variation_id'] ?? null;
-            } else if (Schema::hasColumn('order_items', 'sku')) {
-                $orderItem->sku = $data['sku'] ?? $data['variation_id'] ?? null;
-            } else if (Schema::hasColumn('order_items', 'code')) {
-                $orderItem->code = $data['sku'] ?? $data['variation_id'] ?? $data['display_id'] ?? null;
-            }
-
-            // Set other common fields
-            $orderItem->quantity = $data['quantity'] ?? 1;
-            $orderItem->price = $data['price'] ?? 0;
-            $orderItem->weight = $data['weight'] ?? 0;
-            $orderItem->name = $data['name'] ?? $data['product_name'] ?? null;
-
-            // Store variation and product IDs
-            if (Schema::hasColumn('order_items', 'pancake_variant_id')) {
-                $orderItem->pancake_variant_id = $data['variation_id'] ?? $data['variant_id'] ?? $data['id'] ?? null;
-            }
-
-            if (Schema::hasColumn('order_items', 'pancake_product_id')) {
-                $orderItem->pancake_product_id = $data['product_id'] ?? null;
-            }
-
-            if (Schema::hasColumn('order_items', 'pancake_variation_id')) {
-                $orderItem->pancake_variation_id = $data['variation_id'] ?? $data['sku'] ?? null;
-            }
-
-            // Handle barcode if available
-            if (Schema::hasColumn('order_items', 'barcode')) {
-                $orderItem->barcode = $data['barcode'] ?? null;
-            }
-
-            // Store the complete item data in product_info field
-            $orderItem->product_info = $data;
-        }
-
-        return $orderItem;
     }
 
     /**
