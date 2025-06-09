@@ -605,7 +605,7 @@
                 @foreach($liveSessions as $session)
                 <tr>
                     <td>{{ $session['live_number'] }}</td>
-                    <td>{{ $session['date']->format('d/m/Y') }}</td>
+                    <td>{{ $session['date'] }}</td>
                     <td>{{ number_format($session['expected_revenue'], 0, ',', '.') }}</td>
                     <td>{{ number_format($session['actual_revenue'], 0, ',', '.') }}</td>
                     <td>{{ $session['total_orders'] }}</td>

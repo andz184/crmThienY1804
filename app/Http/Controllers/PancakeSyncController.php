@@ -623,7 +623,7 @@ class PancakeSyncController extends Controller
 
                 // Save order first to get the ID
                 $order->save();
-
+               
                 // Create live session order record
                 $liveSessionOrder = \App\Models\LiveSessionOrder::create([
                     'order_id' => $order->id,

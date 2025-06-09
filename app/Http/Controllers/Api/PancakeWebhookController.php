@@ -53,19 +53,45 @@ class PancakeWebhookController extends Controller
 
             $webhookData = $request->all();
 
+            // Validate required fields
+            if (empty($webhookData['id'])) {
+                throw new \Exception('Missing required field: id');
+            }
+
             // Format data theo cấu trúc của PancakeSyncController
             $formattedData = $this->formatWebhookData($webhookData);
+            
+            Log::info('Formatted webhook data', [
+                'order_id' => $formattedData['id'],
+                'has_items' => !empty($formattedData['items']),
+                'items_count' => !empty($formattedData['items']) ? count($formattedData['items']) : 0,
+                'has_notes' => !empty($formattedData['note']),
+                'note' => $formattedData['note'] ?? null
+            ]);
 
             // Check if order exists by pancake_order_id
             $existingOrder = Order::where('pancake_order_id', $webhookData['id'])->first();
 
-                if ($existingOrder) {
+            if ($existingOrder) {
+                Log::info('Updating existing order', ['order_id' => $existingOrder->id, 'pancake_order_id' => $existingOrder->pancake_order_id]);
                 $order = $this->updateOrderFromPancake($existingOrder, $formattedData);
                 $message = 'Order updated successfully';
-                } else {
+            } else {
+                Log::info('Creating new order', ['pancake_order_id' => $webhookData['id']]);
                 $order = $this->createOrderFromPancake($formattedData);
                 $message = 'Order created successfully';
             }
+
+            if (!$order) {
+                throw new \Exception('Failed to process order');
+            }
+
+            Log::info('Order processed successfully', [
+                'order_id' => $order->id,
+                'pancake_order_id' => $order->pancake_order_id,
+                'has_live_session_info' => !empty($order->live_session_info),
+                'live_session_info' => $order->live_session_info
+            ]);
 
             DB::commit();
 
@@ -95,10 +121,15 @@ class PancakeWebhookController extends Controller
      */
     private function formatWebhookData(array $webhookData): array
     {
+        // Validate required fields
+        if (empty($webhookData['id'])) {
+            throw new \Exception('Missing required field: id in webhook data');
+        }
+
         // Format data according to PancakeSyncController structure
         $formattedData = [
-            'id' => $webhookData['id'], // Sử dụng id trực tiếp làm pancake_order_id
-            'code' => $webhookData['id'], // Sử dụng id làm code
+            'id' => $webhookData['id'],
+            'code' => $webhookData['id'],
             'status' => $webhookData['status'] ?? 0,
             'inserted_at' => $webhookData['inserted_at'] ?? null,
             'status_name' => $webhookData['status_name'] ?? '',
@@ -113,7 +144,6 @@ class PancakeWebhookController extends Controller
             'transfer_money' => $webhookData['transfer_money'] ?? 0,
             'prepaid' => $webhookData['prepaid'] ?? 0,
             'cod' => $webhookData['cod'] ?? 0,
-            'items' => [],
             'customer' => [
                 'id' => $webhookData['customer']['id'] ?? null,
                 'name' => $webhookData['customer']['name'] ?? $webhookData['bill_full_name'] ?? '',
@@ -131,7 +161,6 @@ class PancakeWebhookController extends Controller
                 'commune_id' => $webhookData['shipping_address']['commune_id'] ?? null,
                 'full_address' => $webhookData['shipping_address']['full_address'] ?? ''
             ],
-            // Thêm thông tin nhân viên seller và care
             'assigning_seller' => [
                 'id' => $webhookData['assigning_seller']['id'] ?? null,
                 'email' => $webhookData['assigning_seller']['email'] ?? null,
@@ -150,25 +179,13 @@ class PancakeWebhookController extends Controller
             ]
         ];
 
-        // Format items data
+        // Preserve original items data exactly as received
         if (!empty($webhookData['items'])) {
-            $formattedData['items'] = array_map(function($item) {
-                return [
-                    'product_id' => $item['product_id'] ?? null,
-                    'variation_id' => $item['variation_id'] ?? null,
-                    'quantity' => $item['quantity'] ?? 1,
-                    'variation_info' => [
-                        'name' => $item['variation_info']['name'] ?? '',
-                        'retail_price' => $item['variation_info']['retail_price'] ?? 0,
-                        'barcode' => $item['variation_info']['barcode'] ?? null,
-                        'weight' => $item['variation_info']['weight'] ?? 0
-                    ]
-                ];
-            }, $webhookData['items']);
+            $formattedData['items'] = $webhookData['items'];
         }
 
         // Add partner info if exists
-        if (!empty($webhookData['partner'])) {
+        if (!empty($webhookData['partner']) && is_array($webhookData['partner'])) {
             $formattedData['partner'] = [
                 'partner_id' => $webhookData['partner']['partner_id'] ?? null,
                 'partner_name' => $webhookData['partner']['partner_name'] ?? null
@@ -187,50 +204,12 @@ class PancakeWebhookController extends Controller
      * Process live session revenue from order notes
      *
      * @param Order $order
-     * @param string $notes
      * @return void
      */
-    private function processLiveSessionRevenue(Order $order, string $notes)
+    private function processLiveSessionRevenue(Order $order)
     {
-        // Parse live session info from notes
-        $sessionInfo = $this->parseLiveSessionInfo($notes);
-
-        if ($sessionInfo) {
-            try {
-                // Create or update live session revenue
-                LiveSessionRevenue::updateOrCreate(
-                    [
-                        'order_id' => $order->id,
-                        'live_session_id' => $sessionInfo['session_id']
-                    ],
-                    [
-                        'revenue' => $order->total_value,
-                        'session_date' => $sessionInfo['date'],
-                        'session_name' => $sessionInfo['name'],
-                        'customer_id' => $order->customer_id,
-                        'customer_name' => $order->customer_name,
-                        'customer_phone' => $order->customer_phone,
-                        'order_code' => $order->order_code,
-                        'order_status' => $order->status,
-                        'payment_method' => $order->payment_method,
-                        'shipping_fee' => $order->shipping_fee,
-                        'total_amount' => $order->total_value,
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]
-                );
-
-                Log::info('Live session revenue processed', [
-                    'order_id' => $order->id,
-                    'session_id' => $sessionInfo['session_id']
-                ]);
-            } catch (\Exception $e) {
-                Log::error('Error processing live session revenue', [
-                    'order_id' => $order->id,
-                    'error' => $e->getMessage()
-                ]);
-            }
-        }
+        // Removed as we no longer need to handle order items
+        return;
     }
 
     /**
@@ -242,18 +221,47 @@ class PancakeWebhookController extends Controller
     private function parseLiveSessionInfo(?string $notes): ?array
     {
         if (empty($notes)) {
+            Log::info('No notes to parse live session info from');
             return null;
         }
 
-        // Pattern for live session info in notes
-        $pattern = '/Live\s+(\d{1,2}\/\d{1,2}\/\d{4})\s*-?\s*(.+?)(?:\s*#(\d+)|$)/i';
+        Log::info('Parsing live session info from notes', ['notes' => $notes]);
+
+        // Pattern to match "LIVE X DD/MM" or "LIVE X DD/MM/YY" or "LIVE X DD/MM/YYYY"
+        $pattern = '/LIVE\s*(\d+)\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i';
 
         if (preg_match($pattern, $notes, $matches)) {
-            return [
-                'date' => date('Y-m-d', strtotime(str_replace('/', '-', $matches[1]))),
-                'name' => trim($matches[2]),
-                'session_id' => $matches[3] ?? null
-            ];
+            $liveNumber = $matches[1];
+            $day = $matches[2];
+            $month = $matches[3];
+            $year = isset($matches[4]) ? $matches[4] : null;
+
+            // If year is not provided or is 2-digit
+            if (!$year) {
+                $year = date('Y');
+            } elseif (strlen($year) == 2) {
+                $year = '20' . $year;
+            }
+
+            // Validate date
+            if (checkdate($month, $day, (int)$year)) {
+                $liveSessionInfo = [
+                    'live_number' => $liveNumber,
+                    'session_date' => sprintf('%s-%02d-%02d', $year, $month, $day),
+                    'original_text' => trim($matches[0])
+                ];
+                
+                Log::info('Successfully parsed live session info', $liveSessionInfo);
+                return $liveSessionInfo;
+            } else {
+                Log::warning('Invalid date in live session info', [
+                    'day' => $day,
+                    'month' => $month,
+                    'year' => $year
+                ]);
+            }
+        } else {
+            Log::warning('Failed to match live session pattern in notes', ['notes' => $notes]);
         }
 
         return null;
@@ -269,8 +277,8 @@ class PancakeWebhookController extends Controller
 
             // Create customer first
             $customer = $this->findOrCreateCustomer([
-                'name' => $orderData['bill_full_name'] ?? $orderData['customer']['name'] ?? null,
-                'phone' => $orderData['bill_phone_number'] ?? $orderData['customer']['phone'] ?? null,
+                'name' => $orderData['customer']['name'] ?? null,
+                'phone' => $orderData['customer']['phone'] ?? null,
                 'email' => $orderData['customer']['email'] ?? null,
                 'shipping_address' => $orderData['shipping_address'] ?? null,
                 'id' => $orderData['customer']['id'] ?? null,
@@ -311,12 +319,6 @@ class PancakeWebhookController extends Controller
                     $warehouse->code = 'WH-' . $orderData['warehouse_id'];
                     $warehouse->pancake_id = $orderData['warehouse_id'];
                     $warehouse->save();
-
-                    Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake', [
-                        'warehouse_id' => $warehouse->id,
-                        'pancake_id' => $orderData['warehouse_id'],
-                        'name' => $orderData['warehouse_name']
-                    ]);
                 }
 
                 if ($warehouse) {
@@ -359,16 +361,6 @@ class PancakeWebhookController extends Controller
                 $order->province_name = $shipping['province_name'] ?? null;
                 $order->district_name = $shipping['district_name'] ?? null;
                 $order->ward_name = $shipping['ward_name'] ?? null;
-
-                // Cập nhật địa chỉ cho khách hàng
-                if ($customer) {
-                    $customer->full_address = $order->full_address;
-                    $customer->province = $order->province_code;
-                    $customer->district = $order->district_code;
-                    $customer->ward = $order->ward_code;
-                    $customer->street_address = $order->street_address;
-                    $customer->save();
-                }
             }
 
             // Map shipping provider
@@ -377,20 +369,6 @@ class PancakeWebhookController extends Controller
                 $provider = ShippingProvider::where('pancake_id', $providerId)
                     ->orWhere('pancake_partner_id', $providerId)
                     ->first();
-
-                // Nếu không tìm thấy và có tên đơn vị vận chuyển, tạo mới
-                if (!$provider && !empty($orderData['shipping_provider_name'])) {
-                    $provider = new ShippingProvider();
-                    $provider->name = $orderData['shipping_provider_name'];
-                    $provider->pancake_id = $providerId;
-                    $provider->save();
-
-                    Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake', [
-                        'provider_id' => $provider->id,
-                        'pancake_id' => $providerId,
-                        'name' => $orderData['shipping_provider_name']
-                    ]);
-                }
 
                 if ($provider) {
                     $order->shipping_provider_id = $provider->id;
@@ -402,8 +380,7 @@ class PancakeWebhookController extends Controller
             }
 
             // Map financial info
-            // dd($orderData['inserted_at']);
-            $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7) ?? null;
+            $order->pancake_inserted_at = !empty($orderData['inserted_at']) ? Carbon::parse($orderData['inserted_at'])->addHours(7) : null;
             $order->shipping_fee = (float)($orderData['shipping_fee'] ?? 0);
             $order->transfer_money = (float)($orderData['transfer_money'] ?? 0);
             $order->total_value = $this->calculateOrderTotal($orderData);
@@ -412,15 +389,11 @@ class PancakeWebhookController extends Controller
             $order->notes = $orderData['note'] ?? null;
             $order->additional_notes = $orderData['additional_notes'] ?? null;
 
-            // Process live session if notes contain live session info
-            if ($order->notes) {
-                $this->processLiveSessionRevenue($order, $order->notes);
-            }
-
             // Map status
             $order->status = $this->mapPancakeStatus($orderData['status'] ?? 'new');
+            $order->pancake_status = $orderData['status'] ?? 0;
 
-            // Save products data
+            // Save products data - preserve exactly as received from Pancake
             if (!empty($orderData['items'])) {
                 $order->products_data = json_encode($orderData['items']);
             }
@@ -432,79 +405,80 @@ class PancakeWebhookController extends Controller
             // Save order
             $order->save();
 
+            // Process live session info if exists
+            Log::info('Checking for live session info in note', [
+                'order_id' => $order->id,
+                'note' => $orderData['note']
+            ]);
+            
+            if (!empty($orderData['note'])) {
+                $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
+                Log::info('Result of parseLiveSessionInfo', [
+                    'order_id' => $order->id,
+                    'parsed_info' => $liveSessionInfo
+                ]);
+                if ($liveSessionInfo) {
+                    // Store live session info in order
+                    $order->live_session_info = json_encode($liveSessionInfo);
+                    $order->save();
+
+                    // Create LiveSessionOrder record if not exists
+                    if (isset($liveSessionInfo['live_number']) && isset($liveSessionInfo['session_date'])) {
+                        try {
+                            DB::beginTransaction();
+
+                            // Create LiveSessionOrder FIRST to prevent race conditions
+                            \App\Models\LiveSessionOrder::updateOrCreate(
+                                ['order_id' => $order->id],
+                                [
+                                    'live_session_id' => "LIVE{$liveSessionInfo['live_number']}",
+                                    'live_session_date' => Carbon::parse($liveSessionInfo['session_date'], 'UTC'),
+                                    'customer_id' => $order->customer_id,
+                                    'customer_name' => $order->customer_name,
+                                    'shipping_address' => $order->full_address ?: $order->street_address,
+                                    'total_amount' => $order->total_value
+                                ]
+                            );
+
+                            // Recalculate stats for the live session
+                            LiveSessionRevenue::recalculateStats($liveSessionInfo['session_date'], $liveSessionInfo['live_number']);
+
+                            DB::commit();
+                        } catch (\Exception $e) {
+                            DB::rollBack();
+                            Log::error('Error processing live session info', [
+                                'order_id' => $order->id,
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString()
+                            ]);
+                        }
+                    } else {
+                        Log::warning('Missing required live session info', [
+                            'order_id' => $order->id,
+                            'live_session_info' => $liveSessionInfo
+                        ]);
+                    }
+                } else {
+                    Log::warning('Failed to parse live session info from note', [
+                        'order_id' => $order->id,
+                        'note' => $orderData['note']
+                    ]);
+                }
+            }
+
             // Cập nhật thông tin khách hàng
             if ($customer) {
-                // Cập nhật số đơn hàng
                 $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
-
-                // Cập nhật tổng chi tiêu - chỉ tính các đơn đã nhận (pancake_status = 3)
                 $customer->total_spent = Order::where('customer_id', $customer->id)
                     ->where('pancake_status', 3)
                     ->sum('total_value');
-
-                // Cập nhật số đơn thành công (đã nhận)
                 $customer->succeeded_order_count = Order::where('customer_id', $customer->id)
                     ->where('pancake_status', 3)
                     ->count();
-
-                // Cập nhật số đơn trả hàng (status_code = 4 hoặc 5 hoặc 15)
                 $customer->returned_order_count = Order::where('customer_id', $customer->id)
                     ->whereIn('pancake_status', [4, 5, 15])
                     ->count();
-
-                // Cập nhật thông tin từ Pancake nếu có
-                if (!empty($orderData['customer'])) {
-                    $customerData = $orderData['customer'];
-
-                    // Cập nhật thông tin cơ bản
-                    $customer->gender = $customerData['gender'] ?? $customer->gender;
-                    $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
-                    $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
-
-                    // Xử lý nhiều số điện thoại
-                    if (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
-                        if (Schema::hasColumn('customers', 'phone_numbers')) {
-                            $customer->phone_numbers = json_encode($customerData['phone_numbers']);
-                        }
-                    }
-
-                    // Xử lý nhiều email
-                    if (!empty($customerData['emails']) && is_array($customerData['emails'])) {
-                        if (Schema::hasColumn('customers', 'emails')) {
-                            $customer->emails = json_encode($customerData['emails']);
-                        }
-                    }
-
-                    // Cập nhật tags
-                    if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
-                        $customer->tags = json_encode($customerData['tags']);
-                    }
-
-                    // Cập nhật conversation tags
-                    if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
-                        $customer->conversation_tags = json_encode($customerData['conversation_tags']);
-                    }
-
-                    // Cập nhật điểm thưởng
-                    if (Schema::hasColumn('customers', 'reward_points')) {
-                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points ?? 0;
-                    }
-
-                    // Cập nhật danh sách địa chỉ
-                    if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
-                        $customer->addresses = json_encode($customerData['shop_customer_addresses']);
-                    }
-                }
-
                 $customer->save();
-
-                Log::info('Đã cập nhật thông tin khách hàng', [
-                    'customer_id' => $customer->id,
-                    'total_orders' => $customer->total_orders_count,
-                    'total_spent' => $customer->total_spent,
-                    'succeeded_orders' => $customer->succeeded_order_count,
-                    'returned_orders' => $customer->returned_order_count
-                ]);
             }
 
             DB::commit();
@@ -514,6 +488,7 @@ class PancakeWebhookController extends Controller
             DB::rollBack();
             Log::error('Error creating order from Pancake data', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'data' => $orderData
             ]);
             throw $e;
@@ -535,75 +510,6 @@ class PancakeWebhookController extends Controller
                 $order->customer_name = $orderData['customer']['name'] ?? $customer->name;
                 $order->customer_phone = $orderData['customer']['phone'] ?? $customer->phone;
                 $order->customer_email = $orderData['customer']['email'] ?? $customer->email;
-
-                // Cập nhật thông tin khách hàng
-                if ($customer) {
-                    $customerData = $orderData['customer'];
-
-                    // Cập nhật thông tin cơ bản
-                    $customer->name = $customerData['name'] ?? $customer->name;
-                    $customer->phone = $customerData['phone'] ?? $customer->phone;
-                    $customer->email = $customerData['email'] ?? $customer->email;
-                    $customer->gender = $customerData['gender'] ?? $customer->gender;
-                    $customer->date_of_birth = $customerData['date_of_birth'] ?? $customer->date_of_birth;
-                    $customer->fb_id = $customerData['fb_id'] ?? $customer->fb_id;
-
-                    // Xử lý nhiều số điện thoại
-                    if (!empty($customerData['phone_numbers']) && is_array($customerData['phone_numbers'])) {
-                        if (Schema::hasColumn('customers', 'phone_numbers')) {
-                            $customer->phone_numbers = json_encode($customerData['phone_numbers']);
-                        }
-                    }
-
-                    // Xử lý nhiều email
-                    if (!empty($customerData['emails']) && is_array($customerData['emails'])) {
-                        if (Schema::hasColumn('customers', 'emails')) {
-                            $customer->emails = json_encode($customerData['emails']);
-                        }
-                    }
-
-                    // Cập nhật tags
-                    if (Schema::hasColumn('customers', 'tags') && !empty($customerData['tags'])) {
-                        $customer->tags = json_encode($customerData['tags']);
-                    }
-
-                    // Cập nhật conversation tags
-                    if (Schema::hasColumn('customers', 'conversation_tags') && !empty($customerData['conversation_tags'])) {
-                        $customer->conversation_tags = json_encode($customerData['conversation_tags']);
-                    }
-
-                    // Cập nhật điểm thưởng
-                    if (Schema::hasColumn('customers', 'reward_points')) {
-                        $customer->reward_points = $customerData['reward_point'] ?? $customer->reward_points ?? 0;
-                    }
-
-                    // Cập nhật danh sách địa chỉ
-                    if (Schema::hasColumn('customers', 'addresses') && !empty($customerData['shop_customer_addresses'])) {
-                        $customer->addresses = json_encode($customerData['shop_customer_addresses']);
-                    }
-
-                    // Cập nhật số đơn hàng và doanh thu
-                    $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
-                    $customer->total_spent = Order::where('customer_id', $customer->id)
-                        ->where('pancake_status', 3)
-                        ->sum('total_value');
-                    $customer->succeeded_order_count = Order::where('customer_id', $customer->id)
-                        ->where('pancake_status', 3)
-                        ->count();
-                    $customer->returned_order_count = Order::where('customer_id', $customer->id)
-                        ->whereIn('pancake_status', [4, 5, 15])
-                        ->count();
-
-                    $customer->save();
-
-                    Log::info('Đã cập nhật thông tin khách hàng trong updateOrderFromPancake', [
-                        'customer_id' => $customer->id,
-                        'total_orders' => $customer->total_orders_count,
-                        'total_spent' => $customer->total_spent,
-                        'succeeded_orders' => $customer->succeeded_order_count,
-                        'returned_orders' => $customer->returned_order_count
-                    ]);
-                }
             }
 
             // Update basic order information
@@ -619,7 +525,7 @@ class PancakeWebhookController extends Controller
                     $order->page_name = $page->name;
                 }
             }
-            // dd($orderData);
+
             // Update warehouse info
             if (!empty($orderData['warehouse_id'])) {
                 $warehouse = Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
@@ -636,12 +542,6 @@ class PancakeWebhookController extends Controller
                     $warehouse->code = 'WH-' . $orderData['warehouse_id'];
                     $warehouse->pancake_id = $orderData['warehouse_id'];
                     $warehouse->save();
-
-                    Log::info('Đã tạo kho hàng mới từ dữ liệu Pancake', [
-                        'warehouse_id' => $warehouse->id,
-                        'pancake_id' => $orderData['warehouse_id'],
-                        'name' => $orderData['warehouse_name']
-                    ]);
                 }
 
                 if ($warehouse) {
@@ -654,10 +554,12 @@ class PancakeWebhookController extends Controller
                 }
             }
 
-
             $order->campaign_id = $orderData['campaign_id'] ?? $order->campaign_id;
             $order->campaign_name = $orderData['campaign_name'] ?? $order->campaign_name;
-            $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7) ?? null;
+            if (!empty($orderData['inserted_at'])) {
+                $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7);
+            }
+
             // Update status and tracking
             if (!empty($orderData['status'])) {
                 $order->status = $this->mapPancakeStatus($orderData['status']);
@@ -698,20 +600,6 @@ class PancakeWebhookController extends Controller
                     ->orWhere('pancake_partner_id', $providerId)
                     ->first();
 
-                // Nếu không tìm thấy và có tên đơn vị vận chuyển, tạo mới
-                if (!$provider && !empty($orderData['shipping_provider_name'])) {
-                    $provider = new ShippingProvider();
-                    $provider->name = $orderData['shipping_provider_name'];
-                    $provider->pancake_id = $providerId;
-                    $provider->save();
-
-                    Log::info('Đã tạo đơn vị vận chuyển mới từ dữ liệu Pancake', [
-                        'provider_id' => $provider->id,
-                        'pancake_id' => $providerId,
-                        'name' => $orderData['shipping_provider_name']
-                    ]);
-                }
-
                 if ($provider) {
                     $order->shipping_provider_id = $provider->id;
                     $order->pancake_shipping_provider_id = $provider->pancake_id;
@@ -727,12 +615,7 @@ class PancakeWebhookController extends Controller
             $order->total_value = $orderData['total_price'] ?? $order->total_value;
             $order->notes = $orderData['note'] ?? $order->notes;
 
-            // Process live session if notes contain live session info
-            if ($order->notes) {
-                $this->processLiveSessionRevenue($order, $order->notes);
-            }
-
-            // Update products data
+            // Update products data - preserve exactly as received from Pancake
             if (!empty($orderData['items'])) {
                 $order->products_data = json_encode($orderData['items']);
             }
@@ -743,6 +626,88 @@ class PancakeWebhookController extends Controller
 
             $order->save();
 
+            // Process live session info if exists
+            Log::info('Checking for live session info in note for update', [
+                'order_id' => $order->id,
+                'note' => $orderData['note']
+            ]);
+            if (!empty($orderData['note'])) {
+              
+                $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
+                
+                Log::info('Result of parseLiveSessionInfo for update', [
+                    'order_id' => $order->id,
+                    'parsed_info' => $liveSessionInfo
+                ]);
+                if ($liveSessionInfo) {
+                    // Store live session info in order
+                    $order->live_session_info = json_encode($liveSessionInfo);
+                    $order->save();
+                    
+                    // Create/Update LiveSessionOrder record
+                    if (isset($liveSessionInfo['live_number']) && isset($liveSessionInfo['session_date'])) {
+                        try {
+                            DB::beginTransaction();
+
+                            // Use updateOrCreate to ensure the record is updated if it exists, and created if not.
+                            \App\Models\LiveSessionOrder::updateOrCreate(
+                               
+                                [
+                                    'order_id' => $order->id,
+                                    'live_session_id' => "LIVE{$liveSessionInfo['live_number']}",
+                                    'live_session_date' => Carbon::parse($liveSessionInfo['session_date'], 'UTC'),
+                                    'customer_id' => $order->customer_id,
+                                    'customer_name' => $order->customer_name,
+                                    'shipping_address' => $order->full_address ?: $order->street_address,
+                                    'total_amount' => $order->total_value
+                                ]
+                            );
+                            
+                            // Recalculate stats for the live session
+                            LiveSessionRevenue::recalculateStats($liveSessionInfo['session_date'], $liveSessionInfo['live_number']);
+
+                            DB::commit();
+                        } catch (\Exception $e) {
+                            DB::rollBack();
+                            Log::error('Error processing live session info on update', [
+                                'order_id' => $order->id,
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString()
+                            ]);
+                        }
+                    } else {
+                        Log::warning('Missing required live session info for update', [
+                            'order_id' => $order->id,
+                            'live_session_info' => $liveSessionInfo
+                        ]);
+                    }
+                } else {
+                    Log::warning('Failed to parse live session info from note on update', [
+                        'order_id' => $order->id,
+                        'note' => $orderData['note']
+                    ]);
+                }
+            }
+            
+            // Update customer stats
+            if ($order->customer_id) {
+                $customer = \App\Models\Customer::find($order->customer_id);
+                if ($customer) {
+                    $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
+                    $customer->total_spent = Order::where('customer_id', $customer->id)
+                        ->where('pancake_status', 3)
+                        ->sum('total_value');
+                    $customer->succeeded_order_count = Order::where('customer_id', $customer->id)
+                        ->where('pancake_status', 3)
+                        ->count();
+                    $customer->returned_order_count = Order::where('customer_id', $customer->id)
+                        ->whereIn('pancake_status', [4, 5, 15])
+                        ->count();
+                    $customer->save();
+                }
+            }
+            
+            $order->save();
             DB::commit();
             return $order;
 
@@ -750,6 +715,7 @@ class PancakeWebhookController extends Controller
             DB::rollBack();
             Log::error('Error updating order from Pancake', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
                 'order_id' => $order->id,
                 'data' => $orderData
             ]);

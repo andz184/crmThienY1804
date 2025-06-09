@@ -17,11 +17,11 @@ class LiveSessionRevenueController extends Controller
     {
         // Get dates from query parameters or use defaults
         $startDate = $request->has('start_date')
-            ? Carbon::parse($request->input('start_date'))
+            ? Carbon::parse($request->input('start_date'))->startOfDay()
             : Carbon::now()->startOfMonth();
 
         $endDate = $request->has('end_date')
-            ? Carbon::parse($request->input('end_date'))
+            ? Carbon::parse($request->input('end_date'))->addDay()->startOfDay()
             : Carbon::now();
 
         // Get previous period dates (7 days before)
@@ -65,7 +65,7 @@ class LiveSessionRevenueController extends Controller
         $liveSessions = collect($currentStats['daily_stats'] ?? [])->map(function ($session) {
             return [
                 'live_number' => $session['live_number'],
-                'date' => Carbon::parse($session['date']),
+                'date' => Carbon::parse($session['date'])->setTimezone(config('app.timezone'))->format('Y-m-d'),
                 'expected_revenue' => $session['expected_revenue'],
                 'actual_revenue' => $session['actual_revenue'],
                 'total_orders' => $session['total_orders'],

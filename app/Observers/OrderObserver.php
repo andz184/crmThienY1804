@@ -357,7 +357,7 @@ class OrderObserver
 
                 }
             }
-            dd($topProducts);
+            // dd($topProducts);
             // Sort products by revenue in descending order
             uasort($topProducts, function($a, $b) {
                 return $b['total_revenue'] <=> $a['total_revenue'];

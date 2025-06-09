@@ -52,6 +52,7 @@ class LiveSessionRevenue extends Model
         }
 
         $liveSessionOrder = LiveSessionOrder::where('order_id', $order->id)->first();
+       
         if (!$liveSessionOrder) {
             return;
         }
