@@ -319,6 +319,33 @@ return [
 
     'menu' => [
         [
+            'text'    => 'Báo Cáo',
+            'route'   => 'reports.index',
+            'icon'    => 'bx bx-bar-chart-alt-2',
+            'can'     => 'reports.view',
+            'submenu' => [
+                [
+                    'text' => 'Nhóm Hàng Hoá',
+                    'route' => 'reports.product_groups',
+                    // 'icon' => 'bx bx-cube',
+                    'can' => 'reports.product_groups',
+                ],
+                [
+                    'text' => 'Chiến dịch',
+                    'route' => 'reports.campaigns',
+                    // 'icon' => 'bx bx-bullhorn',
+                    'can' => 'reports.campaigns',
+                ],
+                [
+                    'text' => 'Phiên Live',
+                    'route' => 'reports.live-sessions',
+                    // 'icon' => 'bx bx-broadcast',
+                    'can' => 'reports.live-sessions',
+                ],
+
+            ],
+        ],
+        [
             'text' => 'Trang chủ',
             'route'  => 'reports.overall_revenue_summary',
             'icon' => 'bx bx-home-circle',
@@ -387,33 +414,7 @@ return [
             'icon' => 'bx bx-sitemap',
             'can'  => 'teams.view',
         ],
-        [
-            'text'    => 'Báo Cáo',
-            'route'   => 'reports.index',
-            'icon'    => 'bx bx-bar-chart-alt-2',
-            'can'     => 'reports.view',
-            'submenu' => [
-                [
-                    'text' => 'Nhóm Hàng Hoá',
-                    'route' => 'reports.product_groups',
-                    // 'icon' => 'bx bx-cube',
-                    'can' => 'reports.product_groups',
-                ],
-                [
-                    'text' => 'Chiến dịch',
-                    'route' => 'reports.campaigns',
-                    // 'icon' => 'bx bx-bullhorn',
-                    'can' => 'reports.campaigns',
-                ],
-                [
-                    'text' => 'Phiên Live',
-                    'route' => 'reports.live-sessions',
-                    // 'icon' => 'bx bx-broadcast',
-                    'can' => 'reports.live-sessions',
-                ],
 
-            ],
-        ],
         ['header' => 'CÀI ĐẶT HỆ THỐNG'],
         [
             'text' => 'Cài đặt Website',
