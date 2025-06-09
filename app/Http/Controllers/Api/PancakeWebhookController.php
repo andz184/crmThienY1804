@@ -24,6 +24,7 @@ use App\Models\Product;
 use Illuminate\Support\Facades\Schema;
 use App\Models\ProductVariant;
 use App\Models\PancakeWebhookLog;
+use Carbon\Carbon;
 
 class PancakeWebhookController extends Controller
 {
@@ -99,6 +100,7 @@ class PancakeWebhookController extends Controller
             'id' => $webhookData['id'], // Sử dụng id trực tiếp làm pancake_order_id
             'code' => $webhookData['id'], // Sử dụng id làm code
             'status' => $webhookData['status'] ?? 0,
+            'inserted_at' => $webhookData['inserted_at'] ?? null,
             'status_name' => $webhookData['status_name'] ?? '',
             'order_sources' => $webhookData['order_sources'] ?? '-1',
             'order_sources_name' => $webhookData['order_sources_name'] ?? '',
@@ -400,7 +402,8 @@ class PancakeWebhookController extends Controller
             }
 
             // Map financial info
-            $order->pancake_inserted_at = $orderData['inserted_at'] ?? null;
+            // dd($orderData['inserted_at']);
+            $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7) ?? null;
             $order->shipping_fee = (float)($orderData['shipping_fee'] ?? 0);
             $order->transfer_money = (float)($orderData['transfer_money'] ?? 0);
             $order->total_value = $this->calculateOrderTotal($orderData);
@@ -616,7 +619,7 @@ class PancakeWebhookController extends Controller
                     $order->page_name = $page->name;
                 }
             }
-
+            // dd($orderData);
             // Update warehouse info
             if (!empty($orderData['warehouse_id'])) {
                 $warehouse = Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
@@ -651,10 +654,10 @@ class PancakeWebhookController extends Controller
                 }
             }
 
-            $order->pancake_inserted_at = $orderData['inserted_at'] ?? null;
+
             $order->campaign_id = $orderData['campaign_id'] ?? $order->campaign_id;
             $order->campaign_name = $orderData['campaign_name'] ?? $order->campaign_name;
-
+            $order->pancake_inserted_at = Carbon::parse($orderData['inserted_at'])->addHours(7) ?? null;
             // Update status and tracking
             if (!empty($orderData['status'])) {
                 $order->status = $this->mapPancakeStatus($orderData['status']);
