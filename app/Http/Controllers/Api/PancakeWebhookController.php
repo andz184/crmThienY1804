@@ -25,7 +25,6 @@ use Illuminate\Support\Facades\Schema;
 use App\Models\ProductVariant;
 use App\Models\PancakeWebhookLog;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Http;
 
 class PancakeWebhookController extends Controller
 {
@@ -276,8 +275,15 @@ class PancakeWebhookController extends Controller
         try {
             DB::beginTransaction();
 
-            // Create/update customer directly, following the PancakeSyncController pattern
-            $customer = $this->findOrCreateCustomer($orderData['customer'] ?? [], $orderData['shipping_address'] ?? []);
+            // Create customer first
+            $customer = $this->findOrCreateCustomer([
+                'name' => $orderData['customer']['name'] ?? null,
+                'phone' => $orderData['customer']['phone'] ?? null,
+                'email' => $orderData['customer']['email'] ?? null,
+                'shipping_address' => $orderData['shipping_address'] ?? null,
+                'id' => $orderData['customer']['id'] ?? null,
+                'code' => $orderData['customer']['code'] ?? null
+            ]);
 
             // Create new order
             $order = new Order();
@@ -326,13 +332,11 @@ class PancakeWebhookController extends Controller
             }
             $order->pancake_page_id = $orderData['page_id'] ?? null;
 
-            // Map customer info from the saved customer object
-            if ($customer) {
-                $order->customer_id = $customer->id;
-                $order->customer_name = $customer->name;
-                $order->customer_phone = $customer->phone;
-                $order->customer_email = $customer->email;
-            }
+            // Map customer info
+            $order->customer_id = $customer->id;
+            $order->customer_name = $customer->name;
+            $order->customer_phone = $customer->phone;
+            $order->customer_email = $customer->email;
 
             // Map shipping info
             if (!empty($orderData['shipping_address'])) {
@@ -350,7 +354,7 @@ class PancakeWebhookController extends Controller
                 $order->full_address = !empty($fullAddress) ? $fullAddress : ($shipping['full_address'] ?? '');
                 $order->province_code = $shipping['province_id'] ?? null;
                 $order->district_code = $shipping['district_id'] ?? null;
-                $order->ward_code = $shipping['ward_id'] ?? $shipping['commune_id'] ?? null;
+                $order->ward_code = $shipping['ward_id'] ?? null;
                 $order->street_address = $shipping['address'] ?? '';
 
                 // Update related names if available
@@ -401,20 +405,64 @@ class PancakeWebhookController extends Controller
             // Save order
             $order->save();
 
-            // Gửi tin nhắn ZNS khi trạng thái đơn hàng phù hợp
-            // if (in_array((int)$order->pancake_status, [1, 3])) {
-            //     $this->sendZaloNotification($order, (int)$order->pancake_status);
-            // }
-
             // Process live session info if exists
+            Log::info('Checking for live session info in note', [
+                'order_id' => $order->id,
+                'note' => $orderData['note']
+            ]);
+
             if (!empty($orderData['note'])) {
                 $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
+                Log::info('Result of parseLiveSessionInfo', [
+                    'order_id' => $order->id,
+                    'parsed_info' => $liveSessionInfo
+                ]);
                 if ($liveSessionInfo) {
+                    // Store live session info in order
                     $order->live_session_info = json_encode($liveSessionInfo);
                     $order->save();
-                    if (isset($liveSessionInfo['live_number'], $liveSessionInfo['session_date'])) {
-                        LiveSessionRevenue::recalculateStats($liveSessionInfo['session_date'], $liveSessionInfo['live_number']);
+
+                    // Create LiveSessionOrder record if not exists
+                    if (isset($liveSessionInfo['live_number']) && isset($liveSessionInfo['session_date'])) {
+                        try {
+                            DB::beginTransaction();
+
+                            // Create LiveSessionOrder FIRST to prevent race conditions
+                            \App\Models\LiveSessionOrder::updateOrCreate(
+                                ['order_id' => $order->id],
+                                [
+                                    'live_session_id' => "LIVE{$liveSessionInfo['live_number']}",
+                                    'live_session_date' => Carbon::parse($liveSessionInfo['session_date'], 'UTC'),
+                                    'customer_id' => $order->customer_id,
+                                    'customer_name' => $order->customer_name,
+                                    'shipping_address' => $order->full_address ?: $order->street_address,
+                                    'total_amount' => $order->total_value
+                                ]
+                            );
+
+                            // Recalculate stats for the live session
+                            LiveSessionRevenue::recalculateStats($liveSessionInfo['session_date'], $liveSessionInfo['live_number']);
+
+                            DB::commit();
+                        } catch (\Exception $e) {
+                            DB::rollBack();
+                            Log::error('Error processing live session info', [
+                                'order_id' => $order->id,
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString()
+                            ]);
+                        }
+                    } else {
+                        Log::warning('Missing required live session info', [
+                            'order_id' => $order->id,
+                            'live_session_info' => $liveSessionInfo
+                        ]);
                     }
+                } else {
+                    Log::warning('Failed to parse live session info from note', [
+                        'order_id' => $order->id,
+                        'note' => $orderData['note']
+                    ]);
                 }
             }
 
@@ -454,16 +502,14 @@ class PancakeWebhookController extends Controller
     {
         try {
             DB::beginTransaction();
-            $oldStatus = $order->pancake_status;
 
-            // Create/update customer directly, following the PancakeSyncController pattern
-            $customer = $this->findOrCreateCustomer($orderData['customer'] ?? [], $orderData['shipping_address'] ?? []);
-
-            if ($customer) {
+            // Update customer if needed
+            if (!empty($orderData['customer'])) {
+                $customer = $this->findOrCreateCustomer($orderData['customer']);
                 $order->customer_id = $customer->id;
-                $order->customer_name = $customer->name;
-                $order->customer_phone = $customer->phone;
-                $order->customer_email = $customer->email;
+                $order->customer_name = $orderData['customer']['name'] ?? $customer->name;
+                $order->customer_phone = $orderData['customer']['phone'] ?? $customer->phone;
+                $order->customer_email = $orderData['customer']['email'] ?? $customer->email;
             }
 
             // Update basic order information
@@ -538,7 +584,7 @@ class PancakeWebhookController extends Controller
                 $order->full_address = !empty($fullAddress) ? $fullAddress : ($shipping['full_address'] ?? $order->full_address);
                 $order->province_code = $shipping['province_id'] ?? $order->province_code;
                 $order->district_code = $shipping['district_id'] ?? $order->district_code;
-                $order->ward_code = $shipping['ward_id'] ?? $shipping['commune_id'] ?? $order->ward_code;
+                $order->ward_code = $shipping['ward_id'] ?? $order->ward_code;
                 $order->street_address = $shipping['address'] ?? $order->street_address;
 
                 // Update related names if available
@@ -580,49 +626,88 @@ class PancakeWebhookController extends Controller
 
             $order->save();
 
-            // Gửi tin nhắn ZNS nếu trạng thái thay đổi
-            // $newStatus = (int) $order->pancake_status;
-            // // dd($newStatus);
-            // if ($oldStatus != $newStatus) {
-            //     // dd(1);
-            //     if ($newStatus === 1 || $newStatus === 3) {
-            //         Log::info('Order status changed, sending Zalo notification.', [
-            //             'order_id' => $order->id,
-            //             'old_status' => $oldStatus,
-            //             'new_status' => $newStatus,
-            //         ]);
-            //         $this->sendZaloNotification($order, $newStatus);
-            //     }
-            // }
-
             // Process live session info if exists
+            Log::info('Checking for live session info in note for update', [
+                'order_id' => $order->id,
+                'note' => $orderData['note']
+            ]);
             if (!empty($orderData['note'])) {
+
                 $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
+
+                Log::info('Result of parseLiveSessionInfo for update', [
+                    'order_id' => $order->id,
+                    'parsed_info' => $liveSessionInfo
+                ]);
                 if ($liveSessionInfo) {
+                    // Store live session info in order
                     $order->live_session_info = json_encode($liveSessionInfo);
                     $order->save();
-                    if (isset($liveSessionInfo['live_number'], $liveSessionInfo['session_date'])) {
-                        LiveSessionRevenue::recalculateStats($liveSessionInfo['session_date'], $liveSessionInfo['live_number']);
+
+                    // Create/Update LiveSessionOrder record
+                    if (isset($liveSessionInfo['live_number']) && isset($liveSessionInfo['session_date'])) {
+                        try {
+                            DB::beginTransaction();
+
+                            // Use updateOrCreate to ensure the record is updated if it exists, and created if not.
+                            \App\Models\LiveSessionOrder::updateOrCreate(
+
+                                [
+                                    'order_id' => $order->id,
+                                    'live_session_id' => "LIVE{$liveSessionInfo['live_number']}",
+                                    'live_session_date' => Carbon::parse($liveSessionInfo['session_date'], 'UTC'),
+                                    'customer_id' => $order->customer_id,
+                                    'customer_name' => $order->customer_name,
+                                    'shipping_address' => $order->full_address ?: $order->street_address,
+                                    'total_amount' => $order->total_value
+                                ]
+                            );
+
+                            // Recalculate stats for the live session
+                            LiveSessionRevenue::recalculateStats($liveSessionInfo['session_date'], $liveSessionInfo['live_number']);
+
+                            DB::commit();
+                        } catch (\Exception $e) {
+                            DB::rollBack();
+                            Log::error('Error processing live session info on update', [
+                                'order_id' => $order->id,
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString()
+                            ]);
+                        }
+                    } else {
+                        Log::warning('Missing required live session info for update', [
+                            'order_id' => $order->id,
+                            'live_session_info' => $liveSessionInfo
+                        ]);
                     }
+                } else {
+                    Log::warning('Failed to parse live session info from note on update', [
+                        'order_id' => $order->id,
+                        'note' => $orderData['note']
+                    ]);
                 }
             }
 
             // Update customer stats
-            if ($customer) {
-                $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
-                $customer->total_spent = Order::where('customer_id', $customer->id)
-                    ->where('pancake_status', 3)
-                    ->sum('total_value');
-                $customer->succeeded_order_count = Order::where('customer_id', $customer->id)
-                    ->where('pancake_status', 3)
-                    ->count();
-                $customer->returned_order_count = Order::where('customer_id', $customer->id)
-                    ->whereIn('pancake_status', [4, 5, 15])
-                    ->count();
-                $customer->save();
+            if ($order->customer_id) {
+                $customer = \App\Models\Customer::find($order->customer_id);
+                if ($customer) {
+                    $customer->total_orders_count = Order::where('customer_id', $customer->id)->count();
+                    $customer->total_spent = Order::where('customer_id', $customer->id)
+                        ->where('pancake_status', 3)
+                        ->sum('total_value');
+                    $customer->succeeded_order_count = Order::where('customer_id', $customer->id)
+                        ->where('pancake_status', 3)
+                        ->count();
+                    $customer->returned_order_count = Order::where('customer_id', $customer->id)
+                        ->whereIn('pancake_status', [4, 5, 15])
+                        ->count();
+                    $customer->save();
+                }
             }
 
-
+            $order->save();
             DB::commit();
             return $order;
 
@@ -636,69 +721,6 @@ class PancakeWebhookController extends Controller
             ]);
             throw $e;
         }
-    }
-
-    /**
-     * Find or create a customer, mirroring the logic from PancakeSyncController.
-     * This method finds, creates/updates, and SAVES the customer directly.
-     *
-     * @param array $customerData From $orderData['customer']
-     * @param array $shippingAddress From $orderData['shipping_address']
-     * @return Customer|null
-     */
-    private function findOrCreateCustomer(array $customerData, array $shippingAddress = [])
-    {
-        $pancakeId = $customerData['id'] ?? null;
-        // Pancake data can be inconsistent. Check multiple fields for phone and name.
-        $phone = $customerData['phone'] ?? $customerData['phone_numbers'][0] ?? $shippingAddress['phone_number'] ?? null;
-        $name = $customerData['name'] ?? $shippingAddress['full_name'] ?? 'Unknown';
-        $email = $customerData['email'] ?? $customerData['emails'][0] ?? null;
-
-        if (empty($pancakeId) && empty($phone)) {
-            // Cannot reliably find or create a customer without a unique identifier.
-            Log::warning('Cannot find or create customer without pancake_id or phone.', ['customer_data' => $customerData]);
-            return null;
-        }
-
-        $customer = null;
-
-        // Priority 1: Find by Pancake ID
-        if ($pancakeId) {
-            $customer = Customer::where('pancake_id', $pancakeId)->first();
-        }
-
-        // Priority 2: Find by Phone Number
-        if (!$customer && $phone) {
-            $customer = Customer::where('phone', $phone)->first();
-        }
-
-        // If not found, create a new customer
-        if (!$customer) {
-            $customer = new Customer();
-        }
-
-        // Update or populate fields, ensuring we don't null out existing data on updates.
-        $customer->name = $name ?? $customer->name;
-        $customer->phone = $phone ?? $customer->phone;
-        $customer->email = $email ?? $customer->email;
-        $customer->pancake_id = $pancakeId ?? $customer->pancake_id;
-        $customer->pancake_customer_id = $customerData['code'] ?? $customer->pancake_customer_id;
-
-        // Update address using the separate shippingAddress array for consistency.
-        if (!empty($shippingAddress)) {
-            $customer->province = $shippingAddress['province_id'] ?? $customer->province;
-            $customer->district = $shippingAddress['district_id'] ?? $customer->district;
-            $customer->ward = $shippingAddress['commune_id'] ?? $customer->ward;
-            $customer->street_address = $shippingAddress['address'] ?? $customer->street_address;
-
-            $addressParts = array_filter([$shippingAddress['address'] ?? null, $shippingAddress['ward_name'] ?? null, $shippingAddress['district_name'] ?? null, $shippingAddress['province_name'] ?? null]);
-            $fullAddress = implode(', ', $addressParts);
-            $customer->full_address = !empty($fullAddress) ? $fullAddress : ($shippingAddress['full_address'] ?? $customer->full_address);
-        }
-
-        $customer->save();
-
-        return $customer;
     }
 
     /**
@@ -744,6 +766,71 @@ class PancakeWebhookController extends Controller
         $total += (float)($orderData['shipping_fee'] ?? 0);
 
         return $total;
+    }
+
+    /**
+     * Find or create customer from Pancake data
+     */
+    private function findOrCreateCustomer(array $customerData)
+    {
+        if (empty($customerData)) {
+            return new Customer();
+        }
+
+        // Try to find by phone and/or email
+        $customer = null;
+
+        $phone = $customerData['phone'] ?? $customerData['bill_phone_number'] ?? null;
+        $name = $customerData['name'] ?? $customerData['bill_full_name'] ?? null;
+        $email = $customerData['email'] ?? $customerData['bill_email'] ?? null;
+
+        if (!empty($phone)) {
+            $customer = Customer::where('phone', $phone)->first();
+        }
+
+        if (!$customer && !empty($email)) {
+            $customer = Customer::where('email', $email)->first();
+        }
+
+        if (!$customer) {
+            // Create new customer
+            $customer = new Customer();
+            $customer->name = $name ?? 'Unknown';
+            $customer->phone = $phone;
+            $customer->email = $email;
+            $customer->pancake_id = $customerData['id'] ?? null;
+            $customer->pancake_customer_id = $customerData['code'] ?? null;
+
+            // Map address
+            if (!empty($customerData['shipping_address'])) {
+                $shipping = $customerData['shipping_address'];
+                $customer->province = $shipping['province_id'] ?? null;
+                $customer->district = $shipping['district_id'] ?? null;
+                $customer->ward = $shipping['commune_id'] ?? null;
+                $customer->street_address = $shipping['address'] ?? null;
+                $customer->full_address = $shipping['full_address'] ?? null;
+            }
+
+            $customer->save();
+        } else {
+            // Update existing customer
+            $customer->pancake_id = $customerData['id'] ?? $customer->pancake_id;
+            $customer->pancake_customer_id = $customerData['code'] ?? $customer->pancake_customer_id;
+
+            // Update address if provided
+            if (!empty($customerData['shipping_address'])) {
+                $shipping = $customerData['shipping_address'];
+                $customer->province = $shipping['province_id'] ?? $customer->province;
+                $customer->district = $shipping['district_id'] ?? $customer->district;
+                $customer->ward = $shipping['commune_id'] ?? $customer->ward;
+                $customer->street_address = $shipping['address'] ?? $customer->street_address;
+                $customer->full_address = $shipping['full_address'] ?? $customer->full_address;
+            }
+
+            $customer->save();
+        }
+
+        return $customer;
     }
 
     /**
@@ -883,114 +970,5 @@ class PancakeWebhookController extends Controller
             ]);
             throw $e;
         }
-    }
-
-    /**
-     * Send Zalo Notification Service (ZNS) message via eSMS.
-     *
-     * @param Order $order The order object
-     * @param int $status The new pancake_status of the order
-     * @return void
-     */
-    private function sendZaloNotification(Order $order, int $status)
-    {
-        // Make sure to add these variables to your .env file:
-        // ESMS_API_KEY=your_esms_api_key
-        // ESMS_SECRET_KEY=your_esms_secret_key
-        // ESMS_OAID=your_zalo_oaid
-        // ESMS_ZNS_CONFIRM_TEMPLATE_ID=your_confirmation_template_id
-        // ESMS_ZNS_DELIVERED_TEMPLATE_ID=your_delivered_template_id
-        // dd(1);
-        $apiKey = env('ESMS_API_KEY');
-
-        $secretKey = env('ESMS_SECRET_KEY');
-        $oaid = env('ESMS_OAID');
-
-        if (!$apiKey || !$secretKey || !$oaid) {
-            Log::error('eSMS ZNS credentials (API Key, Secret Key, or OAID) are not configured in .env file.');
-            return;
-        }
-
-        $phone = $order->customer_phone;
-        if (!$phone) {
-            Log::warning('Cannot send ZNS. Order is missing a customer phone number.', ['order_id' => $order->id]);
-            return;
-        }
-
-        $tempId = null;
-        $tempData = [];
-        $campaignId = '';
-
-        if ($status === 1) { // Order Confirmed
-            $tempId = env('ESMS_ZNS_CONFIRM_TEMPLATE_ID');
-            if (!$tempId) {
-                Log::error('eSMS ZNS Confirm Template ID is not configured in .env file.');
-                return;
-            }
-            $tempData = [
-                'customer_name' => $order->customer_name,
-                'order_code' => $order->order_code,
-                // Assuming template for "confirmed by..." has a {{shop_name}} variable.
-                'shop_name' => $order->page_name ?? 'Cửa hàng của chúng tôi'
-            ];
-            $campaignId = 'CRM - Xac nhan don hang';
-
-        } elseif ($status === 3) { // Order Delivered
-            $tempId = env('ESMS_ZNS_DELIVERED_TEMPLATE_ID');
-            if (!$tempId) {
-                Log::error('eSMS ZNS Delivered Template ID is not configured in .env file.');
-                return;
-            }
-            $tempData = [
-                'customer_name' => $order->customer_name,
-                'order_code' => $order->order_code,
-            ];
-            $campaignId = 'CRM - Giao hang thanh cong';
-        } else {
-            return; // Do nothing for other statuses
-        }
-
-        $payload = [
-            'ApiKey' => $apiKey,
-            'SecretKey' => $secretKey,
-            'OAID' => $oaid,
-            'Phone' => $phone,
-            'TempID' => (string)$tempId,
-            'TempData' => $tempData,
-            'campaignid' => $campaignId,
-            'RequestId' => (string) Str::uuid()
-        ];
-
-        // try {
-            Log::info('Sending eSMS ZNS notification request.', [
-                'order_id' => $order->id,
-                'status' => $status,
-                'payload' => $payload
-            ]);
-
-            $response = Http::post('https://rest.esms.vn/MainService.svc/json/SendZaloMessage_V6/', $payload);
-            dd($response->json());
-            Log::info('eSMS ZNS notification response received.', [
-                'order_id' => $order->id,
-                'status' => $status,
-                'response_code' => $response->json('CodeResult'),
-                'response_body' => $response->body()
-            ]);
-
-            if ($response->json('CodeResult') != '100') {
-                Log::error('Failed to send eSMS ZNS notification (API error).', [
-                    'order_id' => $order->id,
-                    'status' => $status,
-                    'response' => $response->json()
-                ]);
-            }
-        // } catch (\Exception $e) {
-        //     Log::error('Exception occurred while sending eSMS ZNS notification.', [
-        //         'order_id' => $order->id,
-        //         'error' => $e->getMessage(),
-        //         'trace' => $e->getTraceAsString()
-        //     ]);
-        //     throw $e;
-        // }
     }
 }
