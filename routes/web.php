@@ -19,10 +19,27 @@ use App\Http\Controllers\Admin\PancakeSyncController;
 use App\Http\Controllers\PancakeConfigController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\LiveSessionRevenueController;
+use Illuminate\Support\Facades\Auth;
 
 Route::get('/', function () {
-    return redirect()->route('login');
+    if (Auth::check()) {
+        if (Auth::user()->can('reports.overall_revenue_summary')) {
+            return redirect()->route('reports.overall_revenue_summary');
+        }
+        return redirect()->route('orders.index');
+    }
+    return view('auth.login');
 });
+
+Route::get('/home', function () {
+    if (Auth::check()) {
+        if (Auth::user()->can('reports.overall_revenue_summary')) {
+            return redirect()->route('reports.overall_revenue_summary');
+        }
+        return redirect()->route('orders.index');
+    }
+    return redirect()->route('login');
+})->name('home');
 
 Route::get('/dashboard', [DashboardController::class, 'index'])
     ->middleware(['auth', 'verified'])

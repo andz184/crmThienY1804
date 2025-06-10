@@ -28,7 +28,14 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('reports.overall_revenue_summary', absolute: false));
+        // Redirect to the intended URL, or the default home route.
+        // The default home is now determined by our permission-based logic.
+        $user = $request->user();
+        if ($user->can('reports.overall_revenue_summary')) {
+            return redirect()->intended(route('reports.overall_revenue_summary'));
+        }
+
+        return redirect()->intended(route('orders.index'));
     }
 
     /**

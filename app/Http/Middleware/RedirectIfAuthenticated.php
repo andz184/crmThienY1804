@@ -22,7 +22,13 @@ class RedirectIfAuthenticated
 
         foreach ($guards as $guard) {
             if (Auth::guard($guard)->check()) {
-                return redirect('/dashboard');
+                // Determine the redirect path based on user permissions.
+                if (Auth::user()->can('reports.overall_revenue_summary')) {
+                    return redirect()->route('reports.overall_revenue_summary');
+                }
+
+                // Default redirect for users without the specific permission.
+                return redirect()->route('orders.index');
             }
         }
 

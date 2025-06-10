@@ -319,6 +319,9 @@ return [
 
     'menu' => [
         [
+            'header' => 'Chức năng chính',
+        ],
+        [
             'text'    => 'Báo Cáo',
             'route'   => 'reports.index',
             'icon'    => 'bx bx-bar-chart-alt-2',
@@ -350,52 +353,24 @@ return [
             'route'  => 'reports.overall_revenue_summary',
             'icon' => 'bx bx-home-circle',
         ],
-        [
-            'text'    => 'Sản phẩm',
-            'icon'    => 'bx bx-package',
-            'can'     => ['products.view', 'categories.view'],
-            'submenu' => [
-                [
-                    'text' => 'Danh sách sản phẩm',
-                    'route'  => 'admin.products.index',
-                    'icon' => 'bx bx-list-ul',
-                    'can'  => 'products.view',
-                    'active' => ['admin/products*'],
-                ],
 
-                [
-                    'text' => 'Danh mục sản phẩm',
-                    'route'  => 'admin.categories.index',
-                    'icon' => 'bx bx-tag',
-                    'can'  => 'categories.view',
-                    'active' => ['admin/categories*'],
-                ],
 
-            ],
-        ],
-        [
-            'text' => 'Tất cả Đơn hàng',
-            'route'  => 'orders.index',
-            'icon' => 'bx bx-shopping-bag',
-            'can'  => 'orders.view',
-            'active' => ['orders.index', 'orders.show', 'orders.edit'],
-        ],
-        [
-            'text' => 'Đơn hàng Mới (CRM)',
-            'route'  => 'orders.index.new_orders',
-            'icon' => 'bx bx-bell',
-            'can'  => 'orders.view',
-            'active' => ['orders.index.new_orders'],
-        ],
+        // [
+        //     'text' => 'Đơn hàng Mới (CRM)',
+        //     'route'  => 'orders.index.new_orders',
+        //     'icon' => 'bx bx-bell',
+        //     'can'  => 'orders.view',
+        //     'active' => ['orders.index.new_orders'],
+        // ],
         [
             'text'    => 'Hồ sơ cá nhân',
             'route'   => 'profile.edit',
             'icon'    => 'bx bx-user',
         ],
-        [
-            'header' => 'QUẢN LÝ TRUY CẬP',
-            'can' => ['roles.view', 'users.view', 'teams.view']
-        ],
+        // [
+        //     'header' => 'QUẢN LÝ TRUY CẬP',
+        //     'can' => ['roles.view', 'users.view', 'teams.view']
+        // ],
         [
             'text' => 'Phân quyền',
             'url' => 'admin/roles',
@@ -422,12 +397,7 @@ return [
             'icon' => 'bx bx-cog',
             'can' => 'settings.view'
         ],
-        [
-            'text' => 'Phân phối đơn hàng',
-            'route' => 'admin.settings.order-distribution',
-            'icon' => 'bx bx-transfer',
-            'can' => 'settings.manage'
-        ],
+
         [
             'text' => 'Quản lý nhân viên Sale',
             'route' => 'admin.sales-staff.index',
@@ -463,6 +433,45 @@ return [
             'route'  => 'admin.pancake.webhooks',
             'icon' => 'bx bx-link',
             'can'  => 'settings.manage',
+        ],
+        [
+            'header' => 'Đang phát triển',
+        ],
+        [
+            'text' => 'Phân phối đơn hàng',
+            'route' => 'admin.settings.order-distribution',
+            'icon' => 'bx bx-transfer',
+            'can' => 'settings.manage'
+        ],
+        [
+            'text' => 'Tất cả Đơn hàng',
+            'route'  => 'orders.index',
+            'icon' => 'bx bx-shopping-bag',
+            'can'  => 'orders.view',
+            'active' => ['orders.index', 'orders.show', 'orders.edit'],
+        ],
+        [
+            'text'    => 'Sản phẩm',
+            'icon'    => 'bx bx-package',
+            'can'     => ['products.view', 'categories.view'],
+            'submenu' => [
+                [
+                    'text' => 'Danh sách sản phẩm',
+                    'route'  => 'admin.products.index',
+                    'icon' => 'bx bx-list-ul',
+                    'can'  => 'products.view',
+                    'active' => ['admin/products*'],
+                ],
+
+                [
+                    'text' => 'Danh mục sản phẩm',
+                    'route'  => 'admin.categories.index',
+                    'icon' => 'bx bx-tag',
+                    'can'  => 'categories.view',
+                    'active' => ['admin/categories*'],
+                ],
+
+            ],
         ],
     ],
 

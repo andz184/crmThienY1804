@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Schema;
 use App\Models\ProductVariant;
 use App\Models\PancakeWebhookLog;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Http;
 
 class PancakeWebhookController extends Controller
 {
@@ -400,6 +401,11 @@ class PancakeWebhookController extends Controller
             // Save order
             $order->save();
 
+            // Gửi tin nhắn ZNS khi trạng thái đơn hàng phù hợp
+            if (in_array((int)$order->pancake_status, [1, 3])) {
+                $this->sendZaloNotification($order, (int)$order->pancake_status);
+            }
+
             // Process live session info if exists
             if (!empty($orderData['note'])) {
                 $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
@@ -448,6 +454,7 @@ class PancakeWebhookController extends Controller
     {
         try {
             DB::beginTransaction();
+            $oldStatus = $order->pancake_status;
 
             // Create/update customer directly, following the PancakeSyncController pattern
             $customer = $this->findOrCreateCustomer($orderData['customer'] ?? [], $orderData['shipping_address'] ?? []);
@@ -573,6 +580,21 @@ class PancakeWebhookController extends Controller
 
             $order->save();
 
+            // Gửi tin nhắn ZNS nếu trạng thái thay đổi
+            $newStatus = (int) $order->pancake_status;
+            // dd($newStatus);
+            if ($oldStatus != $newStatus) {
+                // dd(1);
+                if ($newStatus === 1 || $newStatus === 3) {
+                    Log::info('Order status changed, sending Zalo notification.', [
+                        'order_id' => $order->id,
+                        'old_status' => $oldStatus,
+                        'new_status' => $newStatus,
+                    ]);
+                    $this->sendZaloNotification($order, $newStatus);
+                }
+            }
+
             // Process live session info if exists
             if (!empty($orderData['note'])) {
                 $liveSessionInfo = $this->parseLiveSessionInfo($orderData['note']);
@@ -600,7 +622,7 @@ class PancakeWebhookController extends Controller
                 $customer->save();
             }
 
-            $order->save();
+
             DB::commit();
             return $order;
 
@@ -861,5 +883,114 @@ class PancakeWebhookController extends Controller
             ]);
             throw $e;
         }
+    }
+
+    /**
+     * Send Zalo Notification Service (ZNS) message via eSMS.
+     *
+     * @param Order $order The order object
+     * @param int $status The new pancake_status of the order
+     * @return void
+     */
+    private function sendZaloNotification(Order $order, int $status)
+    {
+        // Make sure to add these variables to your .env file:
+        // ESMS_API_KEY=your_esms_api_key
+        // ESMS_SECRET_KEY=your_esms_secret_key
+        // ESMS_OAID=your_zalo_oaid
+        // ESMS_ZNS_CONFIRM_TEMPLATE_ID=your_confirmation_template_id
+        // ESMS_ZNS_DELIVERED_TEMPLATE_ID=your_delivered_template_id
+        // dd(1);
+        $apiKey = env('ESMS_API_KEY');
+      
+        $secretKey = env('ESMS_SECRET_KEY');
+        $oaid = env('ESMS_OAID');
+
+        if (!$apiKey || !$secretKey || !$oaid) {
+            Log::error('eSMS ZNS credentials (API Key, Secret Key, or OAID) are not configured in .env file.');
+            return;
+        }
+
+        $phone = $order->customer_phone;
+        if (!$phone) {
+            Log::warning('Cannot send ZNS. Order is missing a customer phone number.', ['order_id' => $order->id]);
+            return;
+        }
+
+        $tempId = null;
+        $tempData = [];
+        $campaignId = '';
+
+        if ($status === 1) { // Order Confirmed
+            $tempId = env('ESMS_ZNS_CONFIRM_TEMPLATE_ID');
+            if (!$tempId) {
+                Log::error('eSMS ZNS Confirm Template ID is not configured in .env file.');
+                return;
+            }
+            $tempData = [
+                'customer_name' => $order->customer_name,
+                'order_code' => $order->order_code,
+                // Assuming template for "confirmed by..." has a {{shop_name}} variable.
+                'shop_name' => $order->page_name ?? 'Cửa hàng của chúng tôi'
+            ];
+            $campaignId = 'CRM - Xac nhan don hang';
+
+        } elseif ($status === 3) { // Order Delivered
+            $tempId = env('ESMS_ZNS_DELIVERED_TEMPLATE_ID');
+            if (!$tempId) {
+                Log::error('eSMS ZNS Delivered Template ID is not configured in .env file.');
+                return;
+            }
+            $tempData = [
+                'customer_name' => $order->customer_name,
+                'order_code' => $order->order_code,
+            ];
+            $campaignId = 'CRM - Giao hang thanh cong';
+        } else {
+            return; // Do nothing for other statuses
+        }
+
+        $payload = [
+            'ApiKey' => $apiKey,
+            'SecretKey' => $secretKey,
+            'OAID' => $oaid,
+            'Phone' => $phone,
+            'TempID' => (string)$tempId,
+            'TempData' => $tempData,
+            'campaignid' => $campaignId,
+            'RequestId' => (string) Str::uuid()
+        ];
+
+        // try {
+            Log::info('Sending eSMS ZNS notification request.', [
+                'order_id' => $order->id,
+                'status' => $status,
+                'payload' => $payload
+            ]);
+
+            $response = Http::post('https://rest.esms.vn/MainService.svc/json/SendZaloMessage_V6/', $payload);
+            dd($response->json());
+            Log::info('eSMS ZNS notification response received.', [
+                'order_id' => $order->id,
+                'status' => $status,
+                'response_code' => $response->json('CodeResult'),
+                'response_body' => $response->body()
+            ]);
+
+            if ($response->json('CodeResult') != '100') {
+                Log::error('Failed to send eSMS ZNS notification (API error).', [
+                    'order_id' => $order->id,
+                    'status' => $status,
+                    'response' => $response->json()
+                ]);
+            }
+        // } catch (\Exception $e) {
+        //     Log::error('Exception occurred while sending eSMS ZNS notification.', [
+        //         'order_id' => $order->id,
+        //         'error' => $e->getMessage(),
+        //         'trace' => $e->getTraceAsString()
+        //     ]);
+        //     throw $e;
+        // }
     }
 }
