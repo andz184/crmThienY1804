@@ -12,643 +12,613 @@
 @stop
 
 @section('content')
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="card bg-light-blue">
-                <div class="card-header">
-                    <h3 class="card-title"><i class="fas fa-info-circle"></i> Hướng dẫn các chỉ số</h3>
+<!-- Modal Hướng dẫn -->
+<div class="modal fade" id="helpModal" tabindex="-1" role="dialog" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient-info text-white">
+                <h5 class="modal-title" id="helpModalLabel">
+                    <i class="fas fa-question-circle mr-2"></i>
+                    Hướng dẫn sử dụng báo cáo
+                </h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    Báo cáo này giúp bạn theo dõi hiệu quả kinh doanh của các phiên livestream.
                 </div>
-                <div class="card-body">
-                    <ul>
-                        <li><strong>Doanh thu dự kiến:</strong> Tổng giá trị các đơn hàng không bao gồm các đơn ở trạng thái hủy (6, 7).</li>
-                        <li><strong>Doanh thu thực tế:</strong> Tổng giá trị các đơn hàng đã được giao thành công (trạng thái 3).</li>
-                        <li><strong>Đơn chốt:</strong> Tổng số đơn hàng được giao thành công (trạng thái 3).</li>
-                        <li><strong>Đơn hủy:</strong> Tổng số đơn hàng bị hủy (trạng thái 6, 7).</li>
-                        <li><strong>Tỷ lệ chốt:</strong> (Đơn chốt / (Tổng đơn - Đơn đang giao)) * 100.</li>
-                        <li><strong>Tỷ lệ hủy:</strong> (Đơn hủy / Tổng đơn) * 100.</li>
-                    </ul>
+
+                <h5 class="text-primary mb-3">
+                    <i class="fas fa-chart-line mr-2"></i>
+                    Các chỉ số quan trọng:
+                </h5>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-info">
+                            <i class="fas fa-dollar-sign mr-2"></i>
+                            Doanh thu
+                        </h6>
+                        <ul class="list-unstyled ml-4">
+                            <li class="mb-2">
+                                <i class="fas fa-check-circle text-success mr-2"></i>
+                                <strong>Doanh thu dự kiến:</strong> Tổng giá trị của tất cả đơn hàng (bao gồm cả đơn đang xử lý và đơn hủy)
+                    </li>
+                    <li>
+                                <i class="fas fa-check-circle text-success mr-2"></i>
+                                <strong>Doanh thu thực tế:</strong> Tổng giá trị của các đơn hàng đã giao thành công và thanh toán đủ
+                    </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-info">
+                            <i class="fas fa-shopping-cart mr-2"></i>
+                            Đơn hàng
+                        </h6>
+                        <ul class="list-unstyled ml-4">
+                            <li class="mb-2">
+                                <i class="fas fa-check-circle text-success mr-2"></i>
+                                <strong>Tổng đơn:</strong> Số lượng tất cả đơn hàng được tạo
+                    </li>
+                            <li class="mb-2">
+                                <i class="fas fa-check-circle text-success mr-2"></i>
+                                <strong>Đơn chốt:</strong> Số đơn đã giao hàng và thanh toán thành công
+                    </li>
+                    <li>
+                                <i class="fas fa-times-circle text-danger mr-2"></i>
+                                <strong>Đơn hủy:</strong> Số đơn bị hủy (bởi khách hàng hoặc shop)
+                    </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-info">
+                            <i class="fas fa-percentage mr-2"></i>
+                            Tỷ lệ hiệu quả
+                        </h6>
+                        <ul class="list-unstyled ml-4">
+                            <li class="mb-2">
+                                <i class="fas fa-check-circle text-success mr-2"></i>
+                                <strong>Tỷ lệ chốt đơn:</strong> Phần trăm đơn hàng thành công trên tổng số đơn đã xử lý
+                    </li>
+                    <li>
+                                <i class="fas fa-times-circle text-danger mr-2"></i>
+                                <strong>Tỷ lệ hủy:</strong> Phần trăm đơn hàng bị hủy trên tổng số đơn
+                    </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <h6 class="text-info">
+                            <i class="fas fa-users mr-2"></i>
+                            Khách hàng
+                        </h6>
+                        <ul class="list-unstyled ml-4">
+                            <li class="mb-2">
+                                <i class="fas fa-star text-warning mr-2"></i>
+                                <strong>Khách mới:</strong> Số khách hàng lần đầu mua hàng trong phiên live
+                    </li>
+                    <li>
+                                <i class="fas fa-heart text-danger mr-2"></i>
+                                <strong>Khách cũ:</strong> Số khách hàng đã từng mua hàng trước đó
+                    </li>
+                </ul>
+            </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.modal-header.bg-gradient-info {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+}
+.modal-body .card {
+    border: none;
+    box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    transition: all 0.3s ease;
+}
+.modal-body .card:hover {
+    box-shadow: 0 0 15px rgba(0,0,0,0.1);
+}
+.modal-body .list-unstyled li {
+    padding: 5px 0;
+}
+.modal-body .alert-info {
+    background-color: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.2);
+    color: #8b5cf6;
+}
+</style>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <div class="form-group">
+            <label>Khoảng thời gian</label>
+            <div class="input-group">
+                <input type="text" class="form-control" id="daterange" value="{{ $startDate->format('d/m/Y') }} - {{ $endDate->format('d/m/Y') }}">
+                <div class="input-group-append">
+                    <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                    <button type="button" class="btn btn-theme" id="filter-btn" style="background-color:rgba(0, 0, 0, 0.1); border-color: rgba(0, 0, 0, 0.1);">
+                        <i class="fas fa-filter"></i> Lọc
+                    </button>
                 </div>
             </div>
         </div>
     </div>
-
-    <div class="card">
-        <div class="card-header">
-            <h3 class="card-title">Báo Cáo Doanh Thu Live Sessions</h3>
+    <div class="col-md-6 text-right">
+        <div class="btn-group mt-4">
+            {{-- <button type="button" class="btn btn-default" id="refresh-btn" title="Làm mới dữ liệu">
+                <i class="fas fa-sync"></i>
+            </button> --}}
         </div>
-        <div class="card-body">
-            <!-- Modal Hướng dẫn -->
-            <div class="modal fade" id="helpModal" tabindex="-1" role="dialog" aria-labelledby="helpModalLabel" aria-hidden="true">
-                <div class="modal-dialog modal-lg" role="document">
-                    <div class="modal-content">
-                        <div class="modal-header bg-gradient-info text-white">
-                            <h5 class="modal-title" id="helpModalLabel">
-                                <i class="fas fa-question-circle mr-2"></i>
-                                Hướng dẫn sử dụng báo cáo
-                            </h5>
-                            <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                                <span aria-hidden="true">&times;</span>
-                            </button>
-                        </div>
-                        <div class="modal-body">
-                            <div class="alert alert-info">
-                                <i class="fas fa-info-circle"></i>
-                                Báo cáo này giúp bạn theo dõi hiệu quả kinh doanh của các phiên livestream.
-                            </div>
+    </div>
+</div>
 
-                            <h5 class="text-primary mb-3">
-                                <i class="fas fa-chart-line mr-2"></i>
-                                Các chỉ số quan trọng:
-                            </h5>
-
-                            <div class="card mb-3">
-                                <div class="card-body">
-                                    <h6 class="text-info">
-                                        <i class="fas fa-dollar-sign mr-2"></i>
-                                        Doanh thu
-                                    </h6>
-                                    <ul class="list-unstyled ml-4">
-                                        <li class="mb-2">
-                                            <i class="fas fa-check-circle text-success mr-2"></i>
-                                            <strong>Doanh thu dự kiến:</strong> Tổng giá trị của tất cả đơn hàng (bao gồm cả đơn đang xử lý và đơn hủy)
-                                    </li>
-                                    <li>
-                                            <i class="fas fa-check-circle text-success mr-2"></i>
-                                            <strong>Doanh thu thực tế:</strong> Tổng giá trị của các đơn hàng đã giao thành công và thanh toán đủ
-                                    </li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            <div class="card mb-3">
-                                <div class="card-body">
-                                    <h6 class="text-info">
-                                        <i class="fas fa-shopping-cart mr-2"></i>
-                                        Đơn hàng
-                                    </h6>
-                                    <ul class="list-unstyled ml-4">
-                                        <li class="mb-2">
-                                            <i class="fas fa-check-circle text-success mr-2"></i>
-                                            <strong>Tổng đơn:</strong> Số lượng tất cả đơn hàng được tạo
-                                    </li>
-                                        <li class="mb-2">
-                                            <i class="fas fa-check-circle text-success mr-2"></i>
-                                            <strong>Đơn chốt:</strong> Số đơn đã giao hàng và thanh toán thành công
-                                    </li>
-                                    <li>
-                                            <i class="fas fa-times-circle text-danger mr-2"></i>
-                                            <strong>Đơn hủy:</strong> Số đơn bị hủy (bởi khách hàng hoặc shop)
-                                    </li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            <div class="card mb-3">
-                                <div class="card-body">
-                                    <h6 class="text-info">
-                                        <i class="fas fa-percentage mr-2"></i>
-                                        Tỷ lệ hiệu quả
-                                    </h6>
-                                    <ul class="list-unstyled ml-4">
-                                        <li class="mb-2">
-                                            <i class="fas fa-check-circle text-success mr-2"></i>
-                                            <strong>Tỷ lệ chốt đơn:</strong> Phần trăm đơn hàng thành công trên tổng số đơn đã xử lý
-                                    </li>
-                                    <li>
-                                            <i class="fas fa-times-circle text-danger mr-2"></i>
-                                            <strong>Tỷ lệ hủy:</strong> Phần trăm đơn hàng bị hủy trên tổng số đơn
-                                    </li>
-                                    </ul>
-                                </div>
-                            </div>
-
-                            <div class="card">
-                                <div class="card-body">
-                                    <h6 class="text-info">
-                                        <i class="fas fa-users mr-2"></i>
-                                        Khách hàng
-                                    </h6>
-                                    <ul class="list-unstyled ml-4">
-                                        <li class="mb-2">
-                                            <i class="fas fa-star text-warning mr-2"></i>
-                                            <strong>Khách mới:</strong> Số khách hàng lần đầu mua hàng trong phiên live
-                                    </li>
-                                    <li>
-                                            <i class="fas fa-heart text-danger mr-2"></i>
-                                            <strong>Khách cũ:</strong> Số khách hàng đã từng mua hàng trước đó
-                                    </li>
-                                </ul>
-                            </div>
-                                </div>
-                            </div>
-                            <div class="modal-footer bg-light">
-                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <style>
-            .modal-header.bg-gradient-info {
-                background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
-            }
-            .modal-body .card {
-                border: none;
-                box-shadow: 0 0 10px rgba(0,0,0,0.05);
-                transition: all 0.3s ease;
-            }
-            .modal-body .card:hover {
-                box-shadow: 0 0 15px rgba(0,0,0,0.1);
-            }
-            .modal-body .list-unstyled li {
-                padding: 5px 0;
-            }
-            .modal-body .alert-info {
-                background-color: rgba(139, 92, 246, 0.1);
-                border-color: rgba(139, 92, 246, 0.2);
-                color: #8b5cf6;
-            }
-            </style>
-
-            <div class="row mb-3">
+<!-- Live Dashboard -->
+<div class="live-dashboard mb-4">
+    <div class="dashboard-header p-4">
+        <div class="text-center mb-4">
+            <div class="row">
                 <div class="col-md-6">
-                    <div class="form-group">
-                        <label>Khoảng thời gian</label>
-                        <div class="input-group">
-                            <input type="text" class="form-control" id="daterange" value="{{ $startDate->format('d/m/Y') }} - {{ $endDate->format('d/m/Y') }}">
-                            <div class="input-group-append">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                <button type="button" class="btn btn-theme" id="filter-btn" style="background-color:rgba(0, 0, 0, 0.1); border-color: rgba(0, 0, 0, 0.1);">
-                                    <i class="fas fa-filter"></i> Lọc
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                    <p class="text-white-50 mb-2">Doanh thu dự kiến (đ)</p>
+            <h1 class="revenue-display mb-4">{{ number_format($summary['expected_revenue'] ?? 0, 0, ',', '.') }}</h1>
                 </div>
-                <div class="col-md-6 text-right">
-                    <div class="btn-group mt-4">
-                        {{-- <button type="button" class="btn btn-default" id="refresh-btn" title="Làm mới dữ liệu">
-                            <i class="fas fa-sync"></i>
-                        </button> --}}
-                    </div>
+                <div class="col-md-6">
+                    <p class="text-white-50 mb-2">Doanh thu thực tế (đ)</p>
+                    <h1 class="revenue-display mb-4">{{ number_format($summary['actual_revenue'] ?? 0, 0, ',', '.') }}</h1>
                 </div>
             </div>
 
-            <!-- Live Dashboard -->
-            <div class="live-dashboard mb-4">
-                <div class="dashboard-header p-4">
-                    <div class="text-center mb-4">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <p class="text-white-50 mb-2">Doanh thu dự kiến (đ)</p>
-                        <h1 class="revenue-display mb-4">{{ number_format($summary['expected_revenue'] ?? 0, 0, ',', '.') }}</h1>
-                            </div>
-                            <div class="col-md-6">
-                                <p class="text-white-50 mb-2">Doanh thu thực tế (đ)</p>
-                                <h1 class="revenue-display mb-4">{{ number_format($summary['actual_revenue'] ?? 0, 0, ',', '.') }}</h1>
-                            </div>
-                        </div>
-
-                        <div class="d-flex justify-content-center gap-7 mb-4">
-                            <div class="stat-item">
-                                <div class="d-flex align-items-center gap-2">
-                                    <i class="fas fa-shopping-cart"></i>
-                                    <span>Tổng đơn</span>
-                                </div>
-                                <h3>{{ number_format($summary['total_orders'] ?? 0, 0, ',', '.') }}</h3>
-                            </div>
-                            <div class="stat-item">
-                                <div class="d-flex align-items-center gap-2">
-                                    <i class="fas fa-users"></i>
-                                    <span>Tổng khách</span>
-                                </div>
-                                <h3>{{ number_format($summary['total_customers'] ?? 0, 0, ',', '.') }}</h3>
-                            </div>
-                        </div>
+            <div class="d-flex justify-content-center gap-7 mb-4">
+                <div class="stat-item">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-shopping-cart"></i>
+                        <span>Tổng đơn</span>
                     </div>
-
-                    <div class="dashboard-stats">
-                        <div class="row g-4">
-                            <div class="col-md-3">
-                                <div class="stat-box">
-                                    <div class="stat-label">Đơn chốt</div>
-                                    <div class="stat-value">{{ number_format($summary['successful_orders'] ?? 0, 0, ',', '.') }}</div>
-                                    <div class="stat-change text-{{ $ordersChangeRate >= 0 ? 'success' : 'danger' }}">
-                                        <i class="fas fa-arrow-{{ $ordersChangeRate >= 0 ? 'up' : 'down' }}"></i>
-                                        {{ number_format(abs($ordersChangeRate), 2, ',', '.') }}%
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="stat-box">
-                                    <div class="stat-label">Đơn hủy</div>
-                                    <div class="stat-value">{{ number_format($summary['canceled_orders'] ?? 0, 0, ',', '.') }}</div>
-                                    <div class="stat-change text-{{ $canceledOrdersChangeRate <= 0 ? 'success' : 'danger' }}">
-                                        <i class="fas fa-arrow-{{ $canceledOrdersChangeRate <= 0 ? 'up' : 'down' }}"></i>
-                                        {{ number_format(abs($canceledOrdersChangeRate), 2, ',', '.') }}%
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="stat-box">
-                                    <div class="stat-label">Tỷ lệ chốt</div>
-                                    <div class="stat-value">{{ number_format($summary['conversion_rate'] ?? 0, 1, ',', '.') }}%</div>
-                                    <div class="stat-change text-{{ $successRateChange >= 0 ? 'success' : 'danger' }}">
-                                        <i class="fas fa-arrow-{{ $successRateChange >= 0 ? 'up' : 'down' }}"></i>
-                                        {{ number_format(abs($successRateChange), 1, ',', '.') }}%
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="stat-box">
-                                    <div class="stat-label">Khách hàng</div>
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <div class="customer-stat">
-                                                <span class="customer-label">Mới:</span>
-                                                <span class="customer-value">{{ number_format($summary['new_customers'] ?? 0, 0, ',', '.') }}</span>
-                                            </div>
-                                            <div class="customer-stat">
-                                                <span class="customer-label">Cũ:</span>
-                                                <span class="customer-value">{{ number_format($summary['returning_customers'] ?? 0, 0, ',', '.') }}</span>
-                                            </div>
-                                        </div>
-                                        <div class="customer-total">
-                                            Tổng: {{ number_format($summary['total_customers'] ?? 0, 0, ',', '.') }}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                    <h3>{{ number_format($summary['total_orders'] ?? 0, 0, ',', '.') }}</h3>
+                </div>
+                <div class="stat-item">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="fas fa-users"></i>
+                        <span>Tổng khách</span>
                     </div>
-                </div>
-            </div>
-
-            <style>
-            .live-dashboard {
-                background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
-                border-radius: 16px;
-                color: white;
-            }
-
-            .dashboard-header {
-                background: rgba(0, 0, 0, 0.1);
-                border-radius: 16px;
-            }
-
-            .revenue-display {
-                font-size: 4rem;
-                font-weight: 700;
-                margin: 0;
-                letter-spacing: -1px;
-            }
-
-            .stat-item {
-                text-align: center;
-                background: rgba(255, 255, 255, 0.1);
-                padding: 1rem 2rem;
-                border-radius: 12px;
-            }
-
-            .stat-item span {
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 1rem;
-            }
-
-            .stat-item h3 {
-                font-size: 1.75rem;
-                margin: 0.5rem 0 0;
-                font-weight: 600;
-            }
-
-            .dashboard-stats {
-                margin-top: 1rem;
-            }
-
-            .stat-box {
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 12px;
-                padding: 1.25rem;
-                height: 100%;
-            }
-
-            .stat-label {
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 1rem;
-                margin-bottom: 0.75rem;
-                font-weight: 500;
-            }
-
-            .stat-value {
-                font-size: 1.5rem;
-                font-weight: 600;
-                margin-bottom: 0.5rem;
-            }
-
-            .stat-change {
-                font-size: 0.9rem;
-                font-weight: 500;
-            }
-
-            .customer-stat {
-                margin-bottom: 0.5rem;
-            }
-
-            .customer-label {
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 0.9rem;
-                margin-right: 0.5rem;
-            }
-
-            .customer-value {
-                font-size: 1.1rem;
-                font-weight: 600;
-            }
-
-            .customer-total {
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 0.9rem;
-                padding-left: 1rem;
-                border-left: 1px solid rgba(255, 255, 255, 0.2);
-            }
-
-            .text-success {
-                color: #4ade80 !important;
-            }
-
-            .text-danger {
-                color: #fb7185 !important;
-            }
-
-            @media (max-width: 768px) {
-                .revenue-display {
-                    font-size: 3rem;
-                }
-
-                .stat-item {
-                    padding: 0.75rem 1.5rem;
-                }
-
-                .dashboard-stats .row {
-                    margin: 0 -0.5rem;
-                }
-
-                .dashboard-stats .col-md-3 {
-                    padding: 0 0.5rem;
-                    margin-bottom: 1rem;
-                }
-            }
-            </style>
-
-            <style>
-            .live-dashboard {
-                background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
-                border-radius: 12px;
-                color: white;
-            }
-
-            .dashboard-header {
-                background: rgba(0, 0, 0, 0.1);
-                border-radius: 12px;
-            }
-
-            .revenue-display {
-                font-size: 3.5rem;
-                font-weight: 700;
-                margin: 0;
-            }
-
-            .stat-item {
-                text-align: center;
-                margin:  10px;
-            }
-
-            .stat-item span {
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 0.9rem;
-            }
-
-            .stat-item h3 {
-                font-size: 1.5rem;
-                margin: 0.5rem 0 0;
-            }
-
-            .dashboard-stats {
-                margin-top: 2rem;
-            }
-
-            .stat-box {
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 8px;
-                padding: 1rem;
-                height: 100%;
-            }
-
-            .stat-label {
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 0.9rem;
-                margin-bottom: 0.5rem;
-            }
-
-            .stat-value {
-                font-size: 1.25rem;
-                font-weight: 600;
-                margin-bottom: 0.25rem;
-            }
-
-            .stat-change {
-                font-size: 0.9rem;
-            }
-
-            .stat-sub {
-                color: rgba(255, 255, 255, 0.8);
-                font-size: 0.8rem;
-                margin-top: 0.25rem;
-            }
-
-            .text-success {
-                color: #4ade80 !important;
-            }
-
-            .text-danger {
-                color: #fb7185 !important;
-            }
-            </style>
-
-            <!-- Bảng thống kê chi tiết -->
-            <div class="card">
-                <div class="card-body">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Doanh thu dự kiến</th>
-                                <th>Doanh thu thực tế</th>
-                                <th>Tỷ lệ chốt</th>
-                                <th>Đơn chốt</th>
-                                <th>Đơn hủy</th>
-                                <th>Đơn đang giao</th>
-                                <th>Khách mới</th>
-                                <th>Khách cũ</th>
-                                <th>Tổng khách</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>{{ number_format($summary['expected_revenue'] ?? 0, 0, ',', '.') }} đ
-                                    <small class="text-{{ $revenueChangeRate >= 0 ? 'success' : 'danger' }}">
-                                        {{ $revenueChangeRate >= 0 ? '+' : '' }}{{ number_format($revenueChangeRate, 2, ',', '.') }}%
-                                    </small>
-                                </td>
-                                <td>{{ number_format($summary['actual_revenue'] ?? 0, 0, ',', '.') }} đ</td>
-                                <td>{{ number_format($summary['conversion_rate'] ?? 0, 1, ',', '.') }}%</td>
-                                <td>{{ number_format($summary['successful_orders'] ?? 0, 0, ',', '.') }}
-                                    <small class="text-{{ $ordersChangeRate >= 0 ? 'success' : 'danger' }}">
-                                        {{ $ordersChangeRate >= 0 ? '+' : '' }}{{ number_format($ordersChangeRate, 2, ',', '.') }}%
-                                    </small>
-                                </td>
-                                <td>{{ number_format($summary['canceled_orders'] ?? 0, 0, ',', '.') }}</td>
-                                <td>{{ number_format($summary['delivering_orders'] ?? 0, 0, ',', '.') }}</td>
-                                <td>{{ number_format($summary['new_customers'] ?? 0, 0, ',', '.') }}</td>
-                                <td>{{ number_format($summary['returning_customers'] ?? 0, 0, ',', '.') }}</td>
-                                <td>{{ number_format($summary['total_customers'] ?? 0, 0, ',', '.') }}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Biểu đồ doanh thu -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Biểu đồ doanh thu {{ $chartType === 'monthly' ? 'theo tháng' : ($chartType === 'hourly' ? 'theo giờ' : 'theo ngày') }}</h3>
-                </div>
-                <div class="card-body">
-                    <canvas id="revenueChart" style="min-height: 300px;"></canvas>
-                </div>
-            </div>
-
-            <!-- Thống kê theo tỉnh thành -->
-            <div class="row">
-                <div class="col-md-7">
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">Biểu đồ doanh thu theo tỉnh thành</h3>
-                        </div>
-                        <div class="card-body">
-                            <canvas id="provinceLineChart" style="height: 400px;"></canvas>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-5">
-                    <div class="card">
-                        <div class="card-header">
-                            <h3 class="card-title">Bản đồ phân bố doanh thu</h3>
-                        </div>
-                        <div class="card-body">
-                            <div id="province-map"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Top 5 sản phẩm bán chạy -->
-            <div class="row">
-                <div class="col-12">
-                    <div class="card table-card">
-                        <div class="card-header">
-                            <h3 class="card-title">Thống kê sản phẩm bán chạy</h3>
-                        </div>
-                        <div class="card-body">
-                            <div class="chart-container" style="height: 300px;">
-                                <canvas id="topProductsChart"></canvas>
-                            </div>
-
-                            <h4 class="mt-4">Chi tiết sản phẩm</h4>
-                            <table id="product-details-table" class="table table-sm table-bordered table-striped mt-2">
-                                <thead>
-                                    <tr>
-                                        <th>#</th>
-                                        <th>Sản phẩm</th>
-                                        <th class="text-right">SL Đặt</th>
-                                        <th class="text-right">DT Dự kiến</th>
-                                        <th class="text-right">SL Thực tế</th>
-                                        <th class="text-right">DT Thực tế</th>
-                                        <th class="text-right">Số đơn</th>
-                                        <th class="text-right">Giá TB Dự kiến</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @forelse($topProducts as $index => $product)
-                                    <tr>
-                                        <td>{{ $index + 1 }}</td>
-                                        <td>
-                                            {{ $product['name'] }}
-                                            <small class="d-block text-muted">ID: {{ $product['id'] }}</small>
-                                        </td>
-                                        <td class="text-right">{{ number_format($product['quantity_ordered'] ?? 0, 0, ',', '.') }}</td>
-                                        <td class="text-right">{{ number_format($product['expected_revenue'] ?? 0, 0, ',', '.') }} đ</td>
-                                        <td class="text-right">{{ number_format($product['quantity_actual'] ?? 0, 0, ',', '.') }}</td>
-                                        <td class="text-right">{{ number_format($product['actual_revenue'] ?? 0, 0, ',', '.') }} đ</td>
-                                        <td class="text-right">{{ number_format($product['orders_count'] ?? 0, 0, ',', '.') }}</td>
-                                        <td class="text-right">{{ number_format($product['average_price'] ?? 0, 0, ',', '.') }} đ</td>
-                                    </tr>
-                                    @empty
-                                    <tr>
-                                        <td colspan="8" class="text-center">Không có dữ liệu sản phẩm.</td>
-                                    </tr>
-                                    @endforelse
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Bảng chi tiết phiên live -->
-            <div class="card table-card">
-                <div class="card-header">
-                    <h3 class="card-title">Chi tiết các phiên live</h3>
-                </div>
-                <div class="card-body">
-                    <table id="live-sessions-table" class="table table-bordered table-striped">
-                        <thead>
-                            <tr>
-                                <th>Phiên Live</th>
-                                <th>Ngày</th>
-                                <th>Doanh thu dự kiến</th>
-                                <th>Doanh thu thực tế</th>
-                                <th>Tổng đơn</th>
-                                <th>Đơn chốt</th>
-                                <th>Đơn hủy</th>
-                                <th>Tỷ lệ chốt (%)</th>
-                                <th>Tỷ lệ hủy (%)</th>
-                                <th>Khách mới</th>
-                                <th>Khách cũ</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach($liveSessions as $session)
-                            <tr>
-                                <td>{{ $session['live_number'] }}</td>
-                                <td>{{ $session['date'] }}</td>
-                                <td>{{ number_format($session['expected_revenue'], 0, ',', '.') }}</td>
-                                <td>{{ number_format($session['actual_revenue'], 0, ',', '.') }}</td>
-                                <td>{{ $session['total_orders'] }}</td>
-                                <td>{{ $session['successful_orders'] }}</td>
-                                <td>{{ $session['canceled_orders'] }}</td>
-                                <td>{{ number_format($session['success_rate'], 1) }}%</td>
-                                <td>{{ number_format($session['cancellation_rate'], 1) }}%</td>
-                                <td>{{ $session['new_customers'] }}</td>
-                                <td>{{ $session['returning_customers'] }}</td>
-                            </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                    <h3>{{ number_format($summary['total_customers'] ?? 0, 0, ',', '.') }}</h3>
                 </div>
             </div>
         </div>
+
+        <div class="dashboard-stats">
+            <div class="row g-4">
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-label">Đơn chốt</div>
+                        <div class="stat-value">{{ number_format($summary['successful_orders'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-change text-{{ $ordersChangeRate >= 0 ? 'success' : 'danger' }}">
+                            <i class="fas fa-arrow-{{ $ordersChangeRate >= 0 ? 'up' : 'down' }}"></i>
+                            {{ number_format(abs($ordersChangeRate), 2, ',', '.') }}%
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-label">Đơn hủy</div>
+                        <div class="stat-value">{{ number_format($summary['canceled_orders'] ?? 0, 0, ',', '.') }}</div>
+                        <div class="stat-change text-{{ $canceledOrdersChangeRate <= 0 ? 'success' : 'danger' }}">
+                            <i class="fas fa-arrow-{{ $canceledOrdersChangeRate <= 0 ? 'up' : 'down' }}"></i>
+                            {{ number_format(abs($canceledOrdersChangeRate), 2, ',', '.') }}%
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-label">Tỷ lệ chốt</div>
+                        <div class="stat-value">{{ number_format($summary['conversion_rate'] ?? 0, 1, ',', '.') }}%</div>
+                        <div class="stat-change text-{{ $successRateChange >= 0 ? 'success' : 'danger' }}">
+                            <i class="fas fa-arrow-{{ $successRateChange >= 0 ? 'up' : 'down' }}"></i>
+                            {{ number_format(abs($successRateChange), 1, ',', '.') }}%
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-box">
+                        <div class="stat-label">Khách hàng</div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="customer-stat">
+                                    <span class="customer-label">Mới:</span>
+                                    <span class="customer-value">{{ number_format($summary['new_customers'] ?? 0, 0, ',', '.') }}</span>
+                                </div>
+                                <div class="customer-stat">
+                                    <span class="customer-label">Cũ:</span>
+                                    <span class="customer-value">{{ number_format($summary['returning_customers'] ?? 0, 0, ',', '.') }}</span>
+                                </div>
+                            </div>
+                            <div class="customer-total">
+                                Tổng: {{ number_format($summary['total_customers'] ?? 0, 0, ',', '.') }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.live-dashboard {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+    border-radius: 16px;
+    color: white;
+}
+
+.dashboard-header {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 16px;
+}
+
+.revenue-display {
+    font-size: 4rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: -1px;
+}
+
+.stat-item {
+    text-align: center;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1rem 2rem;
+    border-radius: 12px;
+}
+
+.stat-item span {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+}
+
+.stat-item h3 {
+    font-size: 1.75rem;
+    margin: 0.5rem 0 0;
+    font-weight: 600;
+}
+
+.dashboard-stats {
+    margin-top: 1rem;
+}
+
+.stat-box {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 1.25rem;
+    height: 100%;
+}
+
+.stat-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    font-weight: 500;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.stat-change {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.customer-stat {
+    margin-bottom: 0.5rem;
+}
+
+.customer-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    margin-right: 0.5rem;
+}
+
+.customer-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.customer-total {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    padding-left: 1rem;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.text-success {
+    color: #4ade80 !important;
+}
+
+.text-danger {
+    color: #fb7185 !important;
+}
+
+@media (max-width: 768px) {
+    .revenue-display {
+        font-size: 3rem;
+    }
+
+    .stat-item {
+        padding: 0.75rem 1.5rem;
+    }
+
+    .dashboard-stats .row {
+        margin: 0 -0.5rem;
+    }
+
+    .dashboard-stats .col-md-3 {
+        padding: 0 0.5rem;
+        margin-bottom: 1rem;
+    }
+}
+</style>
+
+<style>
+.live-dashboard {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+    border-radius: 12px;
+    color: white;
+}
+
+.dashboard-header {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+}
+
+.revenue-display {
+    font-size: 3.5rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.stat-item {
+    text-align: center;
+    margin:  10px;
+}
+
+.stat-item span {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+}
+
+.stat-item h3 {
+    font-size: 1.5rem;
+    margin: 0.5rem 0 0;
+}
+
+.dashboard-stats {
+    margin-top: 2rem;
+}
+
+.stat-box {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 1rem;
+    height: 100%;
+}
+
+.stat-label {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.stat-change {
+    font-size: 0.9rem;
+}
+
+.stat-sub {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+}
+
+.text-success {
+    color: #4ade80 !important;
+}
+
+.text-danger {
+    color: #fb7185 !important;
+}
+</style>
+
+<!-- Bảng thống kê chi tiết -->
+<div class="card">
+    <div class="card-body">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Doanh thu dự kiến</th>
+                    <th>Doanh thu thực tế</th>
+                    <th>Tỷ lệ chốt</th>
+                    <th>Đơn chốt</th>
+                    <th>Đơn hủy</th>
+                    <th>Đơn đang giao</th>
+                    <th>Khách mới</th>
+                    <th>Khách cũ</th>
+                    <th>Tổng khách</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>{{ number_format($summary['expected_revenue'] ?? 0, 0, ',', '.') }} đ
+                        <small class="text-{{ $revenueChangeRate >= 0 ? 'success' : 'danger' }}">
+                            {{ $revenueChangeRate >= 0 ? '+' : '' }}{{ number_format($revenueChangeRate, 2, ',', '.') }}%
+                        </small>
+                    </td>
+                    <td>{{ number_format($summary['actual_revenue'] ?? 0, 0, ',', '.') }} đ</td>
+                    <td>{{ number_format($summary['conversion_rate'] ?? 0, 1, ',', '.') }}%</td>
+                    <td>{{ number_format($summary['successful_orders'] ?? 0, 0, ',', '.') }}
+                        <small class="text-{{ $ordersChangeRate >= 0 ? 'success' : 'danger' }}">
+                            {{ $ordersChangeRate >= 0 ? '+' : '' }}{{ number_format($ordersChangeRate, 2, ',', '.') }}%
+                        </small>
+                    </td>
+                    <td>{{ number_format($summary['canceled_orders'] ?? 0, 0, ',', '.') }}</td>
+                    <td>{{ number_format($summary['delivering_orders'] ?? 0, 0, ',', '.') }}</td>
+                    <td>{{ number_format($summary['new_customers'] ?? 0, 0, ',', '.') }}</td>
+                    <td>{{ number_format($summary['returning_customers'] ?? 0, 0, ',', '.') }}</td>
+                    <td>{{ number_format($summary['total_customers'] ?? 0, 0, ',', '.') }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Biểu đồ doanh thu -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Biểu đồ doanh thu {{ $chartType === 'monthly' ? 'theo tháng' : ($chartType === 'hourly' ? 'theo giờ' : 'theo ngày') }}</h3>
+    </div>
+    <div class="card-body">
+        <canvas id="revenueChart" style="min-height: 300px;"></canvas>
+    </div>
+</div>
+
+<!-- Thống kê theo tỉnh thành -->
+<div class="row">
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Biểu đồ doanh thu theo tỉnh thành</h3>
+            </div>
+            <div class="card-body">
+                <canvas id="provinceLineChart" style="height: 400px;"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">Bản đồ phân bố doanh thu</h3>
+            </div>
+            <div class="card-body">
+                <div id="province-map"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top 5 sản phẩm bán chạy -->
+<div class="row">
+    <div class="col-12">
+        <div class="card table-card">
+            <div class="card-header">
+                <h3 class="card-title">Thống kê sản phẩm bán chạy</h3>
+            </div>
+            <div class="card-body">
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="topProductsChart"></canvas>
+                </div>
+
+                <h4 class="mt-4">Chi tiết sản phẩm</h4>
+                <table id="product-details-table" class="table table-sm table-bordered table-striped mt-2">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Sản phẩm</th>
+                            <th class="text-right">SL Đặt</th>
+                            <th class="text-right">DT Dự kiến</th>
+                            <th class="text-right">SL Thực tế</th>
+                            <th class="text-right">DT Thực tế</th>
+                            <th class="text-right">Số đơn</th>
+                            <th class="text-right">Giá TB Dự kiến</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @forelse($topProducts as $index => $product)
+                        <tr>
+                            <td>{{ $index + 1 }}</td>
+                            <td>
+                                {{ $product['name'] }}
+                                <small class="d-block text-muted">ID: {{ $product['id'] }}</small>
+                            </td>
+                            <td class="text-right">{{ number_format($product['quantity_ordered'] ?? 0, 0, ',', '.') }}</td>
+                            <td class="text-right">{{ number_format($product['expected_revenue'] ?? 0, 0, ',', '.') }} đ</td>
+                            <td class="text-right">{{ number_format($product['quantity_actual'] ?? 0, 0, ',', '.') }}</td>
+                            <td class="text-right">{{ number_format($product['actual_revenue'] ?? 0, 0, ',', '.') }} đ</td>
+                            <td class="text-right">{{ number_format($product['orders_count'] ?? 0, 0, ',', '.') }}</td>
+                            <td class="text-right">{{ number_format($product['average_price'] ?? 0, 0, ',', '.') }} đ</td>
+                        </tr>
+                        @empty
+                        <tr>
+                            <td colspan="8" class="text-center">Không có dữ liệu sản phẩm.</td>
+                        </tr>
+                        @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bảng chi tiết phiên live -->
+<div class="card table-card">
+    <div class="card-header">
+        <h3 class="card-title">Chi tiết các phiên live</h3>
+    </div>
+    <div class="card-body">
+        <table id="live-sessions-table" class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                    <th>Phiên Live</th>
+                    <th>Ngày</th>
+                    <th>Doanh thu dự kiến</th>
+                    <th>Doanh thu thực tế</th>
+                    <th>Tổng đơn</th>
+                    <th>Đơn chốt</th>
+                    <th>Đơn hủy</th>
+                    <th>Tỷ lệ chốt (%)</th>
+                    <th>Tỷ lệ hủy (%)</th>
+                    <th>Khách mới</th>
+                    <th>Khách cũ</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($liveSessions as $session)
+                <tr>
+                    <td>{{ $session['live_number'] }}</td>
+                    <td>{{ $session['date'] }}</td>
+                    <td>{{ number_format($session['expected_revenue'], 0, ',', '.') }}</td>
+                    <td>{{ number_format($session['actual_revenue'], 0, ',', '.') }}</td>
+                    <td>{{ $session['total_orders'] }}</td>
+                    <td>{{ $session['successful_orders'] }}</td>
+                    <td>{{ $session['canceled_orders'] }}</td>
+                    <td>{{ number_format($session['success_rate'], 1) }}%</td>
+                    <td>{{ number_format($session['cancellation_rate'], 1) }}%</td>
+                    <td>{{ $session['new_customers'] }}</td>
+                    <td>{{ $session['returning_customers'] }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
     </div>
 </div>
 @stop

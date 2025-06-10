@@ -1,26 +1,70 @@
 @extends('adminlte::page')
 
+@section('content_header')
+<div class="d-flex justify-content-between align-items-center">
+    <h1>Báo cáo doanh thu tổng quan</h1>
+    <button type="button" class="btn btn-info" data-toggle="modal" data-target="#overallHelpModal">
+        <i class="fas fa-question-circle"></i> Hướng dẫn
+    </button>
+</div>
+@stop
+
 @section('content')
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="card bg-light-blue">
-                <div class="card-header">
-                    <h3 class="card-title"><i class="fas fa-info-circle"></i> Hướng dẫn các chỉ số</h3>
+<!-- Modal Hướng dẫn -->
+<div class="modal fade" id="overallHelpModal" tabindex="-1" role="dialog" aria-labelledby="overallHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-gradient-info text-white">
+                <h5 class="modal-title" id="overallHelpModalLabel"><i class="fas fa-question-circle mr-2"></i> Hướng dẫn Báo cáo doanh thu tổng quan</h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    Báo cáo này cung cấp cái nhìn tổng hợp về tình hình doanh thu từ tất cả các nguồn trong một khoảng thời gian nhất định.
                 </div>
-                <div class="card-body">
-                    <ul>
-                        <li><strong>Doanh thu dự kiến:</strong> Tổng giá trị các đơn hàng không bao gồm các đơn ở trạng thái hủy (6, 7).</li>
-                        <li><strong>Doanh thu thực tế:</strong> Tổng giá trị các đơn hàng đã được giao thành công (trạng thái 3).</li>
-                        <li><strong>Đơn chốt:</strong> Tổng số đơn hàng được giao thành công (trạng thái 3).</li>
-                        <li><strong>Đơn hủy:</strong> Tổng số đơn hàng bị hủy (trạng thái 6, 7).</li>
-                        <li><strong>Tỷ lệ chốt:</strong> (Đơn chốt / (Tổng đơn - Đơn đang giao)) * 100.</li>
-                        <li><strong>Tỷ lệ hủy:</strong> (Đơn hủy / Tổng đơn) * 100.</li>
-                    </ul>
+
+                <h5 class="text-primary mb-3"><i class="fas fa-chart-pie mr-2"></i>Các chỉ số chính trong báo cáo:</h5>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-info"><i class="fas fa-dollar-sign mr-2"></i>Doanh thu</h6>
+                        <ul class="list-unstyled ml-4">
+                            <li class="mb-2"><i class="fas fa-check-circle text-success mr-2"></i><strong>Doanh thu dự kiến:</strong> Tổng giá trị tất cả các đơn hàng được tạo, không bao gồm các đơn đã hủy.</li>
+                            <li><i class="fas fa-check-circle text-success mr-2"></i><strong>Doanh thu thực tế:</strong> Tổng giá trị các đơn hàng đã được giao thành công (trạng thái "Hoàn thành").</li>
+                        </ul>
+                    </div>
                 </div>
+
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-info"><i class="fas fa-cogs mr-2"></i>Tỷ lệ</h6>
+                        <ul class="list-unstyled ml-4">
+                            <li class="mb-2"><i class="fas fa-check-circle text-success mr-2"></i><strong>Tỷ lệ chốt:</strong> Phần trăm đơn hàng thành công trên tổng số đơn trừ đi các đơn đang giao hàng.</li>
+                            <li><i class="fas fa-times-circle text-danger mr-2"></i><strong>Tỷ lệ hủy:</strong> Phần trăm đơn hàng bị hủy trên tổng số đơn hàng đã tạo.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                 <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="text-info"><i class="fas fa-users mr-2"></i>Khách hàng</h6>
+                        <ul class="list-unstyled ml-4">
+                            <li class="mb-2"><i class="fas fa-star text-warning mr-2"></i><strong>Khách mới:</strong> Khách hàng có đơn hàng đầu tiên trong khoảng thời gian đã chọn.</li>
+                            <li><i class="fas fa-heart text-danger mr-2"></i><strong>Khách cũ:</strong> Khách hàng đã có ít nhất một đơn hàng trước khoảng thời gian đã chọn.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Đóng</button>
             </div>
         </div>
     </div>
+</div>
+<div class="container-fluid">
 <div class="row">
         <div class="col-12">
         <!-- Live Dashboard -->
@@ -299,6 +343,25 @@
         padding: 0 0.5rem;
         margin-bottom: 1rem;
     }
+}
+.modal-header.bg-gradient-info {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+}
+.modal-body .card {
+    border: none;
+    box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    transition: all 0.3s ease;
+}
+.modal-body .card:hover {
+    box-shadow: 0 0 15px rgba(0,0,0,0.1);
+}
+.modal-body .list-unstyled li {
+    padding: 5px 0;
+}
+.modal-body .alert-info {
+    background-color: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.2);
+    color: #8b5cf6;
 }
 </style>
 @endsection
