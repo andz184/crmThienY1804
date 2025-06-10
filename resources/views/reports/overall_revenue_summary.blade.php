@@ -2,6 +2,25 @@
 
 @section('content')
 <div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card bg-light-blue">
+                <div class="card-header">
+                    <h3 class="card-title"><i class="fas fa-info-circle"></i> Hướng dẫn các chỉ số</h3>
+                </div>
+                <div class="card-body">
+                    <ul>
+                        <li><strong>Doanh thu dự kiến:</strong> Tổng giá trị các đơn hàng không bao gồm các đơn ở trạng thái hủy (6, 7).</li>
+                        <li><strong>Doanh thu thực tế:</strong> Tổng giá trị các đơn hàng đã được giao thành công (trạng thái 3).</li>
+                        <li><strong>Đơn chốt:</strong> Tổng số đơn hàng được giao thành công (trạng thái 3).</li>
+                        <li><strong>Đơn hủy:</strong> Tổng số đơn hàng bị hủy (trạng thái 6, 7).</li>
+                        <li><strong>Tỷ lệ chốt:</strong> (Đơn chốt / (Tổng đơn - Đơn đang giao)) * 100.</li>
+                        <li><strong>Tỷ lệ hủy:</strong> (Đơn hủy / Tổng đơn) * 100.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
 <div class="row">
         <div class="col-12">
         <!-- Live Dashboard -->

@@ -101,7 +101,7 @@ class LiveSessionRevenue extends Model
         // Calculate statistics
         $revenue->total_orders = $orders->count();
         $revenue->successful_orders = $orders->where('pancake_status', '3')->count();
-        $revenue->canceled_orders = $orders->where('pancake_status', '6')->count();
+        $revenue->canceled_orders = $orders->whereIn('pancake_status', ['6', '7'])->count();
         $revenue->delivering_orders = $orders->where('pancake_status', '1')->count();
         $revenue->total_revenue = $orders->where('pancake_status', '3')->sum('total_value');
 

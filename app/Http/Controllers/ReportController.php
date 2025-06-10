@@ -2574,13 +2574,13 @@ class ReportController extends Controller
             $dailyRevenueQuery = DB::table('orders')
                 ->select(
                     DB::raw('DATE(pancake_inserted_at) as date'),
-                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value + shipping_fee ELSE 0 END) as expected_total'),
-                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value ELSE 0 END) as expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,6,7) THEN total_value + shipping_fee ELSE 0 END) as expected_total'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,6,7) THEN total_value ELSE 0 END) as expected_revenue'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as actual_total'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value ELSE 0 END) as actual_revenue'),
                     DB::raw('COUNT(*) as total_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN 1 ELSE 0 END) as successful_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 5 THEN 1 ELSE 0 END) as canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (6, 7) THEN 1 ELSE 0 END) as canceled_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as delivering_orders'),
                     DB::raw('COUNT(DISTINCT customer_id) as total_customers')
                 )
@@ -2591,13 +2591,13 @@ class ReportController extends Controller
             // Get totals for the entire period
             $totals = DB::table('orders')
                 ->select(
-                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value + shipping_fee ELSE 0 END) as total_expected_total'),
-                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,5,6) THEN total_value ELSE 0 END) as total_expected_revenue'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,6,7) THEN total_value + shipping_fee ELSE 0 END) as total_expected_total'),
+                    DB::raw('SUM(CASE WHEN pancake_status NOT IN (0,6,7) THEN total_value ELSE 0 END) as total_expected_revenue'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value + shipping_fee ELSE 0 END) as total_actual_total'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN total_value ELSE 0 END) as total_actual_revenue'),
                     DB::raw('COUNT(*) as total_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 3 THEN 1 ELSE 0 END) as total_successful_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 5 THEN 1 ELSE 0 END) as total_canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (6, 7) THEN 1 ELSE 0 END) as total_canceled_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as total_delivering_orders'),
                     DB::raw('COUNT(DISTINCT customer_id) as total_unique_customers')
                 )
@@ -3446,8 +3446,8 @@ class ReportController extends Controller
                 'actual_revenue' => $orders->where('status', Order::STATUS_DA_THU_TIEN)->sum('total_value'),
                 'total_orders' => $orders->count(),
                 'successful_orders' => $orders->where('status', Order::STATUS_DA_THU_TIEN)->count(),
-                'canceled_orders' => $orders->where('status', Order::STATUS_DA_HUY)->count(),
-                'processing_orders' => $orders->whereNotIn('status', [Order::STATUS_DA_THU_TIEN, Order::STATUS_DA_HUY])->count(),
+                'canceled_orders' => $orders->whereIn('status', [Order::STATUS_DA_HUY, Order::STATUS_DA_HUY_6, Order::STATUS_DA_HUY_7])->count(),
+                'processing_orders' => $orders->whereNotIn('status', [Order::STATUS_DA_THU_TIEN, Order::STATUS_DA_HUY, Order::STATUS_DA_HUY_6, Order::STATUS_DA_HUY_7])->count(),
             ];
 
             // Tính tỷ lệ thành công và trung bình giá trị đơn hàng
@@ -3643,7 +3643,7 @@ class ReportController extends Controller
                     ->sum('total_value'),
                 'total_orders' => $dailyOrders->count(),
                 'successful_orders' => $dailyOrders->where('pancake_status', 3)->count(),
-                'canceled_orders' => $dailyOrders->where('pancake_status', Order::PANCAKE_STATUS_CANCELED)->count(),
+                'canceled_orders' => $dailyOrders->whereIn('pancake_status', [6, 7])->count(),
                 'delivering_orders' => $dailyOrders->where('pancake_status', Order::PANCAKE_STATUS_SHIPPING)->count()
             ];
 
@@ -3838,7 +3838,7 @@ class ReportController extends Controller
                     DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as actual_revenue'),
                     DB::raw('COUNT(*) as total_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as successful_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (6, 7) THEN 1 ELSE 0 END) as canceled_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as delivering_orders'),
                     DB::raw('COUNT(DISTINCT customer_id) as total_customers')
                 ])
@@ -3852,7 +3852,7 @@ class ReportController extends Controller
                     DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN total_value ELSE 0 END) as actual_revenue'),
                     DB::raw('COUNT(*) as total_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status IN (3,4) THEN 1 ELSE 0 END) as successful_orders'),
-                    DB::raw('SUM(CASE WHEN pancake_status = 2 THEN 1 ELSE 0 END) as canceled_orders'),
+                    DB::raw('SUM(CASE WHEN pancake_status IN (6, 7) THEN 1 ELSE 0 END) as canceled_orders'),
                     DB::raw('SUM(CASE WHEN pancake_status = 1 THEN 1 ELSE 0 END) as delivering_orders'),
                     DB::raw('COUNT(DISTINCT customer_id) as total_customers')
                 ])
