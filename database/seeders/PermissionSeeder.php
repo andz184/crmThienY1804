@@ -17,6 +17,9 @@ class PermissionSeeder extends Seeder
         try {
             // Create permissions
             $permissions = [
+                // Dashboard permissions
+                'dashboard.view',
+                
                 // Product permissions
                 'products.view',
                 'products.create',
@@ -70,6 +73,7 @@ class PermissionSeeder extends Seeder
                 'Super Admin' => $permissions,
                 'Admin' => array_diff($permissions, ['roles.delete', 'settings.edit']),
                 'Manager' => [
+                    'dashboard.view',
                     'products.view',
                     'products.create',
                     'products.edit',
@@ -98,7 +102,8 @@ class PermissionSeeder extends Seeder
             // Create or update roles and sync permissions
             foreach ($roles as $roleName => $rolePermissions) {
                 $role = Role::firstOrCreate(['name' => $roleName]);
-                $role->syncPermissions($rolePermissions);
+                $permissionsToGive = Permission::whereIn('name', $rolePermissions)->get();
+                $role->givePermissionTo($permissionsToGive);
             }
 
             DB::commit();

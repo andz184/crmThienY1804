@@ -156,78 +156,81 @@ class OrderObserver
         }
 
         DB::transaction(function () use ($order) {
-            // Find customer by phone number
-            $customerPhone = CustomerPhone::where('phone_number', $order->customer_phone)->first();
             $customer = null;
 
-            if ($customerPhone) {
-                $customer = $customerPhone->customer;
-            } else {
-                // Create new customer and phone number
-                $customerData = [
-                    'name' => $order->customer_name,
-                    'full_address' => $order->address_full,
-                    'province' => $order->province_code,
-                    'district' => $order->district_code,
-                    'ward' => $order->ward_code,
-                    'street_address' => $order->street_address,
-                    'first_order_date' => $order->created_at->toDateString(),
-                    'last_order_date' => $order->created_at->toDateString(),
-                ];
-
-                // Only add email if not empty
-                if (!empty($order->customer_email)) {
-                    $customerData['email'] = $order->customer_email;
-                }
-
-                $customer = Customer::create($customerData);
-
-                CustomerPhone::create([
-                    'customer_id' => $customer->id,
-                    'phone_number' => $order->customer_phone,
-                    'is_primary' => true,
-                ]);
+            // If the order is already linked to a customer, use that customer.
+            // This is the primary signal that the customer was handled by the controller.
+            if ($order->customer_id) {
+                $customer = Customer::find($order->customer_id);
             }
 
-            // Update customer information
+            // If no customer was found via ID (or if ID was not set), fall back to the phone number lookup.
+            if (!$customer) {
+                $customerPhone = CustomerPhone::where('phone_number', $order->customer_phone)->first();
+                if ($customerPhone) {
+                    $customer = $customerPhone->customer;
+                } else {
+                    // If still no customer, then this must be a new customer from a non-Pancake source. Create it.
+                    $customerData = [
+                        'name' => $order->customer_name,
+                        'full_address' => $order->full_address, // Corrected from address_full
+                        'province' => $order->province_code,
+                        'district' => $order->district_code,
+                        'ward' => $order->ward_code,
+                        'street_address' => $order->street_address,
+                        'first_order_date' => $order->created_at->toDateString(),
+                        'last_order_date' => $order->created_at->toDateString(),
+                    ];
+
+                    if (!empty($order->customer_email)) {
+                        $customerData['email'] = $order->customer_email;
+                    }
+
+                    $customer = Customer::create($customerData);
+
+                    CustomerPhone::create([
+                        'customer_id' => $customer->id,
+                        'phone_number' => $order->customer_phone,
+                        'is_primary' => true,
+                    ]);
+                }
+            }
+
+            if (!$customer) {
+                 Log::error("OrderObserver: Could not find or create a customer for order [ID:{$order->id}]. Aborting customer update.");
+                 return;
+            }
+
+            // Ensure the order is linked to the definitive customer record.
+            if ($order->customer_id !== $customer->id) {
+                $order->customer_id = $customer->id;
+                $order->saveQuietly(); // Use saveQuietly to prevent observer loops
+            }
+
+            // Update customer information from the order
             $customer->name = $order->customer_name ?: $customer->name;
-            if (!empty($order->address_full)) $customer->full_address = $order->address_full;
+            if (!empty($order->full_address)) $customer->full_address = $order->full_address; // Corrected
 
             if ($order->province_code) {
                 $customer->province = $order->province_code;
-            } elseif ($order->province) {
-                $customer->province = $order->province->code;
-            } else {
-                $customer->province = null;
             }
 
             if ($order->district_code) {
                 $customer->district = $order->district_code;
-            } elseif ($order->district) {
-                $customer->district = $order->district->code;
-            } else {
-                $customer->district = null;
             }
 
             if ($order->ward_code) {
                 $customer->ward = $order->ward_code;
-            } elseif ($order->ward) {
-                $customer->ward = $order->ward->code;
-            } else {
-                $customer->ward = null;
             }
 
             if (!empty($order->street_address)) $customer->street_address = $order->street_address;
 
-            // Email: update if new order has it and we should update
-            if (!empty($order->customer_email)) {
-                // Check if new email is unique if it's being changed to something new
-                if ($order->customer_email !== $customer->email) {
-                    if (Customer::where('email', $order->customer_email)->where('id', '!=', $customer->id)->doesntExist()) {
-                        $customer->email = $order->customer_email;
-                    } else {
-                        Log::warning("Attempted to update customer [ID: {$customer->id}] with email [{$order->customer_email}] that already exists for another customer.");
-                    }
+            // Email: update if new order has it and it's not a duplicate
+            if (!empty($order->customer_email) && $order->customer_email !== $customer->email) {
+                if (Customer::where('email', $order->customer_email)->where('id', '!=', $customer->id)->doesntExist()) {
+                    $customer->email = $order->customer_email;
+                } else {
+                    Log::warning("Attempted to update customer [ID: {$customer->id}] with email [{$order->customer_email}] that already exists for another customer.");
                 }
             }
 
