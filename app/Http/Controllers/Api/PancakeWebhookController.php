@@ -402,9 +402,9 @@ class PancakeWebhookController extends Controller
             $order->save();
 
             // Gửi tin nhắn ZNS khi trạng thái đơn hàng phù hợp
-            if (in_array((int)$order->pancake_status, [1, 3])) {
-                $this->sendZaloNotification($order, (int)$order->pancake_status);
-            }
+            // if (in_array((int)$order->pancake_status, [1, 3])) {
+            //     $this->sendZaloNotification($order, (int)$order->pancake_status);
+            // }
 
             // Process live session info if exists
             if (!empty($orderData['note'])) {
@@ -581,19 +581,19 @@ class PancakeWebhookController extends Controller
             $order->save();
 
             // Gửi tin nhắn ZNS nếu trạng thái thay đổi
-            $newStatus = (int) $order->pancake_status;
-            // dd($newStatus);
-            if ($oldStatus != $newStatus) {
-                // dd(1);
-                if ($newStatus === 1 || $newStatus === 3) {
-                    Log::info('Order status changed, sending Zalo notification.', [
-                        'order_id' => $order->id,
-                        'old_status' => $oldStatus,
-                        'new_status' => $newStatus,
-                    ]);
-                    $this->sendZaloNotification($order, $newStatus);
-                }
-            }
+            // $newStatus = (int) $order->pancake_status;
+            // // dd($newStatus);
+            // if ($oldStatus != $newStatus) {
+            //     // dd(1);
+            //     if ($newStatus === 1 || $newStatus === 3) {
+            //         Log::info('Order status changed, sending Zalo notification.', [
+            //             'order_id' => $order->id,
+            //             'old_status' => $oldStatus,
+            //             'new_status' => $newStatus,
+            //         ]);
+            //         $this->sendZaloNotification($order, $newStatus);
+            //     }
+            // }
 
             // Process live session info if exists
             if (!empty($orderData['note'])) {
@@ -902,7 +902,7 @@ class PancakeWebhookController extends Controller
         // ESMS_ZNS_DELIVERED_TEMPLATE_ID=your_delivered_template_id
         // dd(1);
         $apiKey = env('ESMS_API_KEY');
-      
+
         $secretKey = env('ESMS_SECRET_KEY');
         $oaid = env('ESMS_OAID');
 
