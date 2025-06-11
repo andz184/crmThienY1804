@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'google' => [
+        'sheet_id' => env('GOOGLE_SHEET_ID'),
+        'sheet_range' => env('GOOGLE_SHEET_RANGE'),
+    ],
+
 ];

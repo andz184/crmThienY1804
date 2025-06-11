@@ -19,7 +19,9 @@ use App\Http\Controllers\Admin\PancakeSyncController;
 use App\Http\Controllers\PancakeConfigController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\LiveSessionRevenueController;
+use App\Http\Controllers\Livestream\ReportController as LivestreamReportController;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\LivestreamController;
 
 Route::get('/', function () {
     if (Auth::check()) {
@@ -133,6 +135,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('/{customer_id}/restore', [CustomerController::class, 'restore'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':customers.restore')->name('restore');
         Route::delete('/{customer_id}/force-delete', [CustomerController::class, 'forceDelete'])->middleware(\Spatie\Permission\Middleware\PermissionMiddleware::class . ':customers.force_delete')->name('forceDelete');
     });
+
+    // Livestream Report
+    Route::get('/livestream/report', [LivestreamReportController::class, 'index'])->name('livestream.report');
 });
 
 // Admin Routes with permission middleware
@@ -531,3 +536,5 @@ Route::prefix('admin')->name('admin.')->middleware(['auth', 'role:admin'])->grou
 
     // ... existing routes ...
 });
+
+Route::post('/livestream/trigger-update', [LivestreamController::class, 'triggerUpdate'])->name('livestream.triggerUpdate');

@@ -6,18 +6,16 @@
       0 => 'JeroenNoten\\LaravelAdminLte\\AdminLteServiceProvider',
     ),
   ),
-  'laravel/breeze' => 
+  'laravel/reverb' => 
   array (
-    'providers' => 
+    'aliases' => 
     array (
-      0 => 'Laravel\\Breeze\\BreezeServiceProvider',
+      'Output' => 'Laravel\\Reverb\\Output',
     ),
-  ),
-  'laravel/pail' => 
-  array (
     'providers' => 
     array (
-      0 => 'Laravel\\Pail\\PailServiceProvider',
+      0 => 'Laravel\\Reverb\\ApplicationManagerServiceProvider',
+      1 => 'Laravel\\Reverb\\ReverbServiceProvider',
     ),
   ),
   'laravel/sail' => 

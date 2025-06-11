@@ -349,6 +349,11 @@ return [
             ],
         ],
         [
+            'text'    => 'Livestream',
+            'route'   => 'livestream.report',
+            'icon'    => 'bx bx-camera-movie',
+        ],
+        [
             'text' => 'Trang chủ',
             'route'  => 'reports.overall_revenue_summary',
             'icon' => 'bx bx-home-circle',
