@@ -37,12 +37,13 @@ class SettingsServiceProvider extends ServiceProvider
                 // Set Logo Image
                 if (isset($settings['app_logo_url'])) {
                     Config::set('adminlte.logo_img', $settings['app_logo_url']);
+                    Config::set('adminlte.preloader.img.path', $settings['app_logo_url']);
                 }
 
                 // Set Favicon
                 if (isset($settings['favicon_url'])) {
                     Config::set('adminlte.use_ico_only', false);
-                    Config::set('adminlte.use_full_favicon', false);
+                    Config::set('adminlte.use_full_favicon', true);
                     Config::set('adminlte.favicons', [
                         [
                             'href' => $settings['favicon_url'],

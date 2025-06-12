@@ -112,101 +112,90 @@ class ReportController extends Controller
 
         Log::info("ReportController@productGroupsPage: Processing report for date range: {$startDate->toDateTimeString()} to {$endDate->toDateTimeString()}");
 
-        // Fetch orders with products_data within the date range
-        $orders = Order::whereNotNull('products_data')
-        ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
-        ->get();
-
-
-        Log::info("ReportController@productGroupsPage: Found " . $orders->count() . " orders for the period.");
-
         $categoryData = [];
         $categoryMap = \App\Models\PancakeCategory::pluck('name', 'pancake_id')->all();
 
-        $processedOrderIds = []; // Track processed order IDs for accurate order counting
-
-        foreach ($orders as $order) {
-            $productsData = json_decode($order->products_data, true);
-            if (!is_array($productsData)) {
-                Log::warning("Invalid products_data for order ID: {$order->id}");
-                continue;
-            }
-
-            $orderProcessed = []; // Track which categories have been counted for this order
-
-            foreach ($productsData as $item) {
-                if (empty($item['variation_info']['category_ids'])) {
-
-                    Log::warning("Missing category_ids for item in order ID: {$order->id}");
-                    continue;
-                }
-
-                // Validate and get quantity and price
-                $quantity = isset($item['quantity']) && is_numeric($item['quantity']) ? (int)$item['quantity'] : 1;
-                $price = isset($item['variation_info']['retail_price']) && is_numeric($item['variation_info']['retail_price']) ? (float)$item['variation_info']['retail_price'] : 0;
-
-                if ($price <= 0) {
-                    Log::warning("Invalid price (0 or negative) for item in order ID: {$order->id}");
-                    continue;
-                }
-                // dd($item);
-                $totalAmount = $quantity * $price;
-
-                foreach ($item['variation_info']['category_ids'] as $categoryId) {
-                    if (!isset($categoryMap[$categoryId])) {
-                        Log::warning("Category ID {$categoryId} not found in category map");
+        // Use chunkById to process orders in batches for better memory efficiency
+        Order::whereNotNull('products_data')
+            ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
+            ->select('id', 'products_data') // Select only necessary columns
+            ->chunkById(200, function ($orders) use (&$categoryData, $categoryMap) {
+                foreach ($orders as $order) {
+                    $productsData = json_decode($order->products_data, true);
+                    if (!is_array($productsData)) {
+                        Log::warning("Invalid products_data for order ID: {$order->id}");
                         continue;
                     }
 
-                    // Initialize category data if not exists
-                    if (!isset($categoryData[$categoryId])) {
-                        $categoryData[$categoryId] = [
-                            'id' => $categoryId,
-                            'name' => $categoryMap[$categoryId],
-                            'total_revenue' => 0,
-                            'total_orders' => 0,
-                            'total_quantity_sold' => 0,
-                            'products' => [],
-                            'average_order_value' => 0
-                        ];
-                    }
+                    $orderProcessed = []; // Track which categories have been counted for this order
 
-                    // Update category totals
-                    $categoryData[$categoryId]['total_revenue'] += $totalAmount;
-                    $categoryData[$categoryId]['total_quantity_sold'] += $quantity;
-
-                    // Count unique orders per category
-                    if (!isset($orderProcessed[$categoryId])) {
-                        $categoryData[$categoryId]['total_orders']++;
-                        $orderProcessed[$categoryId] = true;
-                    }
-
-                    // Track product details
-
-                    $productId = $item['product_id'] ?? null;
-                    if ($productId) {
-                        if (!isset($categoryData[$categoryId]['products'][$productId])) {
-                            $categoryData[$categoryId]['products'][$productId] = [
-                                'id' => $productId,
-                                'name' => $item['variation_info']['name'] ?? 'Unknown Product',
-                                'total_quantity' => 0,
-                                'total_revenue' => 0,
-                                'average_price' => 0
-                            ];
+                    foreach ($productsData as $item) {
+                        if (empty($item['variation_info']['category_ids'])) {
+                            continue;
                         }
-                        $categoryData[$categoryId]['products'][$productId]['total_quantity'] += $quantity;
-                        $categoryData[$categoryId]['products'][$productId]['total_revenue'] += $totalAmount;
-                        $categoryData[$categoryId]['products'][$productId]['average_price'] =
-                            $categoryData[$categoryId]['products'][$productId]['total_revenue'] /
-                            $categoryData[$categoryId]['products'][$productId]['total_quantity'];
+
+                        $quantity = isset($item['quantity']) && is_numeric($item['quantity']) ? (int)$item['quantity'] : 1;
+                        $price = isset($item['variation_info']['retail_price']) && is_numeric($item['variation_info']['retail_price']) ? (float)$item['variation_info']['retail_price'] : 0;
+
+                        if ($price <= 0) {
+                            continue;
+                        }
+
+                        $totalAmount = $quantity * $price;
+
+                        foreach ($item['variation_info']['category_ids'] as $categoryId) {
+                            if (!isset($categoryMap[$categoryId])) {
+                                continue;
+                            }
+
+                            // Initialize category data if not exists
+                            if (!isset($categoryData[$categoryId])) {
+                                $categoryData[$categoryId] = [
+                                    'id' => $categoryId,
+                                    'name' => $categoryMap[$categoryId],
+                                    'total_revenue' => 0,
+                                    'total_orders' => 0,
+                                    'total_quantity_sold' => 0,
+                                    'products' => [],
+                                    'average_order_value' => 0
+                                ];
+                            }
+
+                            // Update category totals
+                            $categoryData[$categoryId]['total_revenue'] += $totalAmount;
+                            $categoryData[$categoryId]['total_quantity_sold'] += $quantity;
+
+                            // Count unique orders per category
+                            if (!isset($orderProcessed[$categoryId])) {
+                                $categoryData[$categoryId]['total_orders']++;
+                                $orderProcessed[$categoryId] = true;
+                            }
+
+                            // Track product details
+                            $productId = $item['product_id'] ?? null;
+                            if ($productId) {
+                                if (!isset($categoryData[$categoryId]['products'][$productId])) {
+                                    $categoryData[$categoryId]['products'][$productId] = [
+                                        'id' => $productId,
+                                        'name' => $item['variation_info']['name'] ?? 'Unknown Product',
+                                        'total_quantity' => 0,
+                                        'total_revenue' => 0,
+                                        'average_price' => 0
+                                    ];
+                                }
+                                $categoryData[$categoryId]['products'][$productId]['total_quantity'] += $quantity;
+                                $categoryData[$categoryId]['products'][$productId]['total_revenue'] += $totalAmount;
+                                $categoryData[$categoryId]['products'][$productId]['average_price'] =
+                                    $categoryData[$categoryId]['products'][$productId]['total_revenue'] /
+                                    $categoryData[$categoryId]['products'][$productId]['total_quantity'];
+                            }
+                        }
                     }
                 }
-            }
-        }
+            });
 
         // Calculate average order value for each category
         foreach ($categoryData as &$category) {
-
             if ($category['total_orders'] > 0) {
                 $category['average_order_value'] = $category['total_revenue'] / $category['total_orders'];
             }
