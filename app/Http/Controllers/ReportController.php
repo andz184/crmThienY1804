@@ -430,7 +430,7 @@ class ReportController extends Controller
                        ->whereBetween('pancake_inserted_at', [$startDate, $endDate]);
 
         // Use chunking to process data efficiently
-        $query->select('post_id', 'total_value')->chunkById(500, function ($orders) use (&$campaignsData) {
+        $query->select('id', 'post_id', 'total_value')->chunkById(500, function ($orders) use (&$campaignsData) {
             foreach ($orders as $order) {
                 $postId = $order->post_id;
                 $revenue = $order->total_value;
