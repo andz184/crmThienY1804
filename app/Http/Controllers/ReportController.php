@@ -403,12 +403,11 @@ class ReportController extends Controller
      */
     public function campaignsPage(Request $request)
     {
-        // Required permission for viewing campaign reports
         $this->authorize('reports.campaigns');
 
         // Date filtering
-        $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date'))->startOfDay() : now()->startOfMonth()->startOfDay();
-        $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date'))->endOfDay() : now()->endOfDay();
+        $startDate = Carbon::now()->startOfMonth()->startOfDay();
+        $endDate = Carbon::now()->endOfDay();
 
         if ($request->filled('date_range')) {
             $dateParts = explode(' - ', $request->input('date_range'));
@@ -417,89 +416,82 @@ class ReportController extends Controller
                     $startDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[0]))->startOfDay();
                     $endDate = Carbon::createFromFormat('m/d/Y', trim($dateParts[1]))->endOfDay();
                 } catch (\Exception $e) {
-                    Log::error('ReportController@campaignsPage: Invalid date_range format.', ['value' => $request->input('date_range'), 'error' => $e->getMessage()]);
-                    // Keep default if parsing fails
+                    // Log error and fallback to default
                 }
             }
         }
 
-        // Base query for orders within the date range and with a post_id
-        $ordersQuery = Order::whereNotNull('post_id')
-            ->where('status', '!=', Order::STATUS_DA_HUY) // Exclude cancelled orders
-            ->where('pancake_status', 6) // Only show orders with pancake_status = 6
-            ->whereNull('deleted_at')
-            ->whereBetween('created_at', [$startDate, $endDate])
-            ->with(['items']); // Eager load items
-
-        // Shop filtering
-        if ($request->filled('pancake_shop_id')) {
-            $ordersQuery->where('pancake_shop_id', $request->input('pancake_shop_id'));
-        }
-
-        // Page filtering
-        if ($request->filled('pancake_page_id')) {
-            $ordersQuery->where('pancake_page_id', $request->input('pancake_page_id'));
-        }
-
-        $ordersForCampaigns = $ordersQuery->get();
-
-        // Group orders by post_id
         $campaignsData = [];
-        foreach ($ordersForCampaigns as $order) {
-            $postId = $order->post_id;
-            if (!isset($campaignsData[$postId])) {
-                $campaignsData[$postId] = [
-                    'post_id' => $postId,
-                    'total_orders' => 0,
-                    'total_revenue' => 0,
-                ];
+
+        // Base query for delivered orders
+        $query = Order::where('pancake_status', 6) // Status 'Đã giao hàng'
+                       ->whereNotNull('post_id')
+                       ->where('post_id', '!=', '')
+                       ->whereBetween('pancake_inserted_at', [$startDate, $endDate]);
+
+        // Use chunking to process data efficiently
+        $query->select('post_id', 'total_price')->chunkById(500, function ($orders) use (&$campaignsData) {
+            foreach ($orders as $order) {
+                $postId = $order->post_id;
+                $revenue = $order->total_price;
+
+                if (!isset($campaignsData[$postId])) {
+                    $campaignsData[$postId] = [
+                        'post_id'        => $postId,
+                        'total_orders'   => 0,
+                        'total_revenue'  => 0,
+                    ];
+                }
+                $campaignsData[$postId]['total_orders']++;
+                $campaignsData[$postId]['total_revenue'] += $revenue;
             }
-            $campaignsData[$postId]['total_orders']++;
-            $campaignsData[$postId]['total_revenue'] += $order->total_value;
-            $campaignsData[$postId]['average_order_value'] = $campaignsData[$postId]['total_revenue'] / $campaignsData[$postId]['total_orders'];
+        });
+
+        // Calculate averages and sort
+        foreach ($campaignsData as &$campaign) {
+            $campaign['average_order_value'] = $campaign['total_orders'] > 0 ? $campaign['total_revenue'] / $campaign['total_orders'] : 0;
         }
 
-        // Sort campaigns by total revenue (descending)
+        // Sort by revenue descending
         uasort($campaignsData, function ($a, $b) {
             return $b['total_revenue'] <=> $a['total_revenue'];
         });
 
-        $shops = PancakeShop::orderBy('name')->get();
-        $pages = []; // Will be loaded by AJAX or pre-filled if a shop is selected
+        // Manually paginate the results
+        $fullCampaignData = array_values($campaignsData);
+        $perPage = 12; // Adjusted for a 3-column layout
+        $currentPage = Paginator::resolveCurrentPage('page');
+        $currentPageItems = array_slice($fullCampaignData, ($currentPage - 1) * $perPage, $perPage);
 
-        if ($request->filled('pancake_shop_id')) {
-            $selectedShopId = $request->input('pancake_shop_id');
-            $selectedShop = PancakeShop::find($selectedShopId);
-            if ($selectedShop) {
-                $pages = $selectedShop->pages()->orderBy('name')->get();
-            }
-        }
+        $paginatedData = new LengthAwarePaginator(
+            $currentPageItems,
+            count($fullCampaignData),
+            $perPage,
+            $currentPage,
+            ['path' => Paginator::resolveCurrentPath(), 'query' => $request->query()]
+        );
 
-        // Data for Campaign Performance Overview Chart
-        $chartCampaignLabels = [];
-        $chartCampaignRevenue = [];
-        foreach($campaignsData as $campaign) {
-            $chartCampaignLabels[] = $campaign['post_id']; // Or a more descriptive name if available
-            $chartCampaignRevenue[] = $campaign['total_revenue'];
-        }
 
-        return view('reports.campaigns', compact(
-            'campaignsData',
-            'startDate',
-            'endDate',
-            'shops',
-            'pages',
-            'chartCampaignLabels',
-            'chartCampaignRevenue'
-        ));
+        // Prepare chart data from the full, sorted list (Top 15 campaigns)
+        $topCampaigns = array_slice($fullCampaignData, 0, 15);
+        $chartCampaignLabels = array_column($topCampaigns, 'post_id');
+        $chartCampaignRevenue = array_column($topCampaigns, 'total_revenue');
+
+        return view('reports.campaigns', [
+            'campaignsData' => $paginatedData,
+            'startDate' => $startDate,
+            'endDate' => $endDate,
+            'chartCampaignLabels' => $chartCampaignLabels,
+            'chartCampaignRevenue' => $chartCampaignRevenue,
+        ]);
     }
+
     /**
      * Hiển thị trang báo cáo phiên live
      */
     public function liveSessionsPage(Request $request)
     {
-        // Authorization check can be re-enabled if needed
-        // $this->authorize('reports.live_sessions');
+        $this->authorize('reports.live_sessions');
 
         // Daily detail drill-down - keep if used, may need update later
         if ($request->has('daily_detail') && $request->has('detail_date')) {

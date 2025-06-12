@@ -55,7 +55,6 @@ class SettingsController extends Controller
         $allowedUpdates = [
             'app_name' => ['string', 'max:255'],
             'app_logo' => ['nullable', File::image()->max(2048)], // 2MB Max
-            'favicon' => ['nullable', File::image()->max(1024)], // 1MB Max
             'seo_meta_title' => ['nullable', 'string', 'max:255'],
             'seo_meta_description' => ['nullable', 'string', 'max:1000'],
         ];
@@ -65,13 +64,13 @@ class SettingsController extends Controller
 
         // Handle text-based settings
         foreach ($validated as $key => $value) {
-            if (!in_array($key, ['app_logo', 'favicon'])) {
+            if ($key !== 'app_logo') {
                 Setting::updateOrCreate(['key' => $key], ['value' => $value]);
             }
         }
 
         // Handle file uploads
-        $fileUploads = ['app_logo', 'favicon'];
+        $fileUploads = ['app_logo'];
         foreach ($fileUploads as $fileKey) {
             if ($request->hasFile($fileKey) && $request->file($fileKey)->isValid()) {
                 $pathKey = $fileKey . '_path';

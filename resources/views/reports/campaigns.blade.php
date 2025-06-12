@@ -126,6 +126,11 @@
                 </div>
             @endforeach
         </div>
+
+        {{-- Pagination Links --}}
+        <div class="d-flex justify-content-center mt-4">
+            {{ $campaignsData->appends(request()->query())->links() }}
+        </div>
     @else
         <div class="alert alert-info text-center" role="alert">
             Không có dữ liệu chiến dịch cho khoảng thời gian và bộ lọc đã chọn.

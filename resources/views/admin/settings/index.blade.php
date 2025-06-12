@@ -66,26 +66,7 @@
                                 </div>
 
                                 {{-- Favicon Upload --}}
-                                <div class="form-group">
-                                    <label for="favicon">Favicon</label>
-                                    <div class="mb-2">
-                                        <img src="{{ $settings['favicon_url'] ?? '' }}" id="favicon-preview" alt="Favicon preview" class="img-thumbnail" style="max-height: 32px; @if(empty($settings['favicon_url'])) display: none; @endif">
-                                        <small class="text-muted d-block">
-                                            @if(!empty($settings['favicon_url']))
-                                                Favicon hiện tại
-                                            @else
-                                                Chưa có favicon, vui lòng tải lên.
-                                            @endif
-                                        </small>
-                                    </div>
-                                    <div class="custom-file mt-2">
-                                        <input type="file" name="favicon" id="favicon" class="custom-file-input @error('favicon') is-invalid @enderror" accept="image/png, image/vnd.microsoft.icon, image/x-icon, image/jpeg, image/gif">
-                                        <label class="custom-file-label" for="favicon">Chọn file mới (.ico, .png, .jpg, ...)</label>
-                                    </div>
-                                    @error('favicon')
-                                        <span class="invalid-feedback d-block" role="alert"><strong>{{ $message }}</strong></span>
-                                    @enderror
-                                </div>
+
                             </div>
                             <div class="card-footer">
                                 <button type="submit" class="btn btn-primary">Lưu Cài đặt Chung & Hình ảnh</button>
