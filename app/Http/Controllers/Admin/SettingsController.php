@@ -50,46 +50,52 @@ class SettingsController extends Controller
     {
         // Ensure user is authorized for the basic update operation
         $this->authorize('settings.update');
-        
+
         // Define basic allowed updates
         $allowedUpdates = [
-            'app_name' => ['required', 'string', 'max:255'],
-            'favicon' => ['nullable', File::image()->max(1024)], // 1MB Max, Image only
+            'app_name' => ['string', 'max:255'],
+            'app_logo' => ['nullable', File::image()->max(2048)], // 2MB Max
+            'favicon' => ['nullable', File::image()->max(1024)], // 1MB Max
             'seo_meta_title' => ['nullable', 'string', 'max:255'],
             'seo_meta_description' => ['nullable', 'string', 'max:1000'],
         ];
 
-        $validated = $request->validate($allowedUpdates);
+        // Only validate fields that are present in the request.
+        $validated = $request->validate(array_intersect_key($allowedUpdates, $request->all()));
 
-        try {
-            foreach ($validated as $key => $value) {
-                // Handle File Upload (Favicon)
-                if ($key === 'favicon' && $request->hasFile($key) && $request->file($key)->isValid()) {
-                    $currentPath = Setting::getValue('favicon_path');
-                    if ($currentPath) {
-                        Storage::disk('public')->delete($currentPath);
-                    }
-                    $path = $request->file('favicon')->store('logos', 'public');
-                    Setting::setValue('favicon_path', $path); // Store path separately
-                    Setting::setValue('favicon_url', asset('storage/' . $path)); // Store URL for easy access
-                }
-                // Handle Text-based settings (excluding the file input itself)
-                elseif ($key !== 'favicon') {
-                    Setting::setValue($key, $value);
-                }
+        // Handle text-based settings
+        foreach ($validated as $key => $value) {
+            if (!in_array($key, ['app_logo', 'favicon'])) {
+                Setting::updateOrCreate(['key' => $key], ['value' => $value]);
             }
-
-            // Clear relevant cache after updating settings (e.g., config if app_name changed)
-            Artisan::call('config:cache');
-
-            LogHelper::log('update_settings', null, null, $request->all());
-
-            return redirect()->route('admin.settings.index')->with('success', 'Cài đặt đã được cập nhật.');
-
-        } catch (\Exception $e) {
-            Log::error("Error updating settings: " . $e->getMessage());
-            return redirect()->route('admin.settings.index')->with('error', 'Lỗi cập nhật cài đặt. Vui lòng kiểm tra logs.');
         }
+
+        // Handle file uploads
+        $fileUploads = ['app_logo', 'favicon'];
+        foreach ($fileUploads as $fileKey) {
+            if ($request->hasFile($fileKey) && $request->file($fileKey)->isValid()) {
+                $pathKey = $fileKey . '_path';
+                $urlKey = $fileKey . '_url';
+
+                // Delete old file if it exists
+                $currentPath = Setting::where('key', $pathKey)->value('value');
+                if ($currentPath) {
+                    Storage::disk('public')->delete($currentPath);
+                }
+
+                // Store new file
+                $path = $request->file($fileKey)->store('logos', 'public');
+                Setting::updateOrCreate(['key' => $pathKey], ['value' => $path]);
+                Setting::updateOrCreate(['key' => $urlKey], ['value' => asset('storage/' . $path)]);
+            }
+        }
+
+        // Clear relevant cache after updating settings (e.g., config if app_name changed)
+        Artisan::call('config:cache');
+
+        LogHelper::log('update_settings', null, null, $request->all());
+
+        return redirect()->route('admin.settings.index')->with('success', 'Cài đặt đã được cập nhật.');
     }
 
     /**
@@ -128,15 +134,15 @@ class SettingsController extends Controller
         $staffStats = User::role('staff')
             ->select('users.id', 'users.name', 'users.pancake_uuid')
             ->selectRaw('COUNT(orders.id) as total_orders_count')
-            ->selectRaw('COUNT(CASE WHEN orders.status IN (?, ?, ?) THEN 1 END) as processing_orders_count', 
+            ->selectRaw('COUNT(CASE WHEN orders.status IN (?, ?, ?) THEN 1 END) as processing_orders_count',
                 [\App\Models\Order::STATUS_MOI, \App\Models\Order::STATUS_CAN_XU_LY, \App\Models\Order::STATUS_CHO_HANG])
             ->leftJoin('orders', 'users.pancake_uuid', '=', 'orders.assigning_seller_id')
             ->groupBy('users.id', 'users.name', 'users.pancake_uuid')
             ->get();
-            
+
         // Get latest skipped staff sync reasons from cache
         $skippedStaffReasons = \Illuminate\Support\Facades\Cache::get('pancake_sync_skipped_staff', []);
-        
+
         // Get order distribution settings
         $settings = [
             'order_distribution_type' => \App\Models\WebsiteSetting::get('order_distribution_type', 'sequential'),
@@ -144,7 +150,7 @@ class SettingsController extends Controller
         ];
 
         return view('admin.settings.order_distribution', compact(
-            'settings', 
+            'settings',
             'staffStats',
             'skippedStaffReasons'
         ));

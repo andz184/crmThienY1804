@@ -278,6 +278,11 @@
                         </table>
                     </div>
                 </div>
+                <div class="card-footer d-flex justify-content-center">
+                    @if(isset($categoryData) && is_object($categoryData) && method_exists($categoryData, 'links'))
+                        {{ $categoryData->links('pagination::bootstrap-4') }}
+                    @endif
+                </div>
             </div>
         @else
             <div class="card">
@@ -297,7 +302,6 @@
 
 @section('css')
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css" />
-    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.21/css/dataTables.bootstrap4.min.css">
     <style>
         :root {
             --bs-blue: #696cff;
@@ -536,8 +540,6 @@
     <script src="https://cdn.jsdelivr.net/npm/moment/moment.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
-    <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
 
     <script>
         $(document).ready(function() {
@@ -832,56 +834,6 @@
                 const distributionChart = new ApexCharts(document.querySelector("#revenueDistributionChart"), distributionChartOptions);
                 distributionChart.render();
             }
-
-            // Initialize DataTable
-            $('#productGroupsTable').DataTable({
-                language: {
-                    url: "//cdn.datatables.net/plug-ins/1.10.21/i18n/Vietnamese.json"
-                },
-                order: [[2, "desc"]], // Default sort by revenue descending
-                pageLength: 10,
-                dom: '<"d-flex justify-content-between align-items-center header-actions mx-2 row mt-3 mb-2"' +
-                    '<"col-sm-12 col-md-4 col-lg-6"l>' +
-                    '<"col-sm-12 col-md-8 col-lg-6 ps-xl-75 ps-0"<"dt-action-buttons text-xl-end text-lg-start text-lg-end text-start d-flex align-items-center justify-content-md-end align-items-center flex-sm-nowrap flex-wrap me-1"<"me-1"f>B>>' +
-                    '>t' +
-                    '<"d-flex justify-content-between mx-2 row mb-1"' +
-                    '<"col-sm-12 col-md-6"i>' +
-                    '<"col-sm-12 col-md-6"p>' +
-                    '>',
-                buttons: [
-                    {
-                        extend: 'collection',
-                        className: 'btn btn-outline-secondary dropdown-toggle me-2',
-                        text: 'Xuất',
-                        buttons: [
-                            {
-                                extend: 'print',
-                                text: 'In',
-                                className: 'dropdown-item',
-                                exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6] }
-                            },
-                            {
-                                extend: 'csv',
-                                text: 'CSV',
-                                className: 'dropdown-item',
-                                exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6] }
-                            },
-                            {
-                                extend: 'excel',
-                                text: 'Excel',
-                                className: 'dropdown-item',
-                                exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6] }
-                            },
-                            {
-                                extend: 'pdf',
-                                text: 'PDF',
-                                className: 'dropdown-item',
-                                exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6] }
-                            }
-                        ]
-                    }
-                ]
-            });
         });
     </script>
 @stop
