@@ -296,12 +296,12 @@ class PancakeWebhookController extends Controller
             $order->source = $orderData['order_sources'] ?? -1;
 
             // Get page info
-            if (!empty($orderData['page_id'])) {
-                $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
-                if ($page) {
-                    $order->page_name = $page->name;
-                }
-            }
+            // if (!empty($orderData['page_id'])) {
+            //     $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
+            //     if ($page) {
+            //         $order->page_name = $page->name;
+            //     }
+            // }
 
             // Map warehouse info
             if (!empty($orderData['warehouse_id'])) {
@@ -519,12 +519,12 @@ class PancakeWebhookController extends Controller
             }
 
             // Update page info
-            if (!empty($orderData['page_id'])) {
-                $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
-                if ($page) {
-                    $order->page_name = $page->name;
-                }
-            }
+            // if (!empty($orderData['page_id'])) {
+            //     $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
+            //     if ($page) {
+            //         $order->page_name = $page->name;
+            //     }
+            // }
 
             // Update warehouse info
             if (!empty($orderData['warehouse_id'])) {
