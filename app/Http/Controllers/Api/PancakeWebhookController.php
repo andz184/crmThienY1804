@@ -295,6 +295,8 @@ class PancakeWebhookController extends Controller
             // Set source from order_sources
             $order->source = $orderData['order_sources'] ?? -1;
 
+
+
             // Map warehouse info
             if (!empty($orderData['warehouse_id'])) {
                 $warehouse = Warehouse::where('pancake_id', $orderData['warehouse_id'])->first();
@@ -510,13 +512,8 @@ class PancakeWebhookController extends Controller
                 $order->source = $orderData['order_sources'];
             }
 
-            // Update page info
-            // if (!empty($orderData['page_id'])) {
-            //     $page = PancakePage::where('pancake_id', $orderData['page_id'])->first();
-            //     if ($page) {
-            //         $order->page_name = $page->name;
-            //     }
-            // }
+
+
 
             // Update warehouse info
             if (!empty($orderData['warehouse_id'])) {
