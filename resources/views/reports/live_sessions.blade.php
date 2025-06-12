@@ -520,7 +520,8 @@
                 <h3 class="card-title">Bản đồ phân bố doanh thu</h3>
             </div>
             <div class="card-body">
-                <div id="province-map"></div>
+                <div id="province-map" style="height: 400px;"></div>
+                <!-- Xóa bảng dữ liệu tỉnh thành -->
             </div>
         </div>
     </div>
@@ -626,6 +627,8 @@
 @section('css')
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css">
 <link rel="stylesheet" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap4.min.css">
+<!-- Thêm CSS cho Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <style>
     /* Custom button styling */
     .btn-theme {
@@ -894,10 +897,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://code.highcharts.com/maps/highmaps.js"></script>
-<script src="https://code.highcharts.com/maps/modules/exporting.js"></script>
-<script src="https://code.highcharts.com/maps/modules/offline-exporting.js"></script>
-<script src="https://code.highcharts.com/mapdata/countries/vn/vn-all.js"></script>
+<!-- Thay thế Highcharts bằng Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 $(function() {
     // Date range picker configuration
@@ -1075,10 +1076,15 @@ $(function() {
 
     // Hàm chuyển đổi tên tỉnh thành mã tỉnh cho Highcharts
     function getProvinceKey(provinceName) {
+        // Chuẩn hóa tên tỉnh để xử lý các trường hợp có tiền tố "Tỉnh" hoặc "Thành phố"
+        const normalizedName = provinceName
+            .replace(/^(Thành phố|Tỉnh)\s/i, '')
+            .replace('TP Hồ Chí Minh', 'Hồ Chí Minh'); // Trường hợp đặc biệt
+
         const provinceMapping = {
-            'Hà Nội': 'vn-hn',
-            'TP Hồ Chí Minh': 'vn-hc',
+            'Hồ Chí Minh': 'vn-hc',
             'Đà Nẵng': 'vn-dn',
+            'Hà Nội': 'vn-hn',
             'Hải Phòng': 'vn-hp',
             'Cần Thơ': 'vn-ct',
             'An Giang': 'vn-ag',
@@ -1140,7 +1146,7 @@ $(function() {
             'Vĩnh Phúc': 'vn-vc',
             'Yên Bái': 'vn-yb'
         };
-        return provinceMapping[provinceName] || '';
+        return provinceMapping[normalizedName] || provinceMapping[provinceName] || '';
     }
 
     // Khởi tạo biểu đồ tỉnh thành
@@ -1230,90 +1236,127 @@ $(function() {
         }
     });
 
-    // Chuẩn bị dữ liệu cho bản đồ từ provinceStats gốc
-    const mapData = provinceStats.map(stat => ({
-        'hc-key': getProvinceKey(stat.name),
-        name: stat.name,
-        value: parseFloat(stat.revenue) || 0,
-        orders: parseInt(stat.orders) || 0,
-        color: parseInt(stat.orders) > 0 ? '#74c0ff' : '#f7f7f7' // Màu xanh cho tỉnh có đơn hàng
-    }));
+        // Khởi tạo bản đồ Việt Nam với Leaflet
+    const map = L.map('province-map').setView([16.0, 106.0], 5); // Tọa độ trung tâm Việt Nam
 
-    // Khởi tạo bản đồ với dữ liệu gốc
-    Highcharts.mapChart('province-map', {
-        chart: {
-            map: 'countries/vn/vn-all',
-            backgroundColor: 'transparent',
-            height: 350,
-            spacing: [0, 0, 0, 0]
-        },
-        title: {
-            text: null
-        },
-        subtitle: {
-            text: null
-        },
-        mapNavigation: {
-            enabled: true,
-            buttonOptions: {
-                verticalAlign: 'bottom'
-            }
-        },
-        colorAxis: {
-            min: 0,
-            max: 1,
-            stops: [
-                [0, '#f7f7f7'],    // Màu cho tỉnh không có đơn
-                [1, '#74c0ff']     // Màu cho tỉnh có đơn
-            ],
-            labels: {
-                format: '{value}',
-                enabled: false
-            }
-        },
-        legend: {
-            enabled: false
-        },
-        series: [{
-            data: mapData,
-            name: 'Thông tin tỉnh/thành',
-            nullColor: '#f7f7f7',
-            borderColor: '#dedede',
-            borderWidth: 0.5,
-            states: {
-                hover: {
-                    brightness: 0.1,
-                    borderColor: '#666'
-                }
-            },
-            dataLabels: {
-                enabled: false
-            },
-            tooltip: {
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                style: {
-                    padding: '15px'
-                },
-                useHTML: true,
-                headerFormat: '',
-                pointFormat: `
-                    <div style="padding: 10px;">
-                        <h6 style="margin: 0 0 10px 0; font-weight: bold; color: #333;">{point.name}</h6>
+    // Thêm lớp bản đồ nền
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    // Dữ liệu tỉnh thành Việt Nam (tọa độ đơn giản)
+    const provinces = [
+        { name: 'Hà Nội', lat: 21.0285, lng: 105.8542 },
+        { name: 'Hồ Chí Minh', lat: 10.8231, lng: 106.6297 },
+        { name: 'Đà Nẵng', lat: 16.0544, lng: 108.2022 },
+        { name: 'Hải Phòng', lat: 20.8449, lng: 106.6881 },
+        { name: 'Cần Thơ', lat: 10.0452, lng: 105.7469 },
+        { name: 'An Giang', lat: 10.5215, lng: 105.1258 },
+        { name: 'Bà Rịa - Vũng Tàu', lat: 10.5417, lng: 107.2430 },
+        { name: 'Bắc Giang', lat: 21.2731, lng: 106.1947 },
+        { name: 'Bắc Kạn', lat: 22.1477, lng: 105.8349 },
+        { name: 'Bạc Liêu', lat: 9.2940, lng: 105.7244 },
+        { name: 'Bắc Ninh', lat: 21.1214, lng: 106.1110 },
+        { name: 'Bến Tre', lat: 10.2433, lng: 106.3756 },
+        { name: 'Bình Định', lat: 13.7829, lng: 109.2196 },
+        { name: 'Bình Dương', lat: 11.3254, lng: 106.4772 },
+        { name: 'Bình Phước', lat: 11.7511, lng: 106.7234 },
+        { name: 'Bình Thuận', lat: 10.9336, lng: 108.1001 },
+        { name: 'Cà Mau', lat: 9.1527, lng: 105.1960 },
+        { name: 'Cao Bằng', lat: 22.6666, lng: 106.2500 },
+        { name: 'Đắk Lắk', lat: 12.6667, lng: 108.0500 },
+        { name: 'Đắk Nông', lat: 12.0045, lng: 107.6874 },
+        { name: 'Điện Biên', lat: 21.3856, lng: 103.0169 },
+        { name: 'Đồng Nai', lat: 11.1068, lng: 107.1768 },
+        { name: 'Đồng Tháp', lat: 10.4938, lng: 105.6882 },
+        { name: 'Gia Lai', lat: 13.9808, lng: 108.0151 },
+        { name: 'Hà Giang', lat: 22.8333, lng: 104.9833 },
+        { name: 'Hà Nam', lat: 20.5464, lng: 105.9131 },
+        { name: 'Hà Tĩnh', lat: 18.3333, lng: 105.9000 },
+        { name: 'Hải Dương', lat: 20.9400, lng: 106.3319 },
+        { name: 'Hậu Giang', lat: 9.7579, lng: 105.6413 },
+        { name: 'Hòa Bình', lat: 20.8133, lng: 105.3383 },
+        { name: 'Hưng Yên', lat: 20.6464, lng: 106.0511 },
+        { name: 'Khánh Hòa', lat: 12.2585, lng: 109.1926 },
+        { name: 'Kiên Giang', lat: 10.0211, lng: 105.0909 },
+        { name: 'Kon Tum', lat: 14.3500, lng: 108.0000 },
+        { name: 'Lai Châu', lat: 22.3964, lng: 103.4716 },
+        { name: 'Lâm Đồng', lat: 11.9465, lng: 108.4419 },
+        { name: 'Lạng Sơn', lat: 21.8530, lng: 106.7610 },
+        { name: 'Lào Cai', lat: 22.4833, lng: 103.9667 },
+        { name: 'Long An', lat: 10.5446, lng: 106.4132 },
+        { name: 'Nam Định', lat: 20.4200, lng: 106.1683 },
+        { name: 'Nghệ An', lat: 19.2345, lng: 104.9200 },
+        { name: 'Ninh Bình', lat: 20.2575, lng: 105.9750 },
+        { name: 'Ninh Thuận', lat: 11.5608, lng: 108.9903 },
+        { name: 'Phú Thọ', lat: 21.3227, lng: 105.4048 },
+        { name: 'Phú Yên', lat: 13.0882, lng: 109.0928 },
+        { name: 'Quảng Bình', lat: 17.5000, lng: 106.3333 },
+        { name: 'Quảng Nam', lat: 15.5794, lng: 108.0150 },
+        { name: 'Quảng Ngãi', lat: 15.1200, lng: 108.8000 },
+        { name: 'Quảng Ninh', lat: 21.0064, lng: 107.2925 },
+        { name: 'Quảng Trị', lat: 16.7500, lng: 107.2000 },
+        { name: 'Sóc Trăng', lat: 9.6037, lng: 105.9811 },
+        { name: 'Sơn La', lat: 21.1667, lng: 103.9000 },
+        { name: 'Tây Ninh', lat: 11.3230, lng: 106.1483 },
+        { name: 'Thái Bình', lat: 20.4500, lng: 106.3333 },
+        { name: 'Thái Nguyên', lat: 21.5942, lng: 105.8481 },
+        { name: 'Thanh Hóa', lat: 19.8066, lng: 105.7667 },
+        { name: 'Thừa Thiên Huế', lat: 16.4637, lng: 107.5908 },
+        { name: 'Tiền Giang', lat: 10.3542, lng: 106.3643 },
+        { name: 'Trà Vinh', lat: 9.9513, lng: 106.3346 },
+        { name: 'Tuyên Quang', lat: 21.8233, lng: 105.2181 },
+        { name: 'Vĩnh Long', lat: 10.2537, lng: 105.9722 },
+        { name: 'Vĩnh Phúc', lat: 21.3608, lng: 105.5474 },
+        { name: 'Yên Bái', lat: 21.7167, lng: 104.9000 }
+    ];
+
+    // Tìm giá trị doanh thu lớn nhất để tính toán kích thước điểm
+    const maxRevenue = Math.max(...provinceStats.map(p => parseFloat(p.revenue) || 0));
+
+    // Thêm điểm đánh dấu cho mỗi tỉnh thành
+    provinces.forEach(province => {
+        // Tìm dữ liệu tương ứng trong provinceStats
+        const provinceData = provinceStats.find(p =>
+            p.name.includes(province.name) ||
+            province.name.includes(p.name)
+        );
+
+        if (provinceData) {
+            const revenue = parseFloat(provinceData.revenue) || 0;
+            const orders = parseInt(provinceData.orders) || 0;
+
+            // Tính kích thước điểm dựa trên doanh thu (tối thiểu 5, tối đa 30)
+            const radius = revenue > 0 ? Math.max(5, Math.min(30, (revenue / maxRevenue) * 30)) : 5;
+
+            // Tính màu dựa trên doanh thu (từ xanh nhạt đến xanh đậm)
+            const intensity = revenue > 0 ? Math.min(0.9, (revenue / maxRevenue) * 0.9) : 0;
+            const color = `rgba(0, 102, 255, ${intensity + 0.1})`;
+
+            // Tạo điểm đánh dấu
+            const circle = L.circle([province.lat, province.lng], {
+                color: '#fff',
+                fillColor: color,
+                fillOpacity: 0.8,
+                weight: 1,
+                radius: radius * 5000 // Nhân với 5000 để thấy rõ hơn trên bản đồ
+            }).addTo(map);
+
+            // Thêm popup thông tin
+            circle.bindPopup(`
+                <div style="min-width: 200px; padding: 10px;">
+                    <h6 style="margin: 0 0 10px 0; font-weight: bold; color: #333;">${province.name}</h6>
                         <div style="margin-bottom: 8px;">
                             <span style="color: #666; display: inline-block; width: 100px;">Doanh thu:</span>
-                            <b style="color: #333;">{point.value:,.0f} đ</b>
+                        <b style="color: #333;">${new Intl.NumberFormat('vi-VN').format(revenue)} đ</b>
                         </div>
                         <div>
                             <span style="color: #666; display: inline-block; width: 100px;">Số đơn:</span>
-                            <b style="color: #333;">{point.orders}</b>
+                        <b style="color: #333;">${orders}</b>
                         </div>
                     </div>
-                `,
-                shadow: true,
-                borderWidth: 1,
-                borderColor: '#dedede'
+            `);
             }
-        }]
     });
 
     // Top Products Chart
@@ -1520,6 +1563,137 @@ $(function() {
                 buttons: ['copy', 'excel', 'pdf']
             }
         ]
+    });
+});
+</script>
+
+<!-- Script riêng cho bản đồ Leaflet -->
+<script>
+    $(function() {
+        // Khởi tạo bản đồ Việt Nam với Leaflet
+        const map = L.map('province-map').setView([16.0, 106.0], 5); // Tọa độ trung tâm Việt Nam
+
+        // Thêm lớp bản đồ nền
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Dữ liệu tỉnh thành Việt Nam (tọa độ đơn giản)
+        const provinces = [
+            { name: 'Hà Nội', lat: 21.0285, lng: 105.8542 },
+            { name: 'Hồ Chí Minh', lat: 10.8231, lng: 106.6297 },
+            { name: 'Đà Nẵng', lat: 16.0544, lng: 108.2022 },
+            { name: 'Hải Phòng', lat: 20.8449, lng: 106.6881 },
+            { name: 'Cần Thơ', lat: 10.0452, lng: 105.7469 },
+            { name: 'An Giang', lat: 10.5215, lng: 105.1258 },
+            { name: 'Bà Rịa - Vũng Tàu', lat: 10.5417, lng: 107.2430 },
+            { name: 'Bắc Giang', lat: 21.2731, lng: 106.1947 },
+            { name: 'Bắc Kạn', lat: 22.1477, lng: 105.8349 },
+            { name: 'Bạc Liêu', lat: 9.2940, lng: 105.7244 },
+            { name: 'Bắc Ninh', lat: 21.1214, lng: 106.1110 },
+            { name: 'Bến Tre', lat: 10.2433, lng: 106.3756 },
+            { name: 'Bình Định', lat: 13.7829, lng: 109.2196 },
+            { name: 'Bình Dương', lat: 11.3254, lng: 106.4772 },
+            { name: 'Bình Phước', lat: 11.7511, lng: 106.7234 },
+            { name: 'Bình Thuận', lat: 10.9336, lng: 108.1001 },
+            { name: 'Cà Mau', lat: 9.1527, lng: 105.1960 },
+            { name: 'Cao Bằng', lat: 22.6666, lng: 106.2500 },
+            { name: 'Đắk Lắk', lat: 12.6667, lng: 108.0500 },
+            { name: 'Đắk Nông', lat: 12.0045, lng: 107.6874 },
+            { name: 'Điện Biên', lat: 21.3856, lng: 103.0169 },
+            { name: 'Đồng Nai', lat: 11.1068, lng: 107.1768 },
+            { name: 'Đồng Tháp', lat: 10.4938, lng: 105.6882 },
+            { name: 'Gia Lai', lat: 13.9808, lng: 108.0151 },
+            { name: 'Hà Giang', lat: 22.8333, lng: 104.9833 },
+            { name: 'Hà Nam', lat: 20.5464, lng: 105.9131 },
+            { name: 'Hà Tĩnh', lat: 18.3333, lng: 105.9000 },
+            { name: 'Hải Dương', lat: 20.9400, lng: 106.3319 },
+            { name: 'Hậu Giang', lat: 9.7579, lng: 105.6413 },
+            { name: 'Hòa Bình', lat: 20.8133, lng: 105.3383 },
+            { name: 'Hưng Yên', lat: 20.6464, lng: 106.0511 },
+            { name: 'Khánh Hòa', lat: 12.2585, lng: 109.1926 },
+            { name: 'Kiên Giang', lat: 10.0211, lng: 105.0909 },
+            { name: 'Kon Tum', lat: 14.3500, lng: 108.0000 },
+            { name: 'Lai Châu', lat: 22.3964, lng: 103.4716 },
+            { name: 'Lâm Đồng', lat: 11.9465, lng: 108.4419 },
+            { name: 'Lạng Sơn', lat: 21.8530, lng: 106.7610 },
+            { name: 'Lào Cai', lat: 22.4833, lng: 103.9667 },
+            { name: 'Long An', lat: 10.5446, lng: 106.4132 },
+            { name: 'Nam Định', lat: 20.4200, lng: 106.1683 },
+            { name: 'Nghệ An', lat: 19.2345, lng: 104.9200 },
+            { name: 'Ninh Bình', lat: 20.2575, lng: 105.9750 },
+            { name: 'Ninh Thuận', lat: 11.5608, lng: 108.9903 },
+            { name: 'Phú Thọ', lat: 21.3227, lng: 105.4048 },
+            { name: 'Phú Yên', lat: 13.0882, lng: 109.0928 },
+            { name: 'Quảng Bình', lat: 17.5000, lng: 106.3333 },
+            { name: 'Quảng Nam', lat: 15.5794, lng: 108.0150 },
+            { name: 'Quảng Ngãi', lat: 15.1200, lng: 108.8000 },
+            { name: 'Quảng Ninh', lat: 21.0064, lng: 107.2925 },
+            { name: 'Quảng Trị', lat: 16.7500, lng: 107.2000 },
+            { name: 'Sóc Trăng', lat: 9.6037, lng: 105.9811 },
+            { name: 'Sơn La', lat: 21.1667, lng: 103.9000 },
+            { name: 'Tây Ninh', lat: 11.3230, lng: 106.1483 },
+            { name: 'Thái Bình', lat: 20.4500, lng: 106.3333 },
+            { name: 'Thái Nguyên', lat: 21.5942, lng: 105.8481 },
+            { name: 'Thanh Hóa', lat: 19.8066, lng: 105.7667 },
+            { name: 'Thừa Thiên Huế', lat: 16.4637, lng: 107.5908 },
+            { name: 'Tiền Giang', lat: 10.3542, lng: 106.3643 },
+            { name: 'Trà Vinh', lat: 9.9513, lng: 106.3346 },
+            { name: 'Tuyên Quang', lat: 21.8233, lng: 105.2181 },
+            { name: 'Vĩnh Long', lat: 10.2537, lng: 105.9722 },
+            { name: 'Vĩnh Phúc', lat: 21.3608, lng: 105.5474 },
+            { name: 'Yên Bái', lat: 21.7167, lng: 104.9000 }
+        ];
+
+        // Lấy dữ liệu tỉnh thành từ biến PHP
+        const provinceStats = @json($provinceStats ?? []);
+
+        // Tìm giá trị doanh thu lớn nhất để tính toán kích thước điểm
+        const maxRevenue = Math.max(...provinceStats.map(p => parseFloat(p.revenue) || 0));
+
+        // Thêm điểm đánh dấu cho mỗi tỉnh thành
+        provinces.forEach(province => {
+            // Tìm dữ liệu tương ứng trong provinceStats
+            const provinceData = provinceStats.find(p =>
+                p.name.includes(province.name) ||
+                province.name.includes(p.name)
+            );
+
+            if (provinceData) {
+                const revenue = parseFloat(provinceData.revenue) || 0;
+                const orders = parseInt(provinceData.orders) || 0;
+
+                // Tính kích thước điểm dựa trên doanh thu (tối thiểu 5, tối đa 30)
+                const radius = revenue > 0 ? Math.max(5, Math.min(30, (revenue / maxRevenue) * 30)) : 5;
+
+                // Tính màu dựa trên doanh thu (từ xanh nhạt đến xanh đậm)
+                const intensity = revenue > 0 ? Math.min(0.9, (revenue / maxRevenue) * 0.9) : 0;
+                const color = `rgba(0, 102, 255, ${intensity + 0.1})`;
+
+                // Tạo điểm đánh dấu
+                const circle = L.circle([province.lat, province.lng], {
+                    color: '#fff',
+                    fillColor: color,
+                    fillOpacity: 0.8,
+                    weight: 1,
+                    radius: radius * 5000 // Nhân với 5000 để thấy rõ hơn trên bản đồ
+                }).addTo(map);
+
+                // Thêm popup thông tin
+                circle.bindPopup(`
+                    <div style="min-width: 200px; padding: 10px;">
+                        <h6 style="margin: 0 0 10px 0; font-weight: bold; color: #333;">${province.name}</h6>
+                        <div style="margin-bottom: 8px;">
+                            <span style="color: #666; display: inline-block; width: 100px;">Doanh thu:</span>
+                            <b style="color: #333;">${new Intl.NumberFormat('vi-VN').format(revenue)} đ</b>
+                        </div>
+                        <div>
+                            <span style="color: #666; display: inline-block; width: 100px;">Số đơn:</span>
+                            <b style="color: #333;">${orders}</b>
+                        </div>
+                    </div>
+                `);
+            }
     });
 });
 </script>
