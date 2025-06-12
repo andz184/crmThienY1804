@@ -159,7 +159,7 @@ class PushLivestreamRevenue extends Command
             $cycleDuration = microtime(true) - $startTime;
             $this->info(sprintf('Cycle finished in %.2f seconds.', $cycleDuration));
 
-            $sleepDuration = 5 - $cycleDuration;
+            $sleepDuration = 20 - $cycleDuration;
 
             if ($sleepDuration > 0) {
                 $this->info(sprintf('Waiting for %.2f seconds...', $sleepDuration));
