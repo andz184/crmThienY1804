@@ -96,10 +96,13 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-2">
-                            <div class="form-group mb-0">
-                                <button type="submit" class="btn btn-primary d-flex align-items-center">
+                        <div class="col-md-4">
+                            <div class="form-group mb-0 d-flex">
+                                <button type="submit" class="btn btn-primary d-flex align-items-center me-3">
                                     <i class="fas fa-search me-2"></i> Lọc
+                                </button>
+                                <button type="button"  style="margin-left: 20px" class="btn btn-secondary d-flex align-items-center" onclick="window.location.href='{{ route('reports.product_groups') }}'">
+                                    <i class="fas fa-sync me-2"></i> Đặt lại
                                 </button>
                             </div>
                         </div>
