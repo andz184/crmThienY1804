@@ -193,7 +193,7 @@
                                 Phân Bổ Doanh Thu theo Nhóm
                             </h5>
                         </div>
-                        <div class="card-body">
+                        <div class="card-body" style="background-color: #233446;">
                             <div class="chart-container">
                                 <div id="revenueDistributionChart"></div>
                             </div>
@@ -778,7 +778,8 @@
                     series: revenueData,
                     chart: {
                         height: 400,
-                        type: 'donut'
+                        type: 'donut',
+                        foreColor: '#ffffff'
                     },
                     labels: categoryNames,
                     colors: [
@@ -798,6 +799,7 @@
                                     total: {
                                         show: true,
                                         label: 'Tổng Doanh Thu',
+                                        color: '#ffffff',
                                         formatter: function(w) {
                                             return number_format(w.globals.seriesTotals.reduce((a, b) => a + b, 0)) + ' VND';
                                         }
@@ -808,6 +810,9 @@
                     },
                     dataLabels: {
                         enabled: true,
+                        style: {
+                            colors: ['#ffffff']
+                        },
                         formatter: function(val) {
                             return number_format(val, 1) + '%';
                         }
@@ -815,6 +820,9 @@
                     legend: {
                         show: true,
                         position: 'bottom',
+                        labels: {
+                            colors: '#ffffff'
+                        },
                         markers: {
                             width: 8,
                             height: 8,
@@ -826,6 +834,7 @@
                         }
                     },
                     tooltip: {
+                        theme: 'light',
                         y: {
                             formatter: function(value) {
                                 return number_format(value) + ' VND';
