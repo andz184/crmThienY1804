@@ -426,14 +426,14 @@ class ReportController extends Controller
         // Base query for delivered orders
         $query = Order::where('pancake_status', 6) // Status 'Đã giao hàng'
                        ->whereNotNull('post_id')
-                       ->where('post_id', '!=', '')
+                       ->where('post_id', '<>', '') // Use <> for "not equal" to be safe
                        ->whereBetween('pancake_inserted_at', [$startDate, $endDate]);
 
         // Use chunking to process data efficiently
-        $query->select('post_id', 'total_price')->chunkById(500, function ($orders) use (&$campaignsData) {
+        $query->select('post_id', 'total_value')->chunkById(500, function ($orders) use (&$campaignsData) {
             foreach ($orders as $order) {
                 $postId = $order->post_id;
-                $revenue = $order->total_price;
+                $revenue = $order->total_value;
 
                 if (!isset($campaignsData[$postId])) {
                     $campaignsData[$postId] = [
