@@ -83,7 +83,7 @@
             <div class="modal-body">
                 <p>Nút <strong>LIVE</strong> dùng để điều khiển việc cập nhật dữ liệu real-time từ Google Sheets.</p>
                 <ul>
-                    <li><strong>Bật LIVE (nút có màu đỏ):</strong> Hệ thống sẽ tự động lấy dữ liệu mới mỗi 5 giây.</li>
+                    <li><strong>Bật LIVE (nút có màu đỏ):</strong> Hệ thống sẽ tự động lấy dữ liệu mới </li>
                     <li><strong>Tắt LIVE (nút có màu xám):</strong> Hệ thống sẽ ngừng cập nhật tự động.</li>
                 </ul>
                 <p>Trang sẽ tự động bật chế độ LIVE khi được tải.</p>
@@ -115,7 +115,7 @@
         100% { background-position: -200% center; }
     }
 
-    body { 
+    body {
         background-color: var(--bg-color);
         background-image: radial-gradient(circle at top right, rgba(124, 58, 237, 0.15), transparent 40%),
                           radial-gradient(circle at bottom left, rgba(192, 38, 211, 0.15), transparent 40%);
@@ -123,8 +123,8 @@
         font-family: 'Inter', sans-serif;
         overflow-y: hidden;
     }
-    
-    .content-wrapper, .main-header, .main-sidebar { 
+
+    .content-wrapper, .main-header, .main-sidebar {
         background-color: transparent !important;
         border: none;
     }
@@ -138,13 +138,13 @@
         height: calc(100vh - 80px);
         overflow-y: auto;
     }
-    
+
     .live-status {
         display: flex;
         align-items: center;
         gap: 1rem;
     }
-    
+
     .live-indicator, .help-button {
         background-color: rgba(255,255,255,0.05);
         border: 1px solid var(--border-color);
@@ -193,16 +193,16 @@
         box-shadow: 0 0 20px var(--glow-color-pink), 0 0 40px var(--glow-color-pink);
         min-height: 220px;
     }
-    
-    .stat-label { 
+
+    .stat-label {
         font-size: 1.5rem; /* Slightly larger label */
         font-weight: 500;
         text-transform: uppercase;
         letter-spacing: 1.5px;
         opacity: 0.8;
     }
-    
-    .stat-value-large { 
+
+    .stat-value-large {
         font-size: 6rem; /* INCREASED SIZE */
         font-weight: 700;
         line-height: 1.1;
@@ -235,7 +235,7 @@
         height: 420px;
         backdrop-filter: blur(5px);
     }
-    
+
     .chart-container, .latest-order-grid {
         height: 350px;
     }
@@ -247,8 +247,8 @@
         flex-direction: column;
         gap: 0.75rem;
     }
-    
-    .info-item { 
+
+    .info-item {
         background-color: rgba(0,0,0,0.2);
         padding: 1rem 1.5rem;
         border-radius: 12px;
@@ -262,7 +262,7 @@
         transform: translateY(-5px);
         background-color: rgba(0,0,0,0.4);
     }
-    
+
     .info-item i {
         font-size: 1.5rem;
         color: var(--glow-color-pink);
@@ -351,9 +351,9 @@
                 }
             },
             scales: {
-                x: { 
+                x: {
                     grid: { display: false },
-                    ticks: { 
+                    ticks: {
                         color: 'rgba(255,255,255,0.7)',
                         maxRotation: 0,
                         minRotation: 0,
@@ -380,7 +380,7 @@
                 }
             }
         };
-        
+
         const topProductsChart = new Chart(document.getElementById('topProductsChart'), { type: 'line', options: chartOptions });
         const topProvincesChart = new Chart(document.getElementById('topProvincesChart'), { type: 'line', options: chartOptions });
 
@@ -391,7 +391,7 @@
         pusher.subscribe('livestream-channel').bind('livestream-update', function(data) {
             updateStat('realtime-revenue', data.total_revenue, true);
             updateStat('realtime-orders', data.total_orders, false);
-            
+
             const latestOrderContainer = document.getElementById('latest-order-info');
             if (data.latest_order) {
                 latestOrderContainer.innerHTML = `
@@ -427,7 +427,7 @@
             } else {
                 latestOrderContainer.innerHTML = '<p class="text-center opacity-50">Chưa có đơn hàng mới...</p>';
             }
-            
+
             updateChart(topProductsChart, data.top_products, 'rgba(192, 38, 211, 0.85)');
             updateChart(topProvincesChart, data.top_provinces, 'rgba(37, 117, 252, 0.85)');
         });
