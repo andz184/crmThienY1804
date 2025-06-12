@@ -16,6 +16,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 use App\Models\DailyRevenueAggregate;
 use Carbon\CarbonPeriod;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 
 class ReportController extends Controller
 {
@@ -217,14 +219,30 @@ class ReportController extends Controller
 
         Log::info("ReportController@productGroupsPage: Processed " . count($categoryData) . " categories.");
 
-        // Get top 10 categories for chart data
-        $topCategories = array_slice($categoryData, 0, 10, true);
+        // Manually paginate the results array
+        $fullCategoryData = array_values($categoryData); // Use a new variable to preserve the full list for charts
+        $perPage = $request->input('per_page', 15);
+        $currentPage = Paginator::resolveCurrentPage('page');
+
+        $currentPageItems = array_slice($fullCategoryData, ($currentPage - 1) * $perPage, $perPage);
+
+        $categoryData = new LengthAwarePaginator(
+            $currentPageItems,
+            count($fullCategoryData),
+            $perPage,
+            $currentPage,
+            ['path' => Paginator::resolveCurrentPath()]
+        );
+
+
+        // Get top 10 categories for chart data from the full, sorted list
+        $topCategories = array_slice($fullCategoryData, 0, 10, true);
 
         // Prepare data for charts with only top 10 categories
         $chartData = $this->prepareChartData($topCategories);
 
         // Overall summary stats (keep all categories for accurate totals)
-        $summaryStats = $this->calculateSummaryStats($categoryData);
+        $summaryStats = $this->calculateSummaryStats($fullCategoryData);
 
         return view('reports.product_groups', array_merge(
             compact('startDate', 'endDate', 'categoryData'),

@@ -41,11 +41,16 @@ class SettingsServiceProvider extends ServiceProvider
 
                 // Set Favicon
                 if (isset($settings['favicon_url'])) {
-                    // AdminLTE uses an array for favicons, we create it dynamically
+                    Config::set('adminlte.use_ico_only', false);
+                    Config::set('adminlte.use_full_favicon', false);
                     Config::set('adminlte.favicons', [
                         [
-                            'type' => 'image/png', // You might want to store mime type in db
                             'href' => $settings['favicon_url'],
+                            'rel' => 'icon',
+                        ],
+                        [
+                            'href' => $settings['favicon_url'],
+                            'rel' => 'apple-touch-icon',
                         ],
                     ]);
                 }
