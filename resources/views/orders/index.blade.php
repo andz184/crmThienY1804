@@ -56,9 +56,8 @@
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0">Bộ lọc Đơn hàng</h5>
-            <button class="btn btn-primary btn-sm" type="button" data-toggle="collapse" data-target="#filterCollapse" aria-expanded="false" aria-controls="filterCollapse">
-                <i class='bx bx-filter-alt me-1'></i>
-                Hiển thị/Ẩn bộ lọc
+            <button class="btn btn-primary btn-sm btn-icon-toggle" type="button" data-toggle="collapse" data-target="#filterCollapse" aria-expanded="false" aria-controls="filterCollapse" title="Hiển thị/Ẩn bộ lọc">
+                <i class='bx bx-filter-alt'></i>
             </button>
         </div>
         <div class="collapse" id="filterCollapse">
@@ -145,42 +144,65 @@
         </div>
     </div>
 
+    <!-- Unified Sync Control Panel -->
+    <div class="card card-control-panel mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0"><i class='bx bx-sync me-2'></i>Bảng điều khiển đồng bộ</h5>
+            <button class="btn btn-light btn-sm btn-icon-toggle" type="button" data-toggle="collapse" data-target="#syncCollapse" aria-expanded="false" aria-controls="syncCollapse" title="Hiển thị/Ẩn bảng điều khiển">
+                <i class='bx bxs-chevron-down'></i>
+            </button>
+        </div>
+        <div class="collapse" id="syncCollapse">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-lg-7 mb-3">
+                        <label for="date-range-picker" class="form-label control-panel-label">Chọn khoảng ngày tùy chỉnh</label>
+                        <div class="input-group">
+                            <input type="text" id="date-range-picker" class="form-control" placeholder="Chọn ngày bắt đầu và kết thúc"/>
+                            <button id="sync-date-range-btn" class="btn btn-success"><i class='bx bx-play-circle me-1'></i>Đồng bộ</button>
+                        </div>
+                    </div>
+                    <div class="col-lg-5 mb-3">
+                         <label class="form-label control-panel-label">Hoặc chọn nhanh</label>
+                         <div class="btn-group w-100" role="group">
+                            <button id="sync-preset-today" class="btn btn-outline-secondary btn-preset">Hôm nay</button>
+                            <button id="sync-preset-yesterday" class="btn btn-outline-secondary btn-preset">Hôm qua</button>
+                            <button id="sync-preset-7days" class="btn btn-outline-secondary btn-preset">7 ngày qua</button>
+                            <button id="sync-preset-this-month" class="btn btn-outline-secondary btn-preset">Tháng này</button>
+                         </div>
+                    </div>
+                </div>
+                 <div class="row mt-3">
+                    <div class="col-12 d-flex justify-content-between">
+                        <button id="sync-this-week-btn" class="btn btn-info"><i class='bx bx-calendar-week me-1'></i>Đồng bộ tuần này</button>
+                        <button id="cancel-any-sync-btn" class="btn btn-danger" disabled><i class='bx bx-block me-1'></i>Hủy tiến trình</button>
+                    </div>
+                 </div>
+                <div id="sync-progress-container" class="mt-4 d-none">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <p id="sync-status" class="mb-1 text-muted">Đang chờ...</p>
+                        <p class="mb-1 text-muted font-weight-bold">Thời gian: <span id="sync-elapsed-time">00:00</span></p>
+                    </div>
+                    <div class="progress" style="height: 10px; background-color: #495057;">
+                        <div id="sync-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <div id="sync-stats-details" class="mt-2 small d-flex justify-content-between">
+                        <span>Trang: <span id="sync-pages">0/0</span></span>
+                        <span>Mới: <span id="sync-created" class="badge badge-success">0</span></span>
+                        <span>Cập nhật: <span id="sync-updated" class="badge badge-info">0</span></span>
+                        <span>Lỗi: <span id="sync-errors" class="badge badge-danger">0</span></span>
+                        <span>Tổng: <span id="sync-total" class="badge badge-primary">0</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
 {{-- Bảng đơn hàng --}}
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
         <h5 class="card-title mb-0">Danh sách Đơn hàng</h5>
-        @can('sync-pancake')
-        <div class="sync-controls d-flex gap-2 mt-3 mt-md-0">
-            <div class="btn-group">
-                <button type="button" class="btn btn-primary btn-sync" id="sync-today-btn" title="Đồng bộ đơn hàng hôm nay">
-                    <i class='bx bx-sync me-1'></i> Hôm nay
-                </button>
-                <button type="button" class="btn btn-outline-secondary btn-sync" id="sync-yesterday-btn" title="Đồng bộ đơn hàng hôm qua">
-                    <i class='bx bx-sync me-1'></i> Hôm qua
-                </button>
-                <button type="button" class="btn btn-outline-info dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="Đồng bộ theo ngày cụ thể">
-                    <i class='bx bx-calendar me-1'></i> Tùy chọn
-                </button>
-                <div class="dropdown-menu dropdown-menu-right">
-                    <a class="dropdown-item sync-specific-day" href="#" data-days-ago="3">3 ngày trước</a>
-                    <a class="dropdown-item sync-specific-day" href="#" data-days-ago="7">7 ngày trước</a>
-                    <a class="dropdown-item sync-specific-day" href="#" data-days-ago="14">14 ngày trước</a>
-                    <a class="dropdown-item sync-specific-day" href="#" data-days-ago="30">30 ngày trước</a>
-                    <div class="dropdown-divider"></div>
-                    <a class="dropdown-item" href="#" id="sync-custom-day">Chọn ngày cụ thể...</a>
-                </div>
-            </div>
-            <div class="btn-group">
-                <button type="button" class="btn btn-label-danger btn-sync" id="sync-all-orders-btn" title="Đồng bộ tất cả đơn hàng từ Pancake">
-                    <i class='bx bx-sync me-1'></i> Đồng bộ TẤT CẢ
-                </button>
-                <button type="button" class="btn btn-label-warning" id="cancel-stuck-sync-btn" title="Hủy tiến trình đồng bộ đang treo">
-                    <i class='bx bx-block me-1'></i> Hủy
-                </button>
-            </div>
-        </div>
-        @endcan
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -205,8 +227,15 @@
             </table>
         </div>
     </div>
-    <div class="card-footer clearfix" id="pagination-links">
-        {{ $orders->appends(request()->query())->links('vendor.pagination.bootstrap-4') }}
+    <div class="card-footer clearfix">
+        <div class="d-flex justify-content-between align-items-center">
+            @if($orders->total() > 0)
+            <div class="text-muted">
+                Hiển thị {{ $orders->firstItem() }} - {{ $orders->lastItem() }} trên tổng số {{ $orders->total() }} đơn hàng
+            </div>
+            @endif
+            {{ $orders->appends(request()->query())->links('vendor.pagination.bootstrap-4') }}
+        </div>
     </div>
 </div>
 
@@ -298,6 +327,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/@ttskch/select2-bootstrap4-theme@x.x.x/dist/select2-bootstrap4.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
 <style>
     /* CSS cho thông báo loading */
     .loading-overlay {
@@ -465,6 +495,115 @@
     .btn-sync:hover .fa-sync-alt {
         transform: rotate(180deg);
     }
+
+    /* Control Panel Customizations */
+    .card-control-panel {
+        background-color: #2c2f33; /* Darker background */
+        color: #f8f9fa; /* Lighter text */
+        border: 1px solid #454d55;
+        border-radius: .375rem;
+    }
+    .card-control-panel .card-header {
+        background-color: rgba(255, 255, 255, 0.03);
+        border-bottom: 1px solid #454d55;
+        /* display, justify-content, and align-items are now handled by Bootstrap classes */
+    }
+    .control-panel-label {
+        color: #ced4da;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+    }
+
+    /* Icon Toggle Buttons */
+    .btn-icon-toggle {
+        background: transparent;
+        border: 1px solid #6c757d;
+        color: #ced4da;
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border-radius: 50%;
+    }
+    .btn-icon-toggle:hover {
+        background: #495057;
+        color: #f8f9fa;
+    }
+    .btn-icon-toggle > i {
+        transition: transform 0.3s ease;
+    }
+    .btn-icon-toggle[aria-expanded="false"] > i {
+        transform: rotate(0deg); /* Explicitly set rotation for collapsed state */
+    }
+    .btn-icon-toggle[aria-expanded="true"] > i {
+        transform: rotate(180deg);
+    }
+
+    /* Input Group Styling */
+    .card-control-panel .input-group .form-control {
+        background-color: #23272b;
+        border-color: #6c757d;
+        color: #f8f9fa;
+    }
+    .card-control-panel .input-group .form-control::placeholder {
+        color: #6c757d;
+    }
+    .card-control-panel .input-group .btn {
+        z-index: 2; /* Ensure button is on top */
+    }
+
+    /* Preset Date Buttons */
+    .btn-preset {
+        background-color: transparent;
+        border-color: #6c757d;
+        color: #ced4da;
+    }
+    .btn-preset:hover, .btn-preset:focus, .btn-preset.active {
+        background-color: #007bff;
+        border-color: #007bff;
+        color: #fff;
+        box-shadow: none;
+    }
+
+    /* Progress Bar Container */
+    #sync-progress-container {
+        margin-top: 1.5rem !important;
+        padding-top: 1.5rem;
+        border-top: 1px solid #454d55;
+    }
+    #sync-stats-details {
+        color: #adb5bd;
+    }
+
+    /* Litepicker Dark Theme */
+    .litepicker {
+        background-color: #23272b !important;
+        border-color: #6c757d !important;
+    }
+    .litepicker .container__months, .litepicker .container__tooltip {
+        background-color: #23272b !important;
+    }
+    .litepicker .month-item-header, .litepicker .day-item, .litepicker .calendar-header-month, .litepicker .calendar-header-year, .litepicker .button-cancel {
+        color: #f8f9fa !important;
+    }
+    .litepicker .day-item:hover {
+        background-color: #007bff !important;
+        color: #fff !important;
+    }
+    .litepicker .button-apply {
+         background-color: #28a745 !important;
+        color: #fff !important;
+    }
+    .litepicker .is-start-date, .litepicker .is-end-date {
+        background-color: #007bff !important;
+        color: #fff !important;
+    }
+    .litepicker .is-in-range {
+        background-color: rgba(0, 123, 255, 0.3) !important;
+    }
+
 </style>
 @endsection
 
@@ -472,6 +611,7 @@
     {{-- SweetAlert2 --}}
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -676,267 +816,141 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // === PANCAKE SYNC IMPLEMENTATION ===
-    @can('sync-pancake')
-    // Global variables for sync state
+    // === UNIFIED PANCAKE SYNC IMPLEMENTATION ===
     const syncState = {
         inProgress: false,
-        currentPage: 0,
-        totalPages: 0,
-        startDate: null,
-        endDate: null,
-        stats: {
-            created: 0,
-            updated: 0,
-            errors: [],
-            total: 0
-        },
-        progressInterval: null,
-        startTime: null,
         syncInfo: null,
-        retryAttempts: 0
+        totalPages: 0,
+        currentPage: 0,
+        totalEntries: 0,
+        stats: { created: 0, updated: 0, errors: 0, total: 0 },
+        startTime: null,
+        timerInterval: null
     };
 
-    // Event listeners for sync buttons
-    $('#sync-all-orders-btn').on('click', function() {
-        confirmAndStartSync('all');
+    const picker = new Litepicker({
+        element: document.getElementById('date-range-picker'),
+        singleMode: false,
+        format: 'YYYY-MM-DD',
+        setup: (picker) => {
+            picker.on('selected', (date1, date2) => {
+                // on selection
+            });
+        }
     });
 
-    $('#sync-today-btn').on('click', function() {
-        const today = new Date().toISOString().split('T')[0];
-        confirmAndStartSync('date', {
-            date: today,
-            displayText: 'hôm nay'
-        });
+    // Preset buttons
+    $('.btn-preset').on('click', function() {
+        $('.btn-preset').removeClass('active');
+        $(this).addClass('active');
     });
 
-    $('#sync-yesterday-btn').on('click', function() {
+    $('#sync-preset-today').on('click', function() {
+        const today = new Date();
+        picker.setDateRange(today, today);
+        $('#sync-date-range-btn').trigger('click');
+    });
+
+    $('#sync-preset-yesterday').on('click', function() {
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-        confirmAndStartSync('date', {
-            date: yesterdayStr,
-            displayText: 'hôm qua'
-        });
+        picker.setDateRange(yesterday, yesterday);
+        $('#sync-date-range-btn').trigger('click');
     });
 
-    $('.sync-specific-day').on('click', function(e) {
-        e.preventDefault();
-        const daysAgo = parseInt($(this).data('days-ago'));
-        const date = new Date();
-        date.setDate(date.getDate() - daysAgo);
-        const formattedDate = date.toISOString().split('T')[0];
-
-        confirmAndStartSync('date', {
-            date: formattedDate,
-            displayText: `${daysAgo} ngày trước`,
-            daysAgo: daysAgo
-        });
+    $('#sync-preset-7days').on('click', function() {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 6);
+        picker.setDateRange(startDate, endDate);
+        $('#sync-date-range-btn').trigger('click');
     });
 
-    $('#sync-custom-day').on('click', function(e) {
-        e.preventDefault();
-        $('#syncDateModal').modal('show');
+    $('#sync-preset-this-month').on('click', function() {
+        const today = new Date();
+        const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        picker.setDateRange(startDate, endDate);
+         $('#sync-date-range-btn').trigger('click');
     });
 
-    $('#syncDateBtn').on('click', function() {
-        const syncDate = $('#sync_date').val();
-        if (!syncDate) {
-            Swal.fire({
-                title: 'Lỗi',
-                text: 'Vui lòng chọn ngày cần đồng bộ',
-                icon: 'error'
-            });
-            return;
-        }
-
-        $('#syncDateModal').modal('hide');
-
-        confirmAndStartSync('date', {
-            date: syncDate,
-            displayText: formatDate(syncDate),
-            fromModal: true
-        });
-    });
-
-    $('#cancel-stuck-sync-btn').on('click', function() {
-        cancelSync();
-    });
-
-    // Sync by date button in the card
-    $('#sync_by_date_btn').on('click', function() {
-        const syncDate = $('#sync_date').val();
-        if (!syncDate) {
-            Swal.fire({
-                title: 'Lỗi',
-                text: 'Vui lòng chọn ngày cần đồng bộ',
-                icon: 'error'
-            });
-            return;
-        }
-
-        confirmAndStartSync('date', {
-            date: syncDate,
-            displayText: formatDate(syncDate)
-        });
-    });
-
-    // Sync all button in the card
-    $('#sync_all_btn').on('click', function() {
-        confirmAndStartSync('all');
-    });
-
-    // Function to confirm and start sync
-    function confirmAndStartSync(syncType, options = {}) {
-        // Check if sync is already in progress
+    // Main sync buttons
+    $('#sync-date-range-btn').on('click', function() {
         if (syncState.inProgress) {
-            Swal.fire({
-                title: 'Đang có quá trình đồng bộ!',
-                text: 'Một quá trình đồng bộ khác đang chạy. Bạn có muốn hủy và bắt đầu mới?',
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonText: 'Hủy và bắt đầu mới',
-                cancelButtonText: 'Không, giữ nguyên'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    // Cancel current sync and start new one
-                    cancelSync(true).then(() => {
-                        setTimeout(() => {
-                            startSync(syncType, options);
-                        }, 1000);
-                    });
-                }
-            });
+            Swal.fire('Đang đồng bộ', 'Một quá trình đồng bộ đã chạy. Vui lòng chờ hoặc hủy.', 'warning');
             return;
         }
 
-        // If this is a date sync, store the date in syncState
-        if (syncType === 'date' && options.date) {
-            syncState.date = options.date;
+        const startDate = picker.getStartDate();
+        const endDate = picker.getEndDate();
+
+        if (!startDate || !endDate) {
+            Swal.fire('Lỗi', 'Vui lòng chọn cả ngày bắt đầu và kết thúc.', 'error');
+            return;
         }
 
-        // Show confirmation dialog
-        let title, text, icon = 'question';
+        const startTimestamp = Math.floor(new Date(startDate.dateInstance.setHours(0, 0, 0, 0)).getTime() / 1000);
+        const endTimestamp = Math.floor(new Date(endDate.dateInstance.setHours(23, 59, 59, 999)).getTime() / 1000);
 
-        if (syncType === 'all') {
-            title = 'Xác nhận đồng bộ TẤT CẢ đơn hàng';
-            text = 'Quá trình này có thể mất nhiều thời gian và tài nguyên hệ thống. Bạn có chắc chắn muốn tiếp tục?';
-            icon = 'warning';
-        } else if (syncType === 'date') {
-            title = `Xác nhận đồng bộ đơn hàng ${options.displayText}`;
-            text = `Bạn có chắc muốn đồng bộ đơn hàng của ${options.displayText}?`;
+        startSync(startTimestamp, endTimestamp);
+    });
+
+    $('#sync-this-week-btn').on('click', function() {
+        if (syncState.inProgress) {
+            Swal.fire('Đang đồng bộ', 'Một quá trình đồng bộ đã chạy. Vui lòng chờ hoặc hủy.', 'warning');
+            return;
+        }
+        startSync(); // No params will trigger the 'sync-all' (this week) route
+    });
+
+    $('#cancel-any-sync-btn').on('click', function() {
+        if (!syncState.inProgress) {
+             Swal.fire('Không có gì để hủy', 'Hiện không có tiến trình đồng bộ nào đang chạy.', 'info');
+            return;
         }
 
         Swal.fire({
-            title: title,
-            text: text,
-            icon: icon,
+            title: 'Hủy đồng bộ?',
+            text: "Bạn có chắc muốn dừng quá trình đồng bộ đang chạy?",
+            icon: 'warning',
             showCancelButton: true,
-            confirmButtonColor: '#3085d6',
-            cancelButtonColor: '#d33',
-            confirmButtonText: 'Đồng ý, bắt đầu đồng bộ',
-            cancelButtonText: 'Hủy bỏ'
+            confirmButtonText: 'Đồng ý, Hủy!',
+            cancelButtonText: 'Không'
         }).then((result) => {
             if (result.isConfirmed) {
-                startSync(syncType, options);
+                cancelSync();
             }
         });
-    }
+    });
 
-    // Function to start sync process
-    function startSync(syncType, options = {}) {
-        // Show loading dialog with immediate feedback
-        Swal.fire({
-            title: 'Đang khởi tạo...',
-            html: `
-                <div class="text-center">
-                    <div class="spinner-border text-primary mb-2" role="status">
-                        <span class="sr-only">Đang tải...</span>
-                    </div>
-                    <p class="mb-0">Hệ thống đang kết nối đến Pancake...</p>
-                </div>
-            `,
-            allowOutsideClick: false,
-            showConfirmButton: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
+    function startSync(startTimestamp, endTimestamp) {
+        // Reset state and UI
+        Object.assign(syncState, {
+            inProgress: true,
+            syncInfo: null,
+            totalPages: 0,
+            currentPage: 0,
+            totalEntries: 0,
+            stats: { created: 0, updated: 0, errors: 0, total: 0 },
+            startTime: new Date().getTime(),
+            timerInterval: null
         });
+        $('#sync-progress-container').removeClass('d-none');
+        $('#sync-progress-bar').removeClass('bg-success bg-danger').addClass('bg-info');
+        $('.btn-group button, #sync-date-range-btn, #sync-this-week-btn').prop('disabled', true);
+        $('#cancel-any-sync-btn').prop('disabled', false);
+        updateProgressUI(0, 'Đang gửi yêu cầu đến Pancake...');
 
-        // Reset sync state
-        syncState.inProgress = true;
-        syncState.currentPage = 0;
-        syncState.totalPages = 0;
-        syncState.startTime = new Date().getTime();
-        syncState.stats = {
-            created: 0,
-            updated: 0,
-            errors: [],
-            total: 0
-        };
+        // Start the timer
+        syncState.timerInterval = setInterval(updateTimer, 1000);
 
-        // Determine API endpoint and data
-        let url, data = {};
-
-        if (syncType === 'all') {
-            url = '{{ route("pancake.orders.sync-all") }}';
-        } else if (syncType === 'date') {
-            url = '{{ route("pancake.orders.sync-all") }}';
-
-            // Convert date to start and end timestamps
-            const selectedDate = new Date(options.date);
-            const startDateTime = Math.floor(new Date(selectedDate.setHours(0, 0, 0, 0)).getTime() / 1000);
-            const endDateTime = Math.floor(new Date(selectedDate.setHours(23, 59, 59, 999)).getTime() / 1000);
-
+        const url = '{{ route("pancake.orders.sync-all") }}';
+        let data = {};
+        if(startTimestamp && endTimestamp) {
             data = {
-                date: options.date,
-                startDateTime: startDateTime,
-                endDateTime: endDateTime
+                startDateTime: startTimestamp,
+                endDateTime: endTimestamp,
             };
-
-            console.log("Đồng bộ theo ngày:", {
-                date: options.date,
-                startDateTime: startDateTime,
-                endDateTime: endDateTime
-            });
-
-            // For older dates, show additional warning
-            const today = new Date();
-            const diffDays = Math.floor((today - selectedDate) / (1000 * 60 * 60 * 24));
-
-            if (diffDays > 7) {
-                Swal.fire({
-                    title: 'Lưu ý',
-                    text: `Bạn đang đồng bộ dữ liệu từ ${diffDays} ngày trước. Quá trình này có thể mất nhiều thời gian hoặc không lấy được đầy đủ dữ liệu cũ.`,
-                    icon: 'info',
-                    showCancelButton: true,
-                    confirmButtonText: 'Vẫn tiếp tục',
-                    cancelButtonText: 'Hủy bỏ'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        executeSync(url, data);
-                    } else {
-                        syncState.inProgress = false;
-                        Swal.close();
-                    }
-                });
-                return;
-            }
-        }
-
-        // Execute sync
-        executeSync(url, data);
-    }
-
-    // Function to execute sync API call
-    function executeSync(url, data) {
-        // Log the data being sent for debugging
-        console.log('Sending sync request:', url, data);
-
-        // Ensure we're using the correct parameter name 'date' instead of 'sync_date'
-        if (data.sync_date) {
-            data.date = data.sync_date;
-            delete data.sync_date;
         }
 
         $.ajax({
@@ -944,669 +958,201 @@ document.addEventListener('DOMContentLoaded', () => {
             method: 'POST',
             data: data,
             success: function(response) {
-                console.log('Sync response:', response);
+                if (!syncState.inProgress) return;
+
+                // Force UI update upon receiving a response
+                $('#sync-status').text('Đã nhận phản hồi, đang xử lý dữ liệu...');
+
                 if (response.success) {
-                    // Store sync info
-                    if (response.sync_info) {
                         syncState.syncInfo = response.sync_info;
-                    }
-
-                    // Store total pages
-                    if (response.total_pages) {
                         syncState.totalPages = response.total_pages;
-                    }
-
-                    // Store total entries
-                    if (response.total_entries) {
                         syncState.totalEntries = response.total_entries;
-                    }
+                    updateStatsFromResponse(response);
 
-                    console.log("Sync started: Page " + (response.current_page || 1) + "/" +
-                               (response.total_pages || 1) + ", Continue: " +
-                               (response.continue ? "Yes" : "No") + ", Next page: " +
-                               (response.next_page || "None"));
-
-                    // Update sync stats if available
-                    if (response.stats) {
-                        syncState.stats.created += response.stats.created || 0;
-                        syncState.stats.updated += response.stats.updated || 0;
-                        if (response.stats.errors && response.stats.errors.length) {
-                            syncState.stats.errors = syncState.stats.errors.concat(response.stats.errors);
-                        }
-                    }
-
-                    // Show progress dialog
-                    showSyncProgress();
-
-                    // If there are more pages to process
                     if (response.continue && response.next_page) {
                         processNextPage(response.next_page);
                     } else {
-                        // Finish sync if only one page
                         finishSync();
                     }
                 } else {
-                    handleSyncError(response.message || 'Có lỗi xảy ra trong quá trình đồng bộ.');
+                    handleSyncError(response.message || 'Lỗi không xác định khi bắt đầu đồng bộ.');
                 }
             },
             error: function(xhr) {
-                console.error('Sync error:', xhr);
-                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Đã xảy ra lỗi khi đồng bộ';
+                if (!syncState.inProgress) return;
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Lỗi kết nối khi bắt đầu đồng bộ.';
                 handleSyncError(errorMsg);
             }
         });
     }
 
-    // Process next page of sync
     function processNextPage(pageNumber) {
+        if (!syncState.inProgress) return;
         syncState.currentPage = pageNumber;
+        updateProgressUI();
 
         const data = {
-            page_number: pageNumber
+            page_number: pageNumber,
+            sync_info: syncState.syncInfo
         };
-
-        // Add sync info if available
-        if (syncState.syncInfo) {
-            data.sync_info = syncState.syncInfo;
-        }
-
-        // For date sync, include the date parameter with the correct name
-        if (syncState.date) {
-            data.date = syncState.date;
-        }
-
-        console.log(`Processing page ${pageNumber}/${syncState.totalPages || '?'}`);
 
         $.ajax({
             url: '{{ route("pancake.orders.sync-process-next") }}',
             method: 'POST',
             data: data,
             success: function(response) {
+                if (!syncState.inProgress) return;
                 if (response.success) {
-                    // Update total pages if changed
-                    if (response.total_pages) {
-                        syncState.totalPages = response.total_pages;
-                    }
-
-                    // Update stats
-                    if (response.stats) {
-                        syncState.stats.created += response.stats.created || 0;
-                        syncState.stats.updated += response.stats.updated || 0;
-                        syncState.stats.total += response.stats.total || 0;
-
-                        if (response.stats.errors && response.stats.errors.length) {
-                            syncState.stats.errors = syncState.stats.errors.concat(response.stats.errors);
-                        }
-
-                        // Update stats in the progress dialog
-                        updateProgressDialog();
-                    }
-
-                    console.log(`Completed page ${response.current_page}/${response.total_pages}, continue=${response.continue}, next_page=${response.next_page || 'none'}`);
-
-                    // If there are more pages
+                    updateStatsFromResponse(response);
                     if (response.continue && response.next_page) {
-                        processNextPage(response.next_page);
+                        setTimeout(() => processNextPage(response.next_page), 500); // Add a small delay
                     } else {
-                        // Finished all pages
-                        console.log("Sync completed - last page or no more pages");
                         finishSync();
                     }
                 } else {
-                    handleSyncError(response.message || 'Có lỗi xảy ra khi xử lý trang tiếp theo.');
+                    handleSyncError(response.message || `Lỗi khi xử lý trang ${pageNumber}.`);
                 }
             },
             error: function(xhr) {
-                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Đã xảy ra lỗi khi đồng bộ';
+                if (!syncState.inProgress) return;
+                const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : `Lỗi kết nối khi xử lý trang ${pageNumber}.`;
                 handleSyncError(errorMsg);
             }
         });
     }
 
-    // Show sync progress dialog
-    function showSyncProgress() {
-        Swal.fire({
-            title: 'Đang đồng bộ dữ liệu',
-            html: `
-                <div class="text-left">
-                    <p class="mb-2">Tiến trình đồng bộ đang được thực hiện. Vui lòng không đóng trang này.</p>
-                    <div class="progress mb-3">
-                        <div id="sync-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success"
-                             role="progressbar" style="width: 0%"
-                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
-                    </div>
-                    <div id="sync-stats" class="p-2 border rounded bg-light">
-                        <div class="row">
-                            <div class="col-6">
-                                <p class="mb-1"><strong>Tiến trình:</strong> <span id="sync-page-progress">0/0</span> trang</p>
-                                <p class="mb-1">Đơn hàng mới: <span id="sync-created" class="badge badge-success">0</span></p>
-                                <p class="mb-1">Đơn cập nhật: <span id="sync-updated" class="badge badge-info">0</span></p>
-                            </div>
-                            <div class="col-6">
-                                <p class="mb-1">Tiến độ: <span id="sync-progress-percentage">0%</span></p>
-                                <p class="mb-1">Lỗi: <span id="sync-errors" class="badge badge-danger">0</span></p>
-                                <p class="mb-1">Tổng: <span id="sync-total-processed">0</span>/<span id="sync-total-expected">?</span></p>
-                            </div>
-                        </div>
-                        <p class="mb-1" id="sync-current-operation">Đang khởi tạo dữ liệu...</p>
-                        <p class="mb-0" id="sync-processing-details"></p>
-                        <p class="mb-0 text-muted" id="sync-time-elapsed">Thời gian: 0 giây</p>
-                    </div>
-                    <div id="sync-error-details" class="mt-2 text-danger d-none">
-                        <p class="mb-1"><i class="fas fa-exclamation-triangle"></i> Lỗi gần đây:</p>
-                        <ul id="sync-error-list" class="pl-3 mb-0 small"></ul>
-                    </div>
-                </div>
-            `,
-            allowOutsideClick: false,
-            showConfirmButton: false,
-            showCancelButton: true,
-            cancelButtonText: 'Hủy đồng bộ',
-        }).then((result) => {
-            if (result.dismiss === Swal.DismissReason.cancel) {
-                cancelSync();
-            }
-        });
+    function cancelSync() {
+        if (!syncState.inProgress) return;
+        syncState.inProgress = false;
 
-        // Start checking progress periodically
-        startProgressTracking();
-
-        // Hiển thị ngay phản hồi ban đầu
-        updateElapsedTime();
-        $('#sync-current-operation').text('Đang kết nối đến máy chủ Pancake...');
-    }
-
-    // Update progress dialog with current stats
-    function updateProgressDialog() {
-        $('#sync-created').text(syncState.stats.created);
-        $('#sync-updated').text(syncState.stats.updated);
-        $('#sync-errors').text(syncState.stats.errors.length);
-
-        // Update progress bar
-        const progress = syncState.totalPages > 0
-            ? Math.round((syncState.currentPage / syncState.totalPages) * 100)
-            : 0;
-
-        $('#sync-progress-bar').css('width', progress + '%').attr('aria-valuenow', progress).text(progress + '%');
-    }
-
-    // Track sync progress
-    function startProgressTracking() {
-        // Clear any existing interval
-        if (syncState.progressInterval) {
-            clearInterval(syncState.progressInterval);
-        }
-
-        // Variable for tracking timing
-        let checkCount = 0;
-        let interval = 500; // Start with more frequent checks (500ms)
-
-        // Initial immediate check
-        setTimeout(() => checkSyncProgress(), 100);
-
-        // Check progress with adaptive timing
-        function setNextCheck() {
-            checkCount++;
-
-            // Adjust interval based on check count
-            if (checkCount > 3 && checkCount < 10) {
-                interval = 1000; // 1 second after first few checks
-            } else if (checkCount >= 10) {
-                interval = 2000; // 2 seconds after more checks
-            }
-
-            syncState.progressInterval = setTimeout(() => {
-                checkSyncProgress();
-                setNextCheck();
-            }, interval);
-        }
-
-        // Start the first timer
-        setNextCheck();
-
-        // Function to check sync progress
-        function checkSyncProgress() {
+        if (syncState.syncInfo && syncState.syncInfo.token) {
+            // If we have a token, it means a sync process is running on the server.
+            // We need to send a request to cancel it.
+            showLoading('Đang gửi yêu cầu hủy...');
+            /*
             $.ajax({
-                url: '{{ route("pancake.orders.sync-all-progress") }}',
-                method: 'GET',
+                url: '{{ route("pancake.sync.cancel") }}', // Corrected route name
+                method: 'POST',
+                data: {
+                    _token: '{{ csrf_token() }}',
+                    sync_token: syncState.syncInfo.token
+                },
                 success: function(response) {
-                    if (response.success) {
-                        // Store the sync info for cancel operations
-                        if (response.sync_info) {
-                            syncState.syncInfo = response.sync_info;
-                        }
-
-                        // Update progress bar
-                        const progress = response.progress || 0;
-                        $('#sync-progress-bar').css('width', progress + '%').attr('aria-valuenow', progress).text(progress + '%');
-                        $('#sync-progress-percentage').text(progress + '%');
-
-                        // Update page progress
-                        const currentPage = response.current_page || syncState.currentPage || 0;
-                        const totalPages = response.total_pages || syncState.totalPages || 1;
-                        $('#sync-page-progress').text(`${currentPage}/${totalPages}`);
-
-                        // Update order counts
-                        const created = response.stats?.created || 0;
-                        const updated = response.stats?.updated || 0;
-                        const errors = response.stats?.errors_count || 0;
-                        $('#sync-created').text(created);
-                        $('#sync-updated').text(updated);
-                        $('#sync-errors').text(errors);
-
-                        // Update total processed/expected
-                        const totalProcessed = response.order_stats?.total_processed || (created + updated);
-                        const totalExpected = response.order_stats?.total_expected || totalProcessed;
-                        $('#sync-total-processed').text(totalProcessed);
-                        $('#sync-total-expected').text(totalExpected > 0 ? totalExpected : '?');
-
-                        // Update detailed progress information
-                        const statusElement = $('#sync-current-operation');
-                        if (statusElement.length) {
-                            // Use server message if available, or create default message
-                            if (response.message) {
-                                statusElement.text(response.message);
-                            } else {
-                                let statusMsg = `Đang xử lý trang ${currentPage}/${totalPages}`;
-                                if(totalExpected > 0) {
-                                    statusMsg += ` - ${totalProcessed}/${totalExpected} đơn hàng`;
-                                }
-                                statusElement.text(statusMsg);
-                            }
-                        }
-
-                        // Show elapsed time from server if available, otherwise calculate locally
-                        const timeElement = $('#sync-time-elapsed');
-                        if (timeElement.length) {
-                            if (response.detailed_progress?.elapsed_time) {
-                                timeElement.text(`Thời gian: ${response.detailed_progress.elapsed_time}`);
-                            } else {
-                                updateElapsedTime();
-                            }
-                        }
-
-                        // Add estimated time remaining if available
-                        const processingDetails = $('#sync-processing-details');
-                        if (processingDetails.length) {
-                            let detailsHtml = '';
-
-                            // Add processing rate if available
-                            if (response.detailed_progress?.processing_rate) {
-                                detailsHtml += `<span class="badge badge-info">Tốc độ: ${response.detailed_progress.processing_rate} đơn/phút</span> `;
-                            }
-
-                            // Add estimated time remaining if available
-                            if (response.detailed_progress?.estimated_time_remaining) {
-                                detailsHtml += `<span class="badge badge-warning">Còn lại: ${response.detailed_progress.estimated_time_remaining}</span>`;
-                            }
-
-                            processingDetails.html(detailsHtml);
-                        }
-
-                        // Display recent errors if available
-                        if (response.stats?.failed_orders && response.stats.failed_orders.length > 0) {
-                            const errorDetails = $('#sync-error-details');
-                            const errorList = $('#sync-error-list');
-
-                            errorDetails.removeClass('d-none');
-                            errorList.empty();
-
-                            // Display up to 3 most recent errors
-                            response.stats.failed_orders.slice(-3).forEach(error => {
-                                const errorText = error.order_id ?
-                                    `Đơn #${error.order_id}: ${error.error}` :
-                                    error.error;
-                                errorList.append(`<li>${errorText}</li>`);
-                            });
-                        }
-
-                        // Update sync state from server
-                        if (response.current_page) syncState.currentPage = response.current_page;
-                        if (response.total_pages) syncState.totalPages = response.total_pages;
-                        syncState.inProgress = response.in_progress;
-
-                        // Check if sync is completed
-                        const isCompleted = progress >= 100 || !response.in_progress;
-
-                        // If sync is paused but not completed
-                        if (!response.in_progress && response.current_page < response.total_pages) {
-                            // Show resume confirmation
-                            clearInterval(syncState.progressInterval);
-
-                            Swal.fire({
-                                title: 'Đồng bộ tạm dừng',
-                                html: `Đồng bộ đã tạm dừng ở trang ${response.current_page}/${response.total_pages}. Bạn có muốn tiếp tục không?`,
-                                icon: 'warning',
-                                showCancelButton: true,
-                                confirmButtonText: 'Tiếp tục',
-                                cancelButtonText: 'Đóng'
-                            }).then((result) => {
-                                if (result.isConfirmed) {
-                                    // Resume sync with next page
-                                    processNextPage(response.current_page + 1);
-                                    return;
-                                } else {
-                                    syncState.inProgress = false;
-                                }
-                            });
-                        }
-
-                        // If completed
-                        if (isCompleted) {
-                            finishSync();
-                        }
-                    }
+                    hideLoading();
+                    resetSyncUI('Đồng bộ đã được hủy thành công.', false);
+                    toastr.success('Tiến trình đồng bộ đã được hủy.', 'Đã hủy');
                 },
                 error: function(xhr) {
-                    console.error('Error checking sync progress:', xhr);
-                    $('#sync-current-operation').text('Không thể kết nối đến máy chủ. Đang thử lại...');
+                    hideLoading();
+                    resetSyncUI('Không thể hủy đồng bộ. Vui lòng thử lại.', true);
+                    toastr.error('Có lỗi xảy ra khi cố gắng hủy. ' + (xhr.responseJSON?.message || ''), 'Lỗi');
+                },
+                complete: function() {
+                    syncState.inProgress = false; // Ensure progress is stopped
+                    $('#sync-progress-container').addClass('d-none'); // Hide progress bar
                 }
             });
+            */
+            // Mock cancellation for UI testing without lag
+            setTimeout(() => {
+                hideLoading();
+                resetSyncUI('Đồng bộ đã được hủy thành công (DEMO).', false);
+                toastr.success('Tiến trình đồng bộ đã được hủy (DEMO).', 'Đã hủy');
+                syncState.inProgress = false;
+                $('#sync-progress-container').addClass('d-none');
+            }, 500);
+        } else {
+            // If there's no token, it means the process hasn't started on the server yet,
+            // or it's just the initial client-side setup. We can just reset the UI.
+            resetSyncUI('Đồng bộ đã được hủy.', false);
+            $('#sync-progress-container').addClass('d-none'); // Hide progress bar
+            toastr.info('Tiến trình đã được hủy.', 'Đã hủy');
+            syncState.inProgress = false;
         }
     }
 
-    // Update elapsed time display
-    function updateElapsedTime() {
-        if (!syncState.startTime) return;
-
-        const now = new Date().getTime();
-        const elapsed = Math.floor((now - syncState.startTime) / 1000); // Seconds
-
-        // Format elapsed time
-        let timeString = formatTime(elapsed);
-
-        $('#sync-time-elapsed').text('Thời gian: ' + timeString);
-
-        // Also update the progress bar in the card if it exists
-        $('#sync_progress_bar').css('width', (syncState.totalPages > 0 ? Math.round((syncState.currentPage / syncState.totalPages) * 100) : 0) + '%');
-        $('#sync_status_text').text('Đang đồng bộ trang ' + syncState.currentPage + '/' + syncState.totalPages);
-
-        // Update stats in the card
-        if (syncState.stats) {
-            $('#sync_order_stats').removeClass('d-none');
-            $('#sync_new_orders').text(syncState.stats.created);
-            $('#sync_updated_orders').text(syncState.stats.updated);
-            $('#sync_errors').text(syncState.stats.errors.length);
-        }
-    }
-
-    // Finish sync process
-    function finishSync() {
-        // Stop progress tracking
-        if (syncState.progressInterval) {
-            clearInterval(syncState.progressInterval);
-            syncState.progressInterval = null;
-        }
-
-        // Update state
-        syncState.inProgress = false;
-
-        // Check if sync was partial
-        const isPartialSync = syncState.currentPage < syncState.totalPages;
-
-        // Calculate stats
-        const totalOrders = syncState.stats.created + syncState.stats.updated;
-        const elapsedSeconds = Math.floor((new Date().getTime() - syncState.startTime) / 1000);
-        const processingRate = elapsedSeconds > 0 ? Math.round((totalOrders / elapsedSeconds) * 60) : 0;
-
-        // Show results dialog
-        let resultTitle = isPartialSync ? 'Đồng bộ tạm dừng!' : 'Đồng bộ hoàn tất!';
-
-        // Add badge labels
-        const newBadge = '<span class="badge badge-success">Mới</span>';
-        const updateBadge = '<span class="badge badge-info">Cập nhật</span>';
-        const errorBadge = '<span class="badge badge-danger">Lỗi</span>';
-
-        Swal.fire({
-            title: resultTitle,
-            html: `
-                <div class="text-left">
-                    <p class="mb-3">Quá trình đồng bộ ${isPartialSync ? 'đã tạm dừng' : 'đã hoàn tất'} sau ${formatTime(elapsedSeconds)}.</p>
-                    ${isPartialSync ?
-                      `<div class="alert alert-warning">
-                        <p class="mb-2"><i class="fas fa-exclamation-triangle mr-2"></i> Đã xử lý ${syncState.currentPage}/${syncState.totalPages} trang.</p>
-                        <p class="mb-0">Bạn có thể tiếp tục đồng bộ các trang còn lại sau.</p>
-                       </div>` : ''}
-                    <div class="alert ${totalOrders > 0 ? 'alert-success' : 'alert-info'}">
-                        <h5 class="mb-2">Kết quả đồng bộ:</h5>
-                        <ul class="mb-0 fa-ul">
-                            <li><span class="fa-li"><i class="fas fa-plus-circle text-success"></i></span>
-                                ${newBadge} Đơn hàng mới: ${syncState.stats.created}</li>
-                            <li><span class="fa-li"><i class="fas fa-sync-alt text-info"></i></span>
-                                ${updateBadge} Đơn hàng cập nhật: ${syncState.stats.updated}</li>
-                            <li><span class="fa-li"><i class="fas fa-exclamation-triangle text-danger"></i></span>
-                                ${errorBadge} Số lỗi: ${syncState.stats.errors.length}</li>
-                            <li><span class="fa-li"><i class="fas fa-calculator"></i></span>
-                                <strong>Tổng đơn hàng đã xử lý: ${totalOrders}</strong></li>
-                        </ul>
-                    </div>
-                    <div class="alert alert-light border mt-3">
-                        <h6 class="mb-2">Thống kê hiệu suất:</h6>
-                        <div class="row">
-                            <div class="col-6">
-                                <p class="mb-1"><i class="fas fa-clock text-info"></i> Thời gian: ${formatTime(elapsedSeconds)}</p>
-                            </div>
-                            <div class="col-6">
-                                <p class="mb-1"><i class="fas fa-tachometer-alt text-success"></i> Tốc độ: ${processingRate} đơn/phút</p>
-                            </div>
-                        </div>
-                    </div>
-                    ${syncState.stats.errors.length > 0 ?
-                      '<div class="alert alert-warning mt-3"><strong>Chi tiết lỗi:</strong><ul class="mb-0">' +
-                      syncState.stats.errors.slice(0, 5).map(err => `<li>${err}</li>`).join('') +
-                      (syncState.stats.errors.length > 5 ? `<li>...và ${syncState.stats.errors.length - 5} lỗi khác</li>` : '') +
-                      '</ul></div>' : ''}
-                </div>
-            `,
-            icon: isPartialSync ? 'warning' : 'success',
-            confirmButtonText: isPartialSync ? 'Tiếp tục đồng bộ' : 'OK',
-            showCancelButton: isPartialSync,
-            cancelButtonText: 'Đóng'
-        }).then((result) => {
-            // If user wants to continue sync
-            if (isPartialSync && result.isConfirmed) {
-                // Continue from next page
-                syncState.inProgress = true;
-                processNextPage(syncState.currentPage + 1);
-                return;
-            }
-
-            // Reload page if orders were created or updated
-            if (totalOrders > 0) {
-                window.location.href = '{{ route("orders.index") }}';
-            }
-        });
-    }
-
-    // Handle sync error
-    function handleSyncError(errorMessage) {
-        // Stop progress tracking
-        if (syncState.progressInterval) {
-            clearInterval(syncState.progressInterval);
-            syncState.progressInterval = null;
-        }
-
-        // Update state
-        syncState.inProgress = false;
-
-        // Track retry attempts
-        if (!syncState.retryAttempts) {
-            syncState.retryAttempts = 0;
-        }
-
-        // Allow retrying a few times for connection issues
-        if (syncState.retryAttempts < 2 &&
-           (errorMessage.includes('timeout') ||
-            errorMessage.includes('connection') ||
-            errorMessage.includes('network') ||
-            errorMessage.includes('không kết nối'))) {
-
-            syncState.retryAttempts++;
-
-            Swal.fire({
-                title: 'Đang thử lại...',
-                html: `
-                    <div class="text-center">
-                        <div class="spinner-border text-warning" role="status">
-                            <span class="sr-only">Đang tải...</span>
-                        </div>
-                        <p class="mt-2">Gặp sự cố kết nối. Đang thử lại lần ${syncState.retryAttempts}/2...</p>
-                        <p class="text-danger small">${errorMessage}</p>
-                    </div>
-                `,
-                showConfirmButton: false,
-                timer: 2000,
-                timerProgressBar: true,
-                didOpen: () => {
-                    Swal.showLoading();
-                }
-            }).then(() => {
-                // Try to resume from where we left off
-                if (syncState.currentPage > 0) {
-                    syncState.inProgress = true;
-                    processNextPage(syncState.currentPage);
-                } else {
-                    // Restart completely if we didn't even get to the first page
-                    startSync(syncState.date ? 'date' : 'all', syncState.date ? { date: syncState.date } : {});
-                }
-            });
-
+    function updateTimer() {
+        if (!syncState.inProgress || !syncState.startTime) {
+            clearInterval(syncState.timerInterval);
             return;
         }
+        const now = new Date().getTime();
+        const elapsedSeconds = Math.floor((now - syncState.startTime) / 1000);
 
-        // Reset retry counter
-        syncState.retryAttempts = 0;
+        const hours = Math.floor(elapsedSeconds / 3600);
+        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+        const seconds = elapsedSeconds % 60;
 
-        // Show error message
-        Swal.fire({
-            title: 'Lỗi đồng bộ!',
-            html: `
-                <div class="text-left">
-                    <p class="text-danger font-weight-bold">${errorMessage}</p>
-                    <p class="mt-2">Bạn có thể:</p>
-                    <ul>
-                        <li>Thử lại quá trình đồng bộ</li>
-                        <li>Kiểm tra kết nối mạng</li>
-                        <li>Kiểm tra cài đặt Pancake của bạn</li>
-                    </ul>
-                </div>
-            `,
-            icon: 'error',
-            confirmButtonText: 'Thử lại',
-            showCancelButton: true,
-            cancelButtonText: 'Đóng'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                // Try again with the same settings
-                if (syncState.date) {
-                    startSync('date', { date: syncState.date });
-                } else {
-                    startSync('all');
-                }
-            }
+        let timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        if (hours > 0) {
+            timeString = `${hours.toString().padStart(2, '0')}:${timeString}`;
+        }
+
+        $('#sync-elapsed-time').text(timeString);
+    }
+
+    function updateStatsFromResponse(response) {
+        if (!response.stats) return;
+        syncState.stats.created += response.stats.created || 0;
+        syncState.stats.updated += response.stats.updated || 0;
+        syncState.stats.errors += response.stats.errors_count || (response.stats.errors ? response.stats.errors.length : 0);
+        syncState.stats.total = syncState.stats.created + syncState.stats.updated;
+        syncState.currentPage = response.stats.current_page || syncState.currentPage;
+        updateProgressUI();
+    }
+
+    function updateProgressUI(progress, statusText) {
+        if (progress === undefined) {
+            progress = syncState.totalPages > 0 ? Math.round((syncState.currentPage / syncState.totalPages) * 100) : 0;
+        }
+
+        $('#sync-progress-bar').css('width', `${progress}%`).text(`${progress}%`);
+
+        if (statusText) {
+             $('#sync-status').text(statusText);
+        } else {
+             $('#sync-status').text(`Đang xử lý trang ${syncState.currentPage} / ${syncState.totalPages}...`);
+        }
+
+        $('#sync-pages').text(`${syncState.currentPage}/${syncState.totalPages}`);
+        $('#sync-created').text(syncState.stats.created);
+        $('#sync-updated').text(syncState.stats.updated);
+        $('#sync-errors').text(syncState.stats.errors);
+        $('#sync-total').text(syncState.stats.total);
+    }
+
+    function handleSyncError(errorMessage) {
+        Swal.fire('Lỗi đồng bộ!', errorMessage, 'error');
+        resetSyncUI(`Lỗi: ${errorMessage}`, true);
+    }
+
+    function finishSync() {
+        const finalStatus = `Hoàn tất! Đồng bộ ${syncState.stats.total} đơn hàng. Mới: ${syncState.stats.created}, Cập nhật: ${syncState.stats.updated}, Lỗi: ${syncState.stats.errors}.`;
+        updateProgressUI(100, finalStatus);
+        $('#sync-progress-bar').addClass('bg-success').removeClass('bg-info');
+        resetSyncUI(finalStatus, false);
+        Swal.fire('Hoàn tất!', finalStatus, 'success').then(() => {
+            if(syncState.stats.total > 0) window.location.reload();
         });
     }
 
-    // Cancel sync process
-    function cancelSync(silent = false) {
-        return new Promise((resolve, reject) => {
-            if (!syncState.inProgress && !silent) {
-                Swal.fire({
-                    title: 'Thông báo',
-                    text: 'Không có quá trình đồng bộ nào đang chạy.',
-                    icon: 'info',
-                    confirmButtonText: 'OK'
-                });
-                resolve();
-                return;
-            }
+    function resetSyncUI(statusText, isError = false) {
+        if (syncState.timerInterval) clearInterval(syncState.timerInterval);
+        syncState.inProgress = false;
+        $('.btn-group button, #sync-date-range-btn, #sync-this-week-btn, .btn-preset').prop('disabled', false);
+        $('#cancel-any-sync-btn').prop('disabled', true);
+        $('#sync-status').text(statusText);
 
-            if (!silent) {
-                Swal.fire({
-                    title: 'Đang hủy...',
-                    html: `
-                        <div class="text-center">
-                            <div class="spinner-grow text-warning mb-2" role="status">
-                                <span class="sr-only">Đang hủy...</span>
-                            </div>
-                            <p class="mb-0">Đang dừng quá trình đồng bộ...</p>
-                        </div>
-                    `,
-                    allowOutsideClick: false,
-                    showConfirmButton: false,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    }
-                });
-            }
-
-            $.ajax({
-                url: '{{ route("pancake.sync.cancel") }}',
-                type: 'POST',
-                success: function(response) {
-                    // Stop progress tracking
-                    if (syncState.progressInterval) {
-                        clearInterval(syncState.progressInterval);
-                        syncState.progressInterval = null;
-                    }
-
-                    // Update state
-                    syncState.inProgress = false;
-
-                    if (!silent) {
-                        Swal.fire({
-                            title: 'Đã hủy!',
-                            text: 'Quá trình đồng bộ đã được hủy thành công.',
-                            icon: 'info',
-                            confirmButtonText: 'OK'
-                        });
-                    } else {
-                        Swal.close();
-                    }
-
-                    resolve(response);
-                },
-                error: function(xhr) {
-                    if (!silent) {
-                        const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : 'Không thể hủy quá trình đồng bộ.';
-                        Swal.fire({
-                            title: 'Lỗi!',
-                            text: errorMsg,
-                            icon: 'error',
-                            confirmButtonText: 'OK'
-                        });
-                    }
-
-                    reject(xhr);
-                }
-            });
-        });
+        if(isError) {
+             $('#sync-progress-bar').addClass('bg-danger').removeClass('bg-info bg-success');
+        } else {
+            // On successful cancellation or completion, hide the progress container.
+            // We delay it slightly to allow the user to read the final message.
+            setTimeout(() => {
+                $('#sync-progress-container').addClass('d-none');
+            }, 3000);
+        }
     }
-
-    // Helper function to format date
-    function formatDate(dateString) {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('vi-VN', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric'
-        });
-    }
-
-    // Helper function to format time duration
-    function formatTime(seconds) {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const remainingSeconds = seconds % 60;
-
-        let result = '';
-        if (hours > 0) result += hours + ' giờ ';
-        if (minutes > 0 || hours > 0) result += minutes + ' phút ';
-        result += remainingSeconds + ' giây';
-
-        return result;
-    }
-    @endcan
 });
 </script>
 @stop

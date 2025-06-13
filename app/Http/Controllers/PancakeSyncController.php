@@ -166,61 +166,62 @@ class PancakeSyncController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\Response
      */
-    public function syncOrders(Request $request)
-    {
-        try {
-            // Increase execution time limit to 2 hours and memory limit to 1GB
-            set_time_limit(7200);
-            ini_set('memory_limit', '1024M');
+    // public function syncOrders(Request $request)
+    // {
+    //     // try {
+    //         dd(1);
+    //         // Increase execution time limit to 2 hours and memory limit to 1GB
+    //         set_time_limit(7200);
+    //         ini_set('memory_limit', '1024M');
 
-            $this->authorize('sync-pancake');
+    //         $this->authorize('sync-pancake');
 
-            // Get API configuration
-            $apiKey = config('pancake.api_key');
-            $shopId = config('pancake.shop_id');
-            $baseUrl = config('pancake.base_uri', 'https://pos.pages.fm/api/v1');
+    //         // Get API configuration
+    //         $apiKey = config('pancake.api_key');
+    //         $shopId = config('pancake.shop_id');
+    //         $baseUrl = config('pancake.base_uri', 'https://pos.pages.fm/api/v1');
 
-            if (empty($apiKey) || empty($shopId)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake'
-                ], 400);
-            }
+    //         if (empty($apiKey) || empty($shopId)) {
+    //             return response()->json([
+    //                 'success' => false,
+    //                 'message' => 'Chưa cấu hình API key hoặc Shop ID của Pancake'
+    //             ], 400);
+    //         }
 
-            // Check if this is a specific date sync or ALL orders sync
-            if ($request->has('date') || $request->has('sync_date')) {
-                // Add a sync_type parameter to make routing clearer
-                $request->merge(['sync_type' => 'date']);
+    //         // Check if this is a specific date sync or ALL orders sync
+    //         if ($request->has('date') || $request->has('sync_date')) {
+    //             // Add a sync_type parameter to make routing clearer
+    //             $request->merge(['sync_type' => 'date']);
 
-                // Ensure we have a consistent 'date' parameter
-                if ($request->has('sync_date') && !$request->has('date')) {
-                    $request->merge(['date' => $request->input('sync_date')]);
-                }
+    //             // Ensure we have a consistent 'date' parameter
+    //             if ($request->has('sync_date') && !$request->has('date')) {
+    //                 $request->merge(['date' => $request->input('sync_date')]);
+    //             }
 
-                // Log request information
-                Log::info('Redirecting to syncOrdersByDateManual from syncOrders', [
-                    'date' => $request->input('date'),
-                    'parameters' => $request->all()
-                ]);
-                dd(1);
-                // Start the sync process for a single day
-                return $this->syncOrdersByDateManual($request);
-            } else {
-                // This is a request to sync ALL orders
-                return $this->syncAllOrders($request);
-            }
-        } catch (\Exception $e) {
-            Log::error('Error starting Pancake order sync', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
+    //             // Log request information
+    //             Log::info('Redirecting to syncOrdersByDateManual from syncOrders', [
+    //                 'date' => $request->input('date'),
+    //                 'parameters' => $request->all()
+    //             ]);
+    //             dd(1);
+    //             // Start the sync process for a single day
+    //             return $this->syncOrdersByDateManual($request);
+    //         } else {
+    //             // This is a request to sync ALL orders
+    //             return $this->syncAllOrders($request);
+    //         }
+    //     // } catch (\Exception $e) {
+    //     //     Log::error('Error starting Pancake order sync', [
+    //     //         'error' => $e->getMessage(),
+    //     //         'trace' => $e->getTraceAsString()
+    //     //     ]);
 
-            return response()->json([
-                'success' => false,
-                'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
-            ], 500);
-        }
-    }
+    //     //     return response()->json([
+    //     //         'success' => false,
+    //     //         'message' => 'Có lỗi xảy ra: ' . $e->getMessage()
+    //     //     ], 500);
+    //     // }
+    // }
 
     /**
      * Sanitize address data to remove problematic characters like quotes
@@ -623,7 +624,7 @@ class PancakeSyncController extends Controller
 
                 // Save order first to get the ID
                 $order->save();
-               
+
                 // Create live session order record
                 $liveSessionOrder = \App\Models\LiveSessionOrder::create([
                     'order_id' => $order->id,
@@ -2832,7 +2833,7 @@ if(!$order->customer_id){
     }
 
     /**
-     * Synchronize all orders from Pancake
+     * Synchronize all orders from Pancake đây là hàm chạy được
      *
      * @param Request $request
      * @return \Illuminate\Http\Response
@@ -2846,6 +2847,9 @@ if(!$order->customer_id){
             ini_set('memory_limit', '1024M');
 
             $this->authorize('sync-pancake');
+
+            $startDateTime = strtotime('2025-01-01 00:00:00'); // Timestamp cho 1/1/2025 00:00:00
+            $endDateTime = strtotime('2025-03-30 23:59:59');   // Timestamp cho 30/3/2025 23:59:59
 
             // First check if this is actually a date-specific sync that should be redirected
             if ($request->has('startDateTime') && $request->has('endDateTime')) {
