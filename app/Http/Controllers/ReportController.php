@@ -117,6 +117,7 @@ class ReportController extends Controller
 
         // Use chunkById to process orders in batches for better memory efficiency
         Order::whereNotNull('products_data')
+            ->where('pancake_status', 3)
             ->whereBetween('pancake_inserted_at', [$startDate, $endDate])
             ->select('id', 'products_data') // Select only necessary columns
             ->chunkById(200, function ($orders) use (&$categoryData, $categoryMap) {

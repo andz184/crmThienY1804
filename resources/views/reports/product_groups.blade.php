@@ -27,6 +27,12 @@
                         <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
+                        <div class="alert alert-info text-dark" role="alert">
+                            <h6 class="alert-heading fw-bold mb-1">
+                                <i class="fas fa-info-circle me-2"></i>Lưu ý quan trọng
+                            </h6>
+                            <p class="mb-0">Báo cáo này chỉ phân tích dữ liệu từ các đơn hàng có trạng thái <strong>"Đã giao hàng" (Thành công)</strong>. Tất cả các chỉ số như doanh thu, số lượng đơn, và số lượng sản phẩm đều được tính dựa trên các đơn hàng thành công này.</p>
+                        </div>
                         <div class="row">
                             <div class="col-md-6">
                                 <h5 class="text-muted fw-bold mb-3">Giải thích các chỉ số:</h5>
@@ -34,7 +40,7 @@
                                     <li class="mb-3">
                                         <i class="fas fa-info-circle text-primary me-2"></i>
                                         <strong>Tổng Doanh Thu:</strong><br>
-                                        <span class="text-muted ms-4">Tổng giá trị đơn hàng của tất cả sản phẩm trong nhóm hàng hóa (chỉ tính đơn hàng đã giao thành công).</span>
+                                        <span class="text-muted ms-4">Tổng giá trị đơn hàng của tất cả sản phẩm trong nhóm hàng hóa.</span>
                                     </li>
                                     <li class="mb-3">
                                         <i class="fas fa-info-circle text-success me-2"></i>
@@ -44,7 +50,7 @@
                                     <li class="mb-3">
                                         <i class="fas fa-info-circle text-info me-2"></i>
                                         <strong>Số Lượng Sản Phẩm Bán:</strong><br>
-                                        <span class="text-muted ms-4">Tổng số lượng sản phẩm đã bán ra từ nhóm hàng hóa trong các đơn hàng thành công.</span>
+                                        <span class="text-muted ms-4">Tổng số lượng sản phẩm đã bán ra từ nhóm hàng hóa.</span>
                                     </li>
                                 </ul>
                             </div>

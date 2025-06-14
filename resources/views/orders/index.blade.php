@@ -150,8 +150,8 @@
             <h5 class="card-title mb-0"><i class='bx bx-sync me-2'></i>Bảng điều khiển đồng bộ</h5>
             <button class="btn btn-light btn-sm btn-icon-toggle" type="button" data-toggle="collapse" data-target="#syncCollapse" aria-expanded="false" aria-controls="syncCollapse" title="Hiển thị/Ẩn bảng điều khiển">
                 <i class='bx bxs-chevron-down'></i>
-            </button>
-        </div>
+                </button>
+                </div>
         <div class="collapse" id="syncCollapse">
             <div class="card-body">
                 <div class="row align-items-center">
@@ -160,8 +160,8 @@
                         <div class="input-group">
                             <input type="text" id="date-range-picker" class="form-control" placeholder="Chọn ngày bắt đầu và kết thúc"/>
                             <button id="sync-date-range-btn" class="btn btn-success"><i class='bx bx-play-circle me-1'></i>Đồng bộ</button>
-                        </div>
-                    </div>
+            </div>
+            </div>
                     <div class="col-lg-5 mb-3">
                          <label class="form-label control-panel-label">Hoặc chọn nhanh</label>
                          <div class="btn-group w-100" role="group">
@@ -169,7 +169,7 @@
                             <button id="sync-preset-yesterday" class="btn btn-outline-secondary btn-preset">Hôm qua</button>
                             <button id="sync-preset-7days" class="btn btn-outline-secondary btn-preset">7 ngày qua</button>
                             <button id="sync-preset-this-month" class="btn btn-outline-secondary btn-preset">Tháng này</button>
-                         </div>
+        </div>
                     </div>
                 </div>
                  <div class="row mt-3">
@@ -234,7 +234,7 @@
                 Hiển thị {{ $orders->firstItem() }} - {{ $orders->lastItem() }} trên tổng số {{ $orders->total() }} đơn hàng
             </div>
             @endif
-            {{ $orders->appends(request()->query())->links('vendor.pagination.bootstrap-4') }}
+        {{ $orders->appends(request()->query())->links('vendor.pagination.bootstrap-4') }}
         </div>
     </div>
 </div>
@@ -1061,14 +1061,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncState.inProgress = false;
                 $('#sync-progress-container').addClass('d-none');
             }, 500);
-        } else {
+                                } else {
             // If there's no token, it means the process hasn't started on the server yet,
             // or it's just the initial client-side setup. We can just reset the UI.
             resetSyncUI('Đồng bộ đã được hủy.', false);
             $('#sync-progress-container').addClass('d-none'); // Hide progress bar
             toastr.info('Tiến trình đã được hủy.', 'Đã hủy');
-            syncState.inProgress = false;
-        }
+                                    syncState.inProgress = false;
+                                }
     }
 
     function updateTimer() {
@@ -1099,7 +1099,7 @@ document.addEventListener('DOMContentLoaded', () => {
         syncState.stats.total = syncState.stats.created + syncState.stats.updated;
         syncState.currentPage = response.stats.current_page || syncState.currentPage;
         updateProgressUI();
-    }
+            }
 
     function updateProgressUI(progress, statusText) {
         if (progress === undefined) {
@@ -1110,7 +1110,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (statusText) {
              $('#sync-status').text(statusText);
-        } else {
+                } else {
              $('#sync-status').text(`Đang xử lý trang ${syncState.currentPage} / ${syncState.totalPages}...`);
         }
 
@@ -1133,25 +1133,25 @@ document.addEventListener('DOMContentLoaded', () => {
         resetSyncUI(finalStatus, false);
         Swal.fire('Hoàn tất!', finalStatus, 'success').then(() => {
             if(syncState.stats.total > 0) window.location.reload();
-        });
-    }
+                });
+            }
 
     function resetSyncUI(statusText, isError = false) {
         if (syncState.timerInterval) clearInterval(syncState.timerInterval);
-        syncState.inProgress = false;
+                    syncState.inProgress = false;
         $('.btn-group button, #sync-date-range-btn, #sync-this-week-btn, .btn-preset').prop('disabled', false);
         $('#cancel-any-sync-btn').prop('disabled', true);
         $('#sync-status').text(statusText);
 
         if(isError) {
              $('#sync-progress-bar').addClass('bg-danger').removeClass('bg-info bg-success');
-        } else {
+                    } else {
             // On successful cancellation or completion, hide the progress container.
             // We delay it slightly to allow the user to read the final message.
             setTimeout(() => {
                 $('#sync-progress-container').addClass('d-none');
             }, 3000);
-        }
+    }
     }
 });
 </script>
