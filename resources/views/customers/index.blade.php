@@ -37,72 +37,62 @@
             </div>
         </div>
         <div class="card-body" style="display: none;">
-            <form id="filter-form" method="GET" action="{{ route('customers.index') }}" class="form-inline">
+            <form id="filter-form" method="GET" action="{{ route('customers.index') }}" class="form-inline flex-wrap">
                 <div class="form-group mr-2 mb-2">
                     <label for="search" class="mr-1">Tìm kiếm:</label>
-                    <input type="text" name="search" id="search" class="form-control form-control-sm" placeholder="Tên, SĐT, email..." value="{{ request('search') }}">
+                    <input type="text" name="search" id="search" class="form-control form-control-sm" placeholder="Tên, SĐT, Email, Mã KH..." value="{{ request('search') }}">
                 </div>
+
+                {{-- Address Filters --}}
                 <div class="form-group mr-2 mb-2">
-                    <label for="date_from" class="mr-1">Từ ngày tạo:</label>
-                    <input type="date" name="date_from" id="date_from" class="form-control form-control-sm" value="{{ request('date_from') }}">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="date_to" class="mr-1">Đến ngày tạo:</label>
-                    <input type="date" name="date_to" id="date_to" class="form-control form-control-sm" value="{{ request('date_to') }}">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="min_orders" class="mr-1">Min đơn:</label>
-                    <input type="number" name="min_orders" id="min_orders" class="form-control form-control-sm" placeholder="Min" value="{{ request('min_orders') }}" style="width: 80px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="max_orders" class="mr-1">Max đơn:</label>
-                    <input type="number" name="max_orders" id="max_orders" class="form-control form-control-sm" placeholder="Max" value="{{ request('max_orders') }}" style="width: 80px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="min_spent" class="mr-1">Min chi tiêu:</label>
-                    <input type="number" name="min_spent" id="min_spent" class="form-control form-control-sm" placeholder="Min" value="{{ request('min_spent') }}" style="width: 100px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="max_spent" class="mr-1">Max chi tiêu:</label>
-                    <input type="number" name="max_spent" id="max_spent" class="form-control form-control-sm" placeholder="Max" value="{{ request('max_spent') }}" style="width: 100px;">
-                </div>
-                <div class="form-group mr-2 mb-2">
-                    <label for="last_order_status" class="mr-1">Đơn cuối:</label>
-                    <select name="last_order_status" id="last_order_status" class="form-control form-control-sm">
-                        <option value="">-- Trạng thái --</option>
-                        <option value="completed" {{ request('last_order_status') == 'completed' ? 'selected' : '' }}>Hoàn thành</option>
-                        <option value="pending" {{ request('last_order_status') == 'pending' ? 'selected' : '' }}>Chờ xử lý</option>
-                        <option value="assigned" {{ request('last_order_status') == 'assigned' ? 'selected' : '' }}>Đã gán</option>
-                        <option value="calling" {{ request('last_order_status') == 'calling' ? 'selected' : '' }}>Đang gọi</option>
-                        <option value="failed" {{ request('last_order_status') == 'failed' ? 'selected' : '' }}>Thất bại</option>
-                        <option value="canceled" {{ request('last_order_status') == 'canceled' ? 'selected' : '' }}>Đã hủy</option>
-                        <option value="no_answer" {{ request('last_order_status') == 'no_answer' ? 'selected' : '' }}>Không nghe máy</option>
+                    <label for="province" class="mr-1">Tỉnh/Thành:</label>
+                    <select name="province" id="province" class="form-control form-control-sm" style="width: 150px;">
+                        <option value="">-- Tất cả --</option>
+                        @foreach($provinces as $province)
+                            <option value="{{ $province->code }}" {{ request('province') == $province->code ? 'selected' : '' }}>{{ $province->name }}</option>
+                        @endforeach
                     </select>
                 </div>
-                <button type="submit" class="btn btn-primary btn-sm mb-2 mr-2">Lọc</button>
-                <a href="{{ route('customers.index') }}" class="btn btn-secondary btn-sm mb-2">Xóa lọc</a>
+                <div class="form-group mr-2 mb-2">
+                    <label for="district" class="mr-1">Quận/Huyện:</label>
+                    <select name="district" id="district" class="form-control form-control-sm" style="width: 150px;">
+                        <option value="">-- Tất cả --</option>
+                        @foreach($districts as $district)
+                            <option value="{{ $district->code }}" data-province-code="{{ $district->province_code }}" {{ request('district') == $district->code ? 'selected' : '' }}>{{ $district->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="form-group mr-2 mb-2">
+                    <label for="ward" class="mr-1">Phường/Xã:</label>
+                    <select name="ward" id="ward" class="form-control form-control-sm" style="width: 150px;">
+                        <option value="">-- Tất cả --</option>
+                        @foreach($wards as $ward)
+                            <option value="{{ $ward->code }}" data-district-code="{{ $ward->district_code }}" {{ request('ward') == $ward->code ? 'selected' : '' }}>{{ $ward->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                {{-- Date Filters --}}
+                <div class="form-group mr-2 mb-2">
+                    <label for="date_from" class="mr-1">Ngày tạo từ:</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request('date_from') }}">
+                </div>
+                <div class="form-group mr-2 mb-2">
+                    <label for="date_to" class="mr-1">đến:</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request('date_to') }}">
+                </div>
+
+                <div class="form-group mb-2">
+                    <button type="submit" class="btn btn-primary btn-sm mr-2">Lọc</button>
+                    <a href="{{ route('customers.index') }}" class="btn btn-secondary btn-sm">Xóa lọc</a>
+                </div>
             </form>
         </div>
     </div>
 
     <div class="card">
         <div class="card-header">
-            <div class="d-flex justify-content-between align-items-center">
-                <h3 class="card-title">Danh sách Khách hàng</h3>
-                <div>
-                    @can('customers.delete')
-                        <button id="bulk-delete-btn" class="btn btn-danger btn-sm mr-1" style="display: none;">Xóa mục đã chọn (<span id="selected-count">0</span>)</button>
-                    @endcan
-                    @can('customers.sync')
-                        <button id="sync-customers-btn" class="btn btn-info btn-sm mr-1">
-                            <i class="fas fa-sync-alt mr-1"></i>Đồng bộ từ Pancake
-                        </button>
-                    @endcan
-                    @can('customers.create')
-                        <a href="{{ route('customers.create') }}" class="btn btn-primary btn-sm">Thêm khách hàng</a>
-                    @endcan
-                </div>
-            </div>
+            <h3 class="card-title">Danh sách Khách hàng ({{ $customers->total() }})</h3>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -117,6 +107,7 @@
                             <th>Tổng đơn</th>
                             <th>Tổng chi tiêu</th>
                             <th>Ngày tạo</th>
+                            <th>Mua cuối</th>
                             <th>Thao tác</th>
                         </tr>
                     </thead>
@@ -152,7 +143,8 @@
                                 </td>
                                 <td class="text-center">{{ $customer->total_orders_count }}</td>
                                 <td class="text-right">{{ number_format($customer->total_spent, 0, ',', '.') }}đ</td>
-                                <td>{{ $customer->created_at ? $customer->created_at->format('d/m/Y H:i') : 'N/A' }}</td>
+                                <td>{{ $customer->created_at ? $customer->created_at->format('d/m/Y') : 'N/A' }}</td>
+                                <td>{{ $customer->latestOrder ? $customer->latestOrder->pancake_inserted_at : 'N/A' }}</td>
                                 <td>
                                     <div class="btn-group">
                                         <a href="{{ route('customers.show', $customer->id) }}" class="btn btn-xs btn-info" title="Xem chi tiết">
@@ -246,6 +238,46 @@
 @section('js')
 <script>
 $(document).ready(function() {
+    // Initialize Select2
+    $('#province, #district, #ward').select2({
+        theme: 'bootstrap4'
+    });
+
+    // Address filtering dependency
+    const allDistricts = $('#district option').clone();
+    const allWards = $('#ward option').clone();
+
+    $('#province').on('change', function() {
+        const provinceCode = $(this).val();
+        $('#district').html(allDistricts); // Reset to all
+        if (provinceCode) {
+            $('#district option').each(function() {
+                if ($(this).data('province-code') != provinceCode && $(this).val() != '') {
+                    $(this).remove();
+                }
+            });
+        }
+        $('#district').val('').trigger('change'); // Reset and trigger change for ward
+    });
+
+    $('#district').on('change', function() {
+        const districtCode = $(this).val();
+        $('#ward').html(allWards); // Reset to all
+        if (districtCode) {
+            $('#ward option').each(function() {
+                if ($(this).data('district-code') != districtCode && $(this).val() != '') {
+                    $(this).remove();
+                }
+            });
+        }
+        $('#ward').val('').trigger('change'); // Reset ward
+    });
+
+    // Trigger on page load to set initial state
+    $('#province').val("{{ request('province') }}").trigger('change');
+    $('#district').val("{{ request('district') }}").trigger('change');
+    $('#ward').val("{{ request('ward') }}");
+
     // Bulk delete functionality
     function updateBulkDeleteButtonState() {
         const selectedIds = $('input.customer-checkbox:checked').map(function() {
@@ -386,3 +418,4 @@ $(document).ready(function() {
 @stop
 
 @section('plugins.Sweetalert2', true)
+@section('plugins.Select2', true)

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Traits\LogsActivity;
+use Illuminate\Support\Facades\DB;
 
 class Customer extends Model
 {
@@ -57,6 +58,14 @@ class Customer extends Model
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    /**
+     * Get the latest order for the customer.
+     */
+    public function latestOrder()
+    {
+        return $this->hasOne(Order::class)->latest('pancake_inserted_at');
     }
 
     /**

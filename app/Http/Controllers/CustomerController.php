@@ -15,6 +15,10 @@ use Illuminate\Support\Facades\Cache;
 use App\Traits\PancakeApi;
 use App\Services\PancakeService;
 use App\Models\CustomerPhone;
+use App\Models\District;
+use App\Models\PancakeCategory;
+use App\Models\Province;
+use App\Models\Ward;
 
 class CustomerController extends Controller
 {
@@ -34,56 +38,31 @@ class CustomerController extends Controller
     {
         $this->authorize('customers.view');
 
-        $filters = [
-            'search' => $request->input('search'),
-            'date_from' => $request->input('date_from'),
-            'date_to' => $request->input('date_to'),
-            'min_orders' => $request->input('min_orders'),
-            'max_orders' => $request->input('max_orders'),
-            'min_spent' => $request->input('min_spent'),
-            'max_spent' => $request->input('max_spent'),
-            'last_order_status' => $request->input('last_order_status'),
-            'tag' => $request->input('tag'),
-            'quick_filter' => $request->input('quick_filter')
-        ];
+        $provinces = Province::all();
+        $districts = District::all();
+        $wards = Ward::all();
 
-        $query = Customer::query();
+        $query = Customer::query()->with('latestOrder');
 
         // Apply search filter
         if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('phone', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhereHas('phones', function($q2) use ($search) {
-                      $q2->where('phone_number', 'like', "%{$search}%");
-                  });
+                  ->orWhere('pancake_id', 'like', "%{$search}%");
             });
         }
 
-        // Apply date filters
-        if ($request->filled('date_from')) {
-            $query->whereDate('created_at', '>=', $request->input('date_from'));
+        if ($request->filled('province')) {
+            $query->where('province', $request->input('province'));
         }
-
-        if ($request->filled('date_to')) {
-            $query->whereDate('created_at', '<=', $request->input('date_to'));
+        if ($request->filled('district')) {
+            $query->where('district', $request->input('district'));
         }
-
-        if ($request->filled('min_orders')) {
-            $query->where('total_orders_count', '>=', $request->input('min_orders'));
-        }
-
-        if ($request->filled('max_orders')) {
-            $query->where('total_orders_count', '<=', $request->input('max_orders'));
-        }
-
-        if ($request->filled('min_spent')) {
-            $query->where('total_spent', '>=', $request->input('min_spent'));
-        }
-
-        if ($request->filled('max_spent')) {
-            $query->where('total_spent', '<=', $request->input('max_spent'));
+        if ($request->filled('ward')) {
+            $query->where('ward', $request->input('ward'));
         }
 
         if ($request->filled('last_order_status')) {
@@ -109,7 +88,7 @@ class CustomerController extends Controller
             ]);
         }
 
-        return view('customers.index', compact('customers', 'filters'));
+        return view('customers.index', compact('customers', 'provinces', 'districts', 'wards'));
     }
 
     /**
@@ -236,7 +215,50 @@ class CustomerController extends Controller
             // Continue showing local data even if Pancake sync fails
         }
 
-        return view('customers.show', compact('customer'));
+        // Lấy thông tin nhóm hàng hóa và size đã mua
+        $orders = $customer->orders()->whereNotNull('products_data')->get();
+        $purchasedCategories = [];
+        $purchasedSizes = [];
+        $categoryMap = PancakeCategory::pluck('name', 'pancake_id');
+
+        foreach ($orders as $order) {
+            $productsData = json_decode($order->products_data, true);
+            if (is_array($productsData)) {
+                foreach ($productsData as $item) {
+                    // Lấy category
+                    if (!empty($item['variation_info']['category_ids'])) {
+                        foreach ($item['variation_info']['category_ids'] as $catId) {
+                            if (isset($categoryMap[$catId]) && !isset($purchasedCategories[$catId])) {
+                                $purchasedCategories[$catId] = [
+                                    'name' => $categoryMap[$catId],
+                                    'products' => []
+                                ];
+                            }
+                            if(isset($purchasedCategories[$catId])) {
+                                $purchasedCategories[$catId]['products'][] = $item['variation_info']['name'] ?? 'Sản phẩm không tên';
+                            }
+                        }
+                    }
+
+                    // Lấy size (ví dụ size nằm trong `name` của variation)
+                    if (isset($item['variation_info']['name'])) {
+                        // Giả định size có dạng "S", "M", "L", "XL", "XXL" hoặc số "38", "39", "40"
+                        preg_match('/(S|M|L|XL|XXL|[2-4][0-9])\b/i', $item['variation_info']['name'], $matches);
+                        if (!empty($matches[0])) {
+                            $size = strtoupper($matches[0]);
+                            if (!in_array($size, $purchasedSizes)) {
+                                $purchasedSizes[] = $size;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        foreach ($purchasedCategories as &$category) {
+            $category['products'] = array_unique($category['products']);
+        }
+
+        return view('customers.show', compact('customer', 'purchasedCategories', 'purchasedSizes'));
     }
 
     /**
